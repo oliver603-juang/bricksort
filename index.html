@@ -309,7 +309,9 @@ const ITEMS_KEY = 'bricksort_items';
 const DEFAULT_FB = { fbProject:'storesmart-7ae65', fbApiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', fbCol:'lego_parts' };
 
 // LEGO 零件外型標準標籤（不含顏色，只描述形狀/類型）
-const LEGO_TAGS = '磚塊,板件,瓷磚,斜面磚,弧形磚,倒斜面磚,圓形件,錐形件,圓柱,半球,科技臂,科技軸,科技銷,科技齒輪,科技連接器,科技面板,鉸鏈件,夾子,支架,底座,改裝磚,帶側突磚,帶孔磚,窗框,門框,柵欄,階梯,植物件,動物件,人偶配件,武器,食物,旗幟,寶石,輪子,輪軸,履帶,車身件,船件,飛機件,透明件,發光件,大型結構件,面板,曲面板,管件,軟管,繩索,彈簧,十字軸孔,球形關節,卡扣件,裝飾件,文字磚,貼紙件';
+// BrickLink 官方分類作為特徵標籤（排除 Decorated/Promotional 變體）
+// 參考：https://www.bricklink.com/catalogTree.asp?itemType=P
+const LEGO_TAGS = 'Arch,Bar,Baseplate,Boat,Bracket,Brick,Brick Modified,Brick Round,Cone,Container,Cylinder,Dish,Door,Door Frame,Fence,Flag,Hinge,Hook,Hose,Ladder,Panel,Plant,Plate,Plate Modified,Plate Round,Projectile,Propeller,Rock,Roof,Slope,Slope Curved,Slope Inverted,Stairs,Support,Tail,Tap,Technic,Technic Axle,Technic Connector,Technic Gear,Technic Liftarm,Technic Link,Technic Panel,Technic Pin,Technic Plate,Tile,Tile Modified,Tile Round,Train,Turntable,Vehicle,Vehicle Base,Vehicle Mudguard,Wedge,Wedge Plate,Wheel,Wheel Tire,Window,Window Glass,Windscreen,Wing,Minifigure Utensil,Minifigure Weapon,Animal,Food,String Net';
 
 // 抽屜系統
 const SMALL_DRAWERS = 396;      // 1~396, 各有 a/b 兩格
@@ -484,7 +486,7 @@ async function parseLensScreenshot(dataUrl) {
 
     const existingList = await buildExistingList();
     const prompt = `讀取這張 Google Lens 截圖中的 LEGO 零件資訊（含零件編號 Design ID）。
-回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","description":"30字描述","feature_tags":["3~5個,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
+回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
 
     setProcessingMsg('AI 辨識中...');
     const textResp = await callGeminiAPI(prompt, base64);
@@ -509,7 +511,7 @@ async function handleCameraInput(event) {
     showScreen('s-processing'); setProcessingMsg('AI 辨識 LEGO 零件...');
     try {
       const existingList = await buildExistingList();
-      const prompt = `辨識圖中的 LEGO 零件。回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","description":"30字描述","feature_tags":["3~5個,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
+      const prompt = `辨識圖中的 LEGO 零件。回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
       const textResp = await callGeminiAPI(prompt, resized.split(',')[1]);
       const item = safeParseJSON(textResp);
       await processResult(item);
@@ -528,7 +530,7 @@ async function handlePartIdInput() {
   showScreen('s-processing'); setProcessingMsg('查詢零件 ' + id + '...');
   try {
     const existingList = await buildExistingList();
-    const prompt = `你是 LEGO 零件專家。零件 Design ID 為「${id}」。回應純JSON：{"design_id":"${id}","name":"英文名","name_cn":"中文名","description":"30字描述","feature_tags":["3~5個,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
+    const prompt = `你是 LEGO 零件專家。零件 Design ID 為「${id}」。回應純JSON：{"design_id":"${id}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
     const textResp = await callGeminiAPI(prompt);
     const item = safeParseJSON(textResp);
     await processResult(item);
@@ -576,6 +578,7 @@ async function processResult(item) {
     ...item, ...slotInfo,
     designId, thumbnailUrl,
     featureTags: item.feature_tags || [],
+    bricklinkCategory: item.bricklink_category || '',
     estimateVolumeMl: vol,
     imageData: currentImageData || '',
     nameCN: item.name_cn || '',
@@ -735,7 +738,8 @@ async function confirmPart() {
     const item = {
       name: pendingPart.name || '', nameCN: pendingPart.nameCN || pendingPart.name_cn || '',
       designId: pendingPart.designId || '', description: pendingPart.description || '',
-      featureTags: pendingPart.featureTags || [], estimateVolumeMl: pendingPart.estimateVolumeMl || 2,
+      featureTags: pendingPart.featureTags || [],
+      bricklinkCategory: pendingPart.bricklinkCategory || '', estimateVolumeMl: pendingPart.estimateVolumeMl || 2,
       slot: pendingPart.slot, slotType: pendingPart.slotType || 'small',
       thumbnailUrl: pendingPart.thumbnailUrl || '', imageData: pendingPart.imageData || '',
       isFull: false, quantity: 1, updatedAt: now,
@@ -911,6 +915,7 @@ async function openPartDetail(id) {
   document.getElementById('modal-rows').innerHTML = [
     ['收納位置', item.slot], ['類型', item.slotType==='large'?'大抽屜':item.slotType==='bag'?'收納袋':'小抽屜'],
     ['數量', (item.quantity||1)+'件'], ['體積', vol+'ml'],
+    ['BrickLink 分類', item.bricklinkCategory || '-'],
     ['外型標籤', (item.featureTags||[]).join('、')], ['描述', item.description||'-'],
   ].map(([k,v])=>`<div class="modal-row"><span class="modal-key">${k}</span><span class="modal-val">${v||'-'}</span></div>`).join('');
   document.getElementById('modal-delete-btn').onclick = () => confirmDeletePart(item.id, item.nameCN||item.name);
@@ -993,7 +998,7 @@ async function startBatch(files) {
       const base64 = resized.split(',')[1];
       const thumb = await cropLensThumb(item.dataUrl);
       const existingList = await buildExistingList();
-      const prompt = `讀取截圖中LEGO零件,純JSON:{"design_id":"編號","name":"英文名","name_cn":"中文名","description":"30字","feature_tags":["3~5個,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
+      const prompt = `讀取截圖中LEGO零件,純JSON:{"design_id":"編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
       const textResp = await callGeminiAPI(prompt, base64);
       const parsed = safeParseJSON(textResp);
       const designId = parsed.design_id || '';
