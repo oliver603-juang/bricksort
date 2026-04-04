@@ -552,7 +552,7 @@ async function parseLensScreenshot(dataUrl) {
     currentImageData = await cropLensThumb(dataUrl);
 
     const existingList = await buildExistingList();
-    const prompt = `讀取這張 Google Lens 截圖中的 LEGO 零件資訊（含零件編號 Design ID）。
+    const prompt = `讀取截圖中的積木零件（LEGO或相容品牌如CaDA/森寶/宇星）。若能辨識LEGO等效編號則填入design_id，否則留空。
 回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
 
     setProcessingMsg('AI 辨識中...');
@@ -578,7 +578,7 @@ async function handleCameraInput(event) {
     showScreen('s-processing'); setProcessingMsg('AI 辨識 LEGO 零件...');
     try {
       const existingList = await buildExistingList();
-      const prompt = `辨識圖中的 LEGO 零件。回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
+      const prompt = `辨識圖中的積木零件（LEGO或相容品牌）。若能辨識LEGO等效編號則填入design_id，否則留空。回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
       const textResp = await callGeminiAPI(prompt, resized.split(',')[1]);
       const item = safeParseJSON(textResp);
       await processResult(item);
@@ -597,7 +597,7 @@ async function handlePartIdInput() {
   showScreen('s-processing'); setProcessingMsg('查詢零件 ' + id + '...');
   try {
     const existingList = await buildExistingList();
-    const prompt = `你是 LEGO 零件專家。零件 Design ID 為「${id}」。回應純JSON：{"design_id":"${id}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
+    const prompt = `你是積木零件專家（含LEGO及相容品牌）。零件編號為「${id}」（可能是LEGO Design ID或第三方品牌編號）。若能對應LEGO編號則填入design_id，否則用輸入的編號。回應純JSON：{"design_id":"${id}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
     const textResp = await callGeminiAPI(prompt);
     const item = safeParseJSON(textResp);
     await processResult(item);
@@ -1081,7 +1081,7 @@ async function startBatch(files) {
       const base64 = resized.split(',')[1];
       const thumb = await cropLensThumb(item.dataUrl);
       const existingList = await buildExistingList();
-      const prompt = `讀取截圖中LEGO零件,純JSON:{"design_id":"編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
+      const prompt = `讀取截圖中積木零件(LEGO或相容品牌),若能辨識LEGO等效編號填design_id否則留空,純JSON:{"design_id":"編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
       const textResp = await callGeminiAPI(prompt, base64);
       const parsed = safeParseJSON(textResp);
       const designId = parsed.design_id || '';
