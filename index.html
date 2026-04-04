@@ -313,13 +313,72 @@ const DEFAULT_FB = { fbProject:'storesmart-7ae65', fbApiKey:'AIzaSyDZltB8OQti4ZP
 // 參考：https://www.bricklink.com/catalogTree.asp?itemType=P
 const LEGO_TAGS = 'Arch,Bar,Baseplate,Boat,Bracket,Brick,Brick Modified,Brick Round,Cone,Container,Cylinder,Dish,Door,Door Frame,Fence,Flag,Hinge,Hook,Hose,Ladder,Panel,Plant,Plate,Plate Modified,Plate Round,Projectile,Propeller,Rock,Roof,Slope,Slope Curved,Slope Inverted,Stairs,Support,Tail,Tap,Technic,Technic Axle,Technic Connector,Technic Gear,Technic Liftarm,Technic Link,Technic Panel,Technic Pin,Technic Plate,Tile,Tile Modified,Tile Round,Train,Turntable,Vehicle,Vehicle Base,Vehicle Mudguard,Wedge,Wedge Plate,Wheel,Wheel Tire,Window,Window Glass,Windscreen,Wing,Minifigure Utensil,Minifigure Weapon,Animal,Food,String Net';
 
+
+// BrickLink 分類分層系統（參考 brickarchitect.com/parts/most-common）
+// Tier 1: 高頻結構零件 → 每個分類獨立格子
+// Tier 2: 中頻零件 → 相關分類共用格子群
+// Tier 3: 低頻/裝飾零件 → 多個分類共用同一格
+const CATEGORY_GROUPS = {
+  // Tier 1: 獨立格子（前 250 常用零件幾乎都在這裡）
+  'Plate': 'Plate', 'Plate Modified': 'Plate Modified', 'Plate Round': 'Plate Round',
+  'Brick': 'Brick', 'Brick Modified': 'Brick Modified', 'Brick Round': 'Brick Round',
+  'Tile': 'Tile', 'Tile Modified': 'Tile Modified', 'Tile Round': 'Tile Round',
+  'Slope': 'Slope', 'Slope Curved': 'Slope Curved', 'Slope Inverted': 'Slope Inverted',
+  'Technic': 'Technic', 'Technic Axle': 'Technic Axle', 'Technic Pin': 'Technic Pin',
+  'Technic Connector': 'Technic Connector', 'Technic Gear': 'Technic Gear',
+  'Technic Liftarm': 'Technic Liftarm', 'Technic Link': 'Technic Link',
+  'Technic Panel': 'Technic Panel', 'Technic Plate': 'Technic Plate',
+  'Bracket': 'Bracket', 'Hinge': 'Hinge', 'Arch': 'Arch', 'Bar': 'Bar',
+  'Wedge': 'Wedge', 'Wedge Plate': 'Wedge Plate', 'Wing': 'Wing',
+  'Cone': 'Cone', 'Cylinder': 'Cylinder', 'Dish': 'Dish',
+  'Support': 'Support', 'Panel': 'Panel', 'Baseplate': 'Baseplate',
+
+  // Tier 2: 相關分類共用格子群
+  'Window': '門窗類', 'Window Glass': '門窗類', 'Windscreen': '門窗類',
+  'Door': '門窗類', 'Door Frame': '門窗類',
+  'Vehicle': '車輛類', 'Vehicle Base': '車輛類', 'Vehicle Mudguard': '車輛類',
+  'Wheel': '輪子類', 'Wheel Tire': '輪子類',
+  'Train': '軌道類', 'Turntable': '軌道類',
+
+  // Tier 3: 低頻裝飾零件 → 共用格子（節省空間）
+  'Minifigure Utensil': '人偶配件', 'Minifigure Weapon': '人偶配件',
+  'Animal': '生物自然', 'Food': '生物自然', 'Plant': '生物自然',
+  'Flag': '小型配件', 'Hook': '小型配件', 'Tap': '小型配件',
+  'Ladder': '小型配件', 'String Net': '小型配件',
+  'Rock': '結構配件', 'Roof': '結構配件', 'Stairs': '結構配件',
+  'Fence': '結構配件', 'Hose': '結構配件',
+  'Boat': '載具配件', 'Propeller': '載具配件', 'Projectile': '載具配件',
+};
+
+
+// BrickLink 分類中「必定大型」→ 自動進收納袋（不需 AI 估算）
+const ALWAYS_BAG_CATEGORIES = new Set([
+  'Baseplate', 'Baseplate Raised', 'Baseplate Road',
+  'Vehicle Base', 'Large Figure Part',
+  'Boat', 'Train',           // 底板、船身、軌道底座
+]);
+
+// 判斷是否為「必定大型」分類
+function isCategoryAlwaysBag(tags) {
+  return (tags||[]).some(t => ALWAYS_BAG_CATEGORIES.has(t));
+}
+
+// 取得分類的分組名（用於 slot 配對）
+function getCategoryGroup(tags) {
+  if (!tags || !tags.length) return null;
+  for (const tag of tags) {
+    if (CATEGORY_GROUPS[tag]) return CATEGORY_GROUPS[tag];
+  }
+  return tags[0] || null;
+}
+
 // 抽屜系統
 const SMALL_DRAWERS = 396;      // 1~396, 各有 a/b 兩格
 const SMALL_SLOT_ML = 150;      // 每格 150cc
 const LARGE_DRAWERS = 12;       // L1~L12
 const LARGE_DRAWER_ML = 600;    // 每個 600cc
 const BAG_ML = 500;             // 收納袋 500cc
-const OVERSIZE_ML = 30;         // 超大零件門檻
+const OVERSIZE_ML = 50;           // 體積 > 50cc → 收納袋         // 超大零件門檻
 const REORDER_LIMIT = 600;      // 600 件後不再重新編排
 
 // Gemini model fallback
@@ -560,7 +619,8 @@ async function processResult(item) {
 
   // Determine slot type
   const vol = parseInt(item.estimate_volume_ml) || 2;
-  const isOversize = item.is_oversize || vol > OVERSIZE_ML || (item.length_cm && item.length_cm > 7);
+  const categoryBag = isCategoryAlwaysBag(item.feature_tags);
+  const isOversize = categoryBag || item.is_oversize || vol > OVERSIZE_ML || (item.length_cm && item.length_cm > 7);
 
   let slotInfo;
   if (match) {
@@ -622,19 +682,31 @@ function assignSmallSlot(tags, allItems) {
   const smallItems = allItems.filter(i => (i.slotType||'small') === 'small');
   if (smallItems.length === 0) return { slot: '1a', slotType: 'small' };
 
-  // Find slots with similar tags
-  const newTags = new Set((tags||[]).map(t=>t.toLowerCase()));
-  const slotTags = {}; // slot → Set of tags
-  const slotFull = {}; // slot → isFull
+  // Step 1: 用 BrickLink 分類群組匹配（Tier 系統）
+  const newGroup = getCategoryGroup(tags);
+  const slotGroups = {};  // slot → Set of groups
+  const slotTags = {};    // slot → Set of tags
+  const slotFull = {};
 
   smallItems.forEach(i => {
     const s = i.slot || '1a';
-    if (!slotTags[s]) slotTags[s] = new Set();
+    if (!slotTags[s]) { slotTags[s] = new Set(); slotGroups[s] = new Set(); }
     (i.featureTags||[]).forEach(t => slotTags[s].add(t.toLowerCase()));
+    const g = getCategoryGroup(i.featureTags);
+    if (g) slotGroups[s].add(g);
     if (i.isFull) slotFull[s] = true;
   });
 
-  // Find best matching non-full slot
+  // Step 2: 優先找相同分組的格子（Tier 3 共用格子的關鍵）
+  if (newGroup) {
+    for (const [slot, groups] of Object.entries(slotGroups)) {
+      if (slotFull[slot]) continue;
+      if (groups.has(newGroup)) return { slot, slotType: 'small' };
+    }
+  }
+
+  // Step 3: 找相似標籤的相鄰格
+  const newTags = new Set((tags||[]).map(t=>t.toLowerCase()));
   let bestSlot = null, bestOverlap = 0;
   for (const [slot, stags] of Object.entries(slotTags)) {
     if (slotFull[slot]) continue;
@@ -643,12 +715,11 @@ function assignSmallSlot(tags, allItems) {
   }
 
   if (bestSlot && bestOverlap > 0) {
-    // Found similar slot → put adjacent
     const adjSlot = getAdjacentSlot(bestSlot, slotTags, slotFull);
     return { slot: adjSlot, slotType: 'small' };
   }
 
-  // No match → next available slot
+  // Step 4: 無匹配 → 下一個空格
   return { slot: getNextFreeSlot(slotTags, slotFull), slotType: 'small' };
 }
 
@@ -1004,7 +1075,8 @@ async function startBatch(files) {
       const designId = parsed.design_id || '';
       const thumbnailUrl = designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '';
       const vol = parseInt(parsed.estimate_volume_ml) || 2;
-      const isOversize = parsed.is_oversize || vol > OVERSIZE_ML;
+      const categoryBag = isCategoryAlwaysBag(parsed.feature_tags);
+      const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML;
       const allItems = await loadItems();
       let match = null;
       if (parsed.matched_existing_id && parsed.matched_existing_id !== 'null') match = allItems.find(i => i.id === parsed.matched_existing_id);
