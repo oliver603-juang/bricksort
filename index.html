@@ -146,7 +146,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
       <div class="mode-tab" id="tab-storage" onclick="setMode('storage')">🔍 收納模式</div>
     </div>
     
-    <input type="file" id="lens-input" accept="image/*" style="display:none" onchange="handleLensInput(event)">
+    <input type="file" id="lens-input" accept="image/*" multiple style="display:none" onchange="handleLensInput(event)">
     <input type="file" id="camera-input" accept="image/*" capture="environment" style="display:none" onchange="handleCameraInput(event)">
     
     <div id="mode-catalog-ui">
@@ -269,6 +269,33 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 </div>
 </div>
 
+
+<div id="s-batch" class="screen">
+<div class="header">
+  <button class="back-btn" id="batch-back-btn" onclick="cancelBatch()">✕ 取消</button>
+  <span class="header-title">批次建檔</span>
+</div>
+<div style="padding:16px 20px 80px;flex:1;overflow-y:auto">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span id="batch-status-text" style="font-size:14px;font-weight:500"></span>
+      <span id="batch-count-badge" style="font-family:var(--mono);font-size:13px;color:var(--accent)"></span>
+    </div>
+    <div style="background:var(--surface);border-radius:4px;height:6px;overflow:hidden">
+      <div id="batch-progress-bar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width .4s"></div>
+    </div>
+  </div>
+  <div id="batch-item-list"></div>
+  <div id="batch-done-panel" style="display:none">
+    <div style="text-align:center;padding:16px 0 24px">
+      <div style="font-size:36px;margin-bottom:8px" id="batch-done-icon">✓</div>
+      <div id="batch-done-text" style="font-size:16px;font-weight:700"></div>
+      <div id="batch-done-sub" style="font-size:13px;color:var(--muted);margin-top:4px"></div>
+    </div>
+    <button class="btn-primary" onclick="showScreen('s-main');refreshMain()">返回主畫面</button>
+  </div>
+</div>
+</div>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -431,10 +458,14 @@ function partRowHTML(item) {
 // LENS SCREENSHOT MODE (建檔)
 // ══════════════════════════════════════════════
 async function handleLensInput(event) {
-  const file = event.target.files[0]; if(!file) return; event.target.value='';
-  const reader = new FileReader();
-  reader.onload = async(e) => { await parseLensScreenshot(e.target.result); };
-  reader.readAsDataURL(file);
+  const files = Array.from(event.target.files || []); event.target.value='';
+  if (!files.length) return;
+  if (files.length === 1) {
+    const reader = new FileReader();
+    reader.onload = async(e) => { await parseLensScreenshot(e.target.result); };
+    reader.readAsDataURL(files[0]); return;
+  }
+  await startBatch(files);
 }
 
 async function parseLensScreenshot(dataUrl) {
@@ -921,6 +952,88 @@ async function forceSync() {
   showToast('上傳 '+up+' 件，跳過 '+skip+' 件');
   showScreen('s-main'); refreshMain();
 }
+
+// ══════════════════════════════════════════════
+// BATCH LENS PROCESSING
+// ══════════════════════════════════════════════
+let batchQueue = [], batchRunning = false, batchCancelled = false;
+
+async function startBatch(files) {
+  batchCancelled = false; batchRunning = true;
+  batchQueue = files.map((f, i) => ({ id: i, file: f, status: 'pending', result: null, error: null, name: f.name, dataUrl: null }));
+  showScreen('s-batch');
+  document.getElementById('batch-back-btn').textContent = '✕ 取消';
+  document.getElementById('batch-done-panel').style.display = 'none';
+  renderBatchList(); updateBatchProgress(0, files.length, null);
+
+  await Promise.all(batchQueue.map(item => new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = async(e) => { item.dataUrl = e.target.result; resolve(); };
+    reader.readAsDataURL(item.file);
+  })));
+  renderBatchList();
+
+  let done = 0, errors = 0;
+  for (const item of batchQueue) {
+    if (batchCancelled) break;
+    item.status = 'processing'; renderBatchList();
+    updateBatchProgress(done + errors, batchQueue.length, item);
+    try {
+      const _t0 = performance.now();
+      const resized = await resizeImage(item.dataUrl, 800);
+      const base64 = resized.split(',')[1];
+      const thumb = await cropLensThumb(item.dataUrl);
+      const existingList = await buildExistingList();
+      const prompt = `讀取截圖中LEGO零件,純JSON:{"design_id":"編號","name":"英文名","name_cn":"中文名","description":"30字","feature_tags":["3~5個,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
+      const textResp = await callGeminiAPI(prompt, base64);
+      const parsed = safeParseJSON(textResp);
+      const designId = parsed.design_id || '';
+      const thumbnailUrl = designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '';
+      const vol = parseInt(parsed.estimate_volume_ml) || 2;
+      const isOversize = parsed.is_oversize || vol > OVERSIZE_ML;
+      const allItems = await loadItems();
+      let match = null;
+      if (parsed.matched_existing_id && parsed.matched_existing_id !== 'null') match = allItems.find(i => i.id === parsed.matched_existing_id);
+      if (!match && designId) match = allItems.find(i => (i.designId||'').toLowerCase() === designId.toLowerCase());
+      let slotInfo;
+      if (match) slotInfo = { slot: match.slot, slotType: match.slotType || 'small' };
+      else if (isOversize) slotInfo = assignBag(parsed.feature_tags || [], allItems);
+      else slotInfo = assignSmallSlot(parsed.feature_tags || [], allItems);
+      const now = Date.now();
+      const savedItem = { name: parsed.name||'', nameCN: parsed.name_cn||'', designId, description: parsed.description||'', featureTags: parsed.feature_tags||[], estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType||'small', thumbnailUrl, imageData: thumb||'', isFull: false, quantity: match ? (match.quantity||1)+1 : 1, id: match ? match.id : 'lego_'+now+'_'+Math.random().toString(36).slice(2,5), createdAt: match ? match.createdAt : now, updatedAt: now };
+      if (match) await updateItem(savedItem); else await saveItem(savedItem);
+      item.result = savedItem; item.status = 'done'; done++;
+      console.log('[BATCH] item ' + (done+errors) + ': ' + Math.round(performance.now()-_t0) + 'ms -> ' + slotInfo.slot);
+    } catch(err) { item.error = err.message; item.status = 'error'; errors++; }
+    renderBatchList(); updateBatchProgress(done + errors, batchQueue.length, null);
+    if (!batchCancelled) await new Promise(r => setTimeout(r, 300));
+  }
+  batchRunning = false;
+  document.getElementById('batch-back-btn').textContent = '← 返回';
+  document.getElementById('batch-done-panel').style.display = 'block';
+  document.getElementById('batch-done-icon').textContent = errors === 0 ? '✓' : '⚠';
+  document.getElementById('batch-done-text').textContent = batchCancelled ? '已取消' : '完成！共建檔 ' + done + ' 件';
+  document.getElementById('batch-done-sub').textContent = errors > 0 ? '失敗 ' + errors + ' 件' : '所有零件已儲存';
+}
+
+function cancelBatch() { if (batchRunning) { batchCancelled = true; batchRunning = false; } showScreen('s-main'); refreshMain(); }
+function updateBatchProgress(done, total, current) {
+  const pct = total > 0 ? Math.round(done / total * 100) : 0;
+  document.getElementById('batch-progress-bar').style.width = pct + '%';
+  document.getElementById('batch-count-badge').textContent = done + ' / ' + total;
+  document.getElementById('batch-status-text').textContent = current ? '辨識中：' + current.file.name.slice(0,20) : done === total ? '全部完成' : '準備中...';
+}
+function renderBatchList() {
+  document.getElementById('batch-item-list').innerHTML = batchQueue.map(item => {
+    const icon = item.status==='pending' ? '<span style="color:var(--dim)">○</span>' : item.status==='processing' ? '<div class="spinner" style="width:18px;height:18px;border-width:2px;margin:0"></div>' : item.status==='done' ? '<span style="color:var(--green)">✓</span>' : '<span style="color:var(--red)">✗</span>';
+    const name = item.result ? (item.result.nameCN || item.result.name) : item.name;
+    const meta = item.status==='done' ? item.result.slot+' '+(item.result.featureTags||[]).slice(0,2).join(',') : item.status==='error' ? (item.error||'').slice(0,30) : item.status==='processing' ? 'AI 辨識中...' : '等待中';
+    const thumb = item.result?.thumbnailUrl || '';
+    const thumbEl = thumb ? '<img style="width:36px;height:36px;border-radius:6px;object-fit:cover;background:var(--surface)" src="'+thumb+'">' : '<div style="width:36px;height:36px;border-radius:6px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:14px">🧱</div>';
+    return '<div style="background:var(--card);border:1px solid '+(item.status==='processing'?'var(--accent)':item.status==='done'?'var(--green)':item.status==='error'?'var(--red)':'var(--border)')+';border-radius:10px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+thumbEl+'<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+name+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">'+meta+'</div></div><div style="width:22px;text-align:center">'+icon+'</div></div>';
+  }).join('');
+}
+
 
 // START
 init();
