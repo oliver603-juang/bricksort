@@ -363,6 +363,14 @@ function isCategoryAlwaysBag(tags) {
   return (tags||[]).some(t => ALWAYS_BAG_CATEGORIES.has(t));
 }
 
+
+// 去掉 BrickLink 印刷/顏色後綴，取得基本外型編號
+// 50943pb09 → 50943, 3068bpb0001 → 3068b, 973pr0001 → 973, 3626cpat0001 → 3626c
+function getBaseDesignId(id) {
+  if (!id) return '';
+  return id.replace(/(pb|pr|pat)\d+.*$/i, '').trim();
+}
+
 // 取得分類的分組名（用於 slot 配對）
 function getCategoryGroup(tags) {
   if (!tags || !tags.length) return null;
@@ -611,6 +619,10 @@ async function processResult(item) {
   if (!match) {
     const did = (item.design_id||'').toLowerCase();
     if (did) match = allItems.find(i => (i.designId||'').toLowerCase() === did);
+  }
+  if (!match) {
+    const baseDid = getBaseDesignId(item.design_id);
+    if (baseDid) match = allItems.find(i => getBaseDesignId(i.designId) === baseDid);
   }
 
   // Get thumbnail from Rebrickable/Bricklink
@@ -1081,6 +1093,7 @@ async function startBatch(files) {
       let match = null;
       if (parsed.matched_existing_id && parsed.matched_existing_id !== 'null') match = allItems.find(i => i.id === parsed.matched_existing_id);
       if (!match && designId) match = allItems.find(i => (i.designId||'').toLowerCase() === designId.toLowerCase());
+      if (!match && designId) { const baseDid = getBaseDesignId(designId); if (baseDid) match = allItems.find(i => getBaseDesignId(i.designId) === baseDid); }
       let slotInfo;
       if (match) slotInfo = { slot: match.slot, slotType: match.slotType || 'small' };
       else if (isOversize) slotInfo = assignBag(parsed.feature_tags || [], allItems);
