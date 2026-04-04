@@ -518,7 +518,7 @@ async function processResult(item) {
 
   // Get thumbnail from Rebrickable/Bricklink
   const designId = item.design_id || '';
-  const thumbnailUrl = designId ? `https://img.bricklink.com/ItemImage/PN/0/${designId}.png` : '';
+  const thumbnailUrl = designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '';
 
   // Determine slot type
   const vol = parseInt(item.estimate_volume_ml) || 2;
