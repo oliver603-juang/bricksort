@@ -532,7 +532,7 @@ function partRowHTML(item) {
     ${thumb}
     <div class="item-info"><div class="item-name">${item.name||item.nameCN||'未知零件'}</div>
     <div class="item-meta"><span class="item-slot">${item.slot||'?'}</span><span class="item-cat">${(item.featureTags||[]).slice(0,2).join(', ')}</span></div></div>
-    <span class="slot-badge ${slotClass}">${item.slot||'?'}</span>
+    <span class="slot-badge ${slotClass}">${item.slot||'?'}</span>${item.overflowBag ? '<span class="slot-badge slot-bag" style="margin-left:4px">'+item.overflowBag+'</span>' : ''}
   </div>`;
 }
 
@@ -706,9 +706,12 @@ async function processResult(item) {
   if (currentMode === 'storage') {
     if (match) {
       // Found! Show where to put it
-      document.getElementById('result-slot').textContent = match.slot;
+      const hasOverflow = match.isFull && match.overflowBag;
+      document.getElementById('result-slot').textContent = hasOverflow ? match.overflowBag : match.slot;
       const typeLabel = match.slotType==='large'?'大抽屜':match.slotType==='bag'?'收納袋':'小抽屜分格';
-      document.getElementById('result-slot-type').textContent = typeLabel;
+      document.getElementById('result-slot-type').textContent = hasOverflow
+        ? '⚠ ' + match.slot + '（' + typeLabel + '）已滿 → 放入溢出袋 ' + match.overflowBag
+        : typeLabel;
       document.querySelector('#s-result .btn-primary').textContent = '← 返回';
       document.querySelector('#s-result .btn-primary').onclick = () => { showScreen('s-main'); };
       document.querySelector('#s-result .btn-ghost').textContent = '';
@@ -780,7 +783,22 @@ function assignSmallSlot(tags, allItems) {
     return { slot: adjSlot, slotType: 'small' };
   }
 
-  // Step 4: 無匹配 → 下一個空格
+  // Step 4: 無匹配 → 找離同分組最近的空格（而非全局下一個空格）
+  // 先找同分組已有的最大抽屜號，從那裡附近開始找空格
+  if (newGroup) {
+    let maxGroupDrawer = 0;
+    for (const [slot, groups] of Object.entries(slotGroups)) {
+      if (groups.has(newGroup)) {
+        const dNum = parseInt(slot.match(/^(\d+)/)?.[1] || '0');
+        if (dNum > maxGroupDrawer) maxGroupDrawer = dNum;
+      }
+    }
+    if (maxGroupDrawer > 0) {
+      return { slot: findNearestFreeSlot(maxGroupDrawer, slotTags, slotFull), slotType: 'small' };
+    }
+  }
+
+  // Step 5: 完全無匹配 → 全局下一個空格
   return { slot: getNextFreeSlot(slotTags, slotFull), slotType: 'small' };
 }
 
@@ -807,6 +825,21 @@ function getNextFreeSlot(slotTags, slotFull) {
   for (let d = 1; d <= SMALL_DRAWERS; d++) {
     for (const s of [d+'a', d+'b']) {
       if (!slotTags[s] && !slotFull[s]) return s;
+    }
+  }
+  return 'FULL';
+}
+
+// 找離指定抽屜號碼最近的空格（解決 600 件後同類零件被分散的問題）
+function findNearestFreeSlot(nearDrawerNum, slotTags, slotFull) {
+  // 從 nearDrawerNum 開始，交替向前/向後擴展搜尋
+  for (let offset = 0; offset <= SMALL_DRAWERS; offset++) {
+    for (const delta of [offset, -offset]) {
+      const d = nearDrawerNum + delta;
+      if (d < 1 || d > SMALL_DRAWERS) continue;
+      for (const s of [d+'a', d+'b']) {
+        if (!slotTags[s] && !slotFull[s]) return s;
+      }
     }
   }
   return 'FULL';
@@ -1033,6 +1066,29 @@ async function openDrawerMap() {
   }
 
   // Manual assign to large drawer
+  // Reorder & Lock panel
+  const isLocked = localStorage.getItem('bricksort_locked') === 'true';
+  const totalItems = items.length;
+  
+  if (!isLocked) {
+    html += '<div style="margin-top:20px;padding:14px;background:var(--accent-dim);border:2px solid var(--accent);border-radius:10px">';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:6px">📋 編排管理（尚未固定）</div>';
+    html += '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">目前 ' + totalItems + ' 件零件。建議建檔 200~300 件後，按「重新編排」整理分類順序，確認後「固定編排」。</div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    html += '<button onclick="reorderAllSlots()" style="flex:1;background:var(--accent);color:#0a0a0a;border:none;padding:10px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">🔄 重新編排</button>';
+    html += '<button onclick="lockArrangement()" style="flex:1;background:var(--green-bg);border:1px solid var(--green);color:var(--green);padding:10px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">🔒 固定編排</button>';
+    html += '</div>';
+    html += '</div>';
+  } else {
+    html += '<div style="margin-top:20px;padding:14px;background:var(--green-bg);border:1px solid var(--green);border-radius:10px">';
+    html += '<div style="display:flex;align-items:center;gap:8px">';
+    html += '<span style="font-size:13px;font-weight:700;color:var(--green)">🔒 編排已固定</span>';
+    html += '<span style="font-size:11px;color:var(--muted);flex:1">零件已放入實體抽屜，新零件將分配到最近空格或溢出袋</span>';
+    html += '<button onclick="unlockArrangement()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer">解鎖</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+
   html += '<div style="margin-top:20px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
   html += '<div style="font-size:13px;font-weight:700;margin-bottom:8px">手動指派到大抽屜</div>';
   html += '<div style="display:flex;gap:8px;align-items:center">';
@@ -1061,13 +1117,16 @@ async function openPartDetail(id) {
   document.getElementById('modal-designid').textContent = item.designId ? 'Design ID: '+item.designId : '';
   const vol = item.estimateVolumeMl||0;
   document.getElementById('modal-rows').innerHTML = [
-    ['收納位置', item.slot], ['類型', item.slotType==='large'?'大抽屜':item.slotType==='bag'?'收納袋':'小抽屜'],
+    ['收納位置', item.slot + (item.overflowBag ? ' + ' + item.overflowBag : '')], ['類型', item.slotType==='large'?'大抽屜':item.slotType==='bag'?'收納袋':'小抽屜'],
     ['數量', '<input type="number" id="modal-qty" value="'+(item.quantity||1)+'" min="0" style="width:60px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:4px 8px;border-radius:4px;font-family:var(--mono);font-size:14px;text-align:center" onchange="updateQuantity(\''+item.id+'\',this.value)"> 件'], ['體積', vol+'ml'],
     ['BrickLink 分類', item.bricklinkCategory || '-'],
     ['外型標籤', (item.featureTags||[]).join('、')], ['描述', item.description||'-'],
   ].map(([k,v])=>`<div class="modal-row"><span class="modal-key">${k}</span><span class="modal-val">${v||'-'}</span></div>`).join('');
   document.getElementById('modal-delete-btn').onclick = () => confirmDeletePart(item.id, item.nameCN||item.name);
   document.getElementById('modal-full-btn').textContent = item.isFull ? '取消已滿' : '標記已滿';
+  document.getElementById('modal-full-btn').style.background = item.isFull ? 'var(--green-bg)' : '';
+  document.getElementById('modal-full-btn').style.borderColor = item.isFull ? 'var(--green)' : '';
+  document.getElementById('modal-full-btn').style.color = item.isFull ? 'var(--green)' : '';
   document.getElementById('modal-full-btn').onclick = () => toggleFull(item.id, !item.isFull);
   document.getElementById('modal-overlay').classList.remove('hidden');
 }
@@ -1081,9 +1140,26 @@ async function toggleFull(id, full) {
   const items = await loadItems();
   const item = items.find(i=>i.id===id); if(!item) return;
   item.isFull = full;
-  await updateItem(item);
-  closeModalPanel();
-  showToast(item.slot + (full ? ' 標記為已滿' : ' 取消已滿'));
+
+  if (full && !item.overflowBag) {
+    // 標記已滿時，自動分配溢出收納袋
+    const allBags = items.map(i => i.overflowBag || '').filter(b => b.startsWith('B')).map(b => parseInt(b.replace('B',''))||0);
+    const existingBags = items.filter(i => i.slotType === 'bag').map(i => parseInt((i.slot||'').replace('B',''))||0);
+    const maxBag = Math.max(0, ...allBags, ...existingBags);
+    item.overflowBag = 'B' + (maxBag + 1);
+    await updateItem(item);
+    closeModalPanel();
+    showToast(item.slot + ' 已滿 → 溢出袋 ' + item.overflowBag);
+  } else if (!full) {
+    item.overflowBag = '';
+    await updateItem(item);
+    closeModalPanel();
+    showToast(item.slot + ' 取消已滿');
+  } else {
+    await updateItem(item);
+    closeModalPanel();
+    showToast(item.slot + ' 已滿（溢出袋 ' + item.overflowBag + '）');
+  }
   refreshMain();
 }
 
@@ -1279,6 +1355,61 @@ async function updateQuantity(id, val) {
   item.updatedAt = Date.now();
   await updateItem(item);
   showToast((item.nameCN||item.name) + ' 數量更新為 ' + qty);
+}
+
+// ══════════════════════════════════════════════
+// REORDER & LOCK
+// ══════════════════════════════════════════════
+async function reorderAllSlots() {
+  if (!confirm('重新編排所有零件的抽屜位置？\n（按 BrickLink 分類排序，相同分類放相鄰格子）\n\n⚠ 如已放入實體抽屜，需要重新擺放零件！')) return;
+  
+  showScreen('s-processing'); setProcessingMsg('重新編排中...');
+  const items = await loadItems();
+  const smallItems = items.filter(i => (i.slotType||'small') === 'small');
+  
+  // Sort by category group, then by category tag, then by name
+  smallItems.sort((a, b) => {
+    const gA = getCategoryGroup(a.featureTags) || 'zzz';
+    const gB = getCategoryGroup(b.featureTags) || 'zzz';
+    if (gA !== gB) return gA.localeCompare(gB);
+    const tA = (a.featureTags||[])[0] || 'zzz';
+    const tB = (b.featureTags||[])[0] || 'zzz';
+    if (tA !== tB) return tA.localeCompare(tB);
+    return (a.nameCN||a.name||'').localeCompare(b.nameCN||b.name||'');
+  });
+  
+  // Reassign slots sequentially
+  let slotIdx = 0;
+  const slots = [];
+  for (let d = 1; d <= SMALL_DRAWERS; d++) { slots.push(d+'a'); slots.push(d+'b'); }
+  
+  for (const item of smallItems) {
+    if (slotIdx >= slots.length) break;
+    const newSlot = slots[slotIdx++];
+    if (item.slot !== newSlot) {
+      item.slot = newSlot;
+      item.updatedAt = Date.now();
+      await updateItem(item);
+    }
+  }
+  
+  showToast('已重新編排 ' + smallItems.length + ' 件零件');
+  showScreen('s-main'); refreshMain();
+  setTimeout(() => openDrawerMap(), 500);
+}
+
+function lockArrangement() {
+  if (!confirm('確定固定編排？\n\n固定後：\n• 新零件分配到最近空格或溢出袋\n• 不再移動已有零件\n• 可隨時解鎖重新編排')) return;
+  localStorage.setItem('bricksort_locked', 'true');
+  showToast('🔒 編排已固定');
+  openDrawerMap();
+}
+
+function unlockArrangement() {
+  if (!confirm('解鎖編排？解鎖後可重新編排零件順序。')) return;
+  localStorage.setItem('bricksort_locked', 'false');
+  showToast('🔓 已解鎖');
+  openDrawerMap();
 }
 
 // START
