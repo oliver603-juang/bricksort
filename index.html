@@ -154,6 +154,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     <div id="mode-catalog-ui">
       <div style="display:flex;gap:8px;margin-bottom:10px">
         <button class="btn-sm" style="flex:1;padding:14px;font-size:14px" onclick="document.getElementById('lens-input').click()">📷 Lens 截圖建檔</button>
+        <button class="btn-sm" style="padding:14px;font-size:14px" onclick="document.getElementById('camera-catalog').click()">📸 拍照建檔</button>
+        <input type="file" id="camera-catalog" accept="image/*" capture="environment" style="display:none" onchange="handleCatalogCamera(event)">
       </div>
       <div style="display:flex;gap:8px;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:0 12px">
         <span style="font-size:15px">🔍</span>
@@ -163,8 +165,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     </div>
     
     <div id="mode-storage-ui" style="display:none">
-      <button class="btn-sm" style="width:100%;padding:16px;font-size:15px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('camera-input').click()">📷 拍照辨識零件 → 顯示收納位置</button>
-      <div style="font-size:11px;color:var(--dim);margin-top:6px;text-align:center">拍攝 LEGO 零件，AI 辨識後顯示該零件的抽屜號碼</div>
+      <div style="display:flex;gap:8px;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:0 12px;margin-bottom:10px">
+        <span style="font-size:14px">💡</span>
+        <input type="text" id="storage-hint" placeholder="提示關鍵字（選填，如「拆解器」「齒輪」）" style="flex:1;background:none;border:none;color:var(--text);padding:12px 0;font-size:13px;outline:none">
+      </div>
+      <button class="btn-sm" style="width:100%;padding:16px;font-size:15px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('camera-input').click()">📷 拍照辨識 → 顯示收納位置</button>
+      <div style="font-size:11px;color:var(--dim);margin-top:6px;text-align:center">非 LEGO 零件建議填寫提示關鍵字，提升辨識準確度</div>
     </div>
   </div>
 
@@ -579,8 +585,10 @@ async function handleCameraInput(event) {
     currentImageData = resized;
     showScreen('s-processing'); setProcessingMsg('AI 辨識零件...');
     try {
+      const hint = (document.getElementById('storage-hint')?.value || '').trim();
+      const hintText = hint ? '使用者提示此零件是「' + hint + '」，請優先依此辨識。' : '';
       const existingList = await buildExistingList();
-      const prompt = `辨識圖中的積木零件（LEGO或相容品牌）。若能辨識LEGO等效編號則填入design_id，否則留空。若背景有方格紙（5mm格），請數格子估算零件實際尺寸。回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
+      const prompt = `辨識圖中的積木零件（LEGO或相容品牌）。${hintText}若能辨識LEGO等效編號則填入design_id，否則留空。若背景有方格紙（5mm格），請數格子估算零件實際尺寸。回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
       const textResp = await callGeminiAPI(prompt, resized.split(',')[1]);
       const item = safeParseJSON(textResp);
       await processResult(item);
@@ -1239,6 +1247,25 @@ async function searchDrawer(num) {
   }
   document.getElementById('search-results').innerHTML = html;
   showScreen('s-search');
+}
+
+async function handleCatalogCamera(event) {
+  const file = event.target.files[0]; if(!file) return; event.target.value='';
+  const reader = new FileReader();
+  reader.onload = async(e) => {
+    const resized = await resizeImage(e.target.result, 800);
+    currentImageData = resized;
+    showScreen('s-processing'); setProcessingMsg('AI 辨識零件...');
+    try {
+      const existingList = await buildExistingList();
+      const prompt = `辨識圖中的積木零件（LEGO或相容品牌）。若能辨識LEGO等效編號則填入design_id，否則留空。
+回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
+      const textResp = await callGeminiAPI(prompt, resized.split(',')[1]);
+      const item = safeParseJSON(textResp);
+      await processResult(item);
+    } catch(err) { showScreen('s-main'); showToast('辨識失敗：'+err.message,'error'); }
+  };
+  reader.readAsDataURL(file);
 }
 
 // START
