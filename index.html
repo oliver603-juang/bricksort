@@ -426,6 +426,68 @@ function drawerNumToGrid(num, cols) {
   return { row, col };
 }
 
+
+// ══════════════════════════════════════════════
+// LEGO VOLUME CALCULATOR (Geometric Method)
+// ══════════════════════════════════════════════
+// LEGO standard dimensions (mm)
+const STUD_PITCH = 8;       // 1 stud spacing = 8mm
+const PLATE_H = 3.2;        // plate height = 3.2mm
+const BRICK_H = 9.6;        // brick height = 9.6mm (3 plates)
+const STUD_DIA = 4.8;       // stud diameter
+const STUD_H = 1.7;         // stud height above surface
+const WALL_THICKNESS = 1.5;  // typical wall thickness
+
+function calculateLegoVolume(name, aiEstimate) {
+  // 佔位容積（外框體積）— 用於計算收納盒能放幾個
+  // 不用填充率，因為零件在盒子裡佔的是外框空間
+  if (!name) return aiEstimate || 2;
+  const n = name.toLowerCase();
+
+  const dimMatch = n.match(/(\d+)\s*x\s*(\d+)(?:\s*x\s*(\d+))?/);
+  if (!dimMatch) return aiEstimate || 2;
+
+  const d1 = parseInt(dimMatch[1]);
+  const d2 = parseInt(dimMatch[2]);
+  const d3 = dimMatch[3] ? parseInt(dimMatch[3]) : null;
+
+  const w = d1 * STUD_PITCH; // width mm
+  const l = d2 * STUD_PITCH; // length mm
+
+  let h; // height mm
+
+  if (n.includes('plate') || n.includes('tile') || n.includes('baseplate')) {
+    h = d3 ? d3 * PLATE_H : PLATE_H;
+  } else if (n.includes('brick')) {
+    h = d3 ? d3 * PLATE_H * 3 : BRICK_H;
+  } else if (n.includes('slope') || n.includes('wedge')) {
+    h = d3 ? d3 * PLATE_H : BRICK_H;
+  } else if (n.includes('panel') || n.includes('wall') || n.includes('fence')) {
+    h = d3 ? d3 * PLATE_H : BRICK_H;
+  } else if (n.includes('beam') || n.includes('liftarm')) {
+    h = STUD_PITCH;
+  } else if (n.includes('axle') || n.includes('pin') || n.includes('connector')) {
+    const length = Math.max(d1, d2) * STUD_PITCH;
+    const dia = STUD_PITCH;
+    return Math.max(0.3, Math.round(length * dia * dia / 1000 * 10) / 10);
+  } else if (n.includes('round') || n.includes('dish') || n.includes('dome') || n.includes('cylinder') || n.includes('cone')) {
+    const dia = Math.max(d1, d2) * STUD_PITCH;
+    h = d3 ? d3 * PLATE_H : (n.includes('plate')||n.includes('dish') ? PLATE_H : BRICK_H);
+    return Math.max(0.3, Math.round(dia * dia * h / 1000 * 10) / 10);
+  } else if (n.includes('door') || n.includes('window') || n.includes('windscreen')) {
+    h = d3 ? d3 * PLATE_H : BRICK_H * 2;
+  } else if (n.includes('hinge') || n.includes('clip') || n.includes('bar') || n.includes('hook')) {
+    return Math.max(0.3, (aiEstimate || 1));
+  } else {
+    h = d3 ? d3 * PLATE_H : BRICK_H;
+  }
+
+  // Bounding box volume (mm³ → ml)
+  const vol = w * l * h / 1000;
+  // Add 20% packing inefficiency (gaps between parts when stacked)
+  return Math.max(0.3, Math.round(vol * 1.2 * 10) / 10);
+}
+
 // 抽屜系統
 const SMALL_DRAWERS = 450;       // A區 360 + B區 90      // 1~396, 各有 a/b 兩格
 const SMALL_SLOT_ML = 102;       // 45×65×35mm per a/b slot      // 每格 150cc
@@ -685,7 +747,7 @@ async function handlePartIdBatch() {
       const designId = parsed.design_id || partId;
       const baseId = getBaseDesignId(designId) || designId || '';
       const thumbnailUrl = (rbResult?.imgUrl) || (baseId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${baseId}.png` : '');
-      const vol = parseInt(parsed.estimate_volume_ml) || 2;
+      const vol = calculateLegoVolume(parsed.name || '', parseInt(parsed.estimate_volume_ml) || 2);
       const categoryBag = isCategoryAlwaysBag(parsed.feature_tags);
       const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML;
       const allItems = await loadItems();
@@ -789,7 +851,8 @@ async function processResult(item) {
   const thumbnailUrl = designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '';
 
   // Determine slot type
-  const vol = parseInt(item.estimate_volume_ml) || 2;
+  const aiVol = parseInt(item.estimate_volume_ml) || 2;
+  const vol = calculateLegoVolume(item.name || item.name_cn || '', aiVol);
   const categoryBag = isCategoryAlwaysBag(item.feature_tags);
   const isOversize = categoryBag || item.is_oversize || vol > OVERSIZE_ML || (item.length_cm && item.length_cm > 7);
 
@@ -1487,7 +1550,7 @@ async function startBatch(files) {
       const parsed = safeParseJSON(textResp);
       const designId = parsed.design_id || '';
       const thumbnailUrl = (pendingPart?._rbImgUrl) || (designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '');
-      const vol = parseInt(parsed.estimate_volume_ml) || 2;
+      const vol = calculateLegoVolume(parsed.name || '', parseInt(parsed.estimate_volume_ml) || 2);
       const categoryBag = isCategoryAlwaysBag(parsed.feature_tags);
       const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML;
       const allItems = await loadItems();
@@ -1897,7 +1960,8 @@ async function importSet() {
 
         const baseId = getBaseDesignId(p.designId) || p.designId;
         const thumbnailUrl = p.imgUrl || (baseId ? 'https://cdn.rebrickable.com/media/parts/ldraw/7/' + baseId + '.png' : '');
-        const vol = parseInt(parsed.estimate_volume_ml) || 2;
+        const aiVol = parseInt(parsed.estimate_volume_ml) || 2;
+        const vol = calculateLegoVolume(p.name, aiVol);
         const tags = parsed.feature_tags || [];
         const categoryBag = isCategoryAlwaysBag(tags);
         const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML;
