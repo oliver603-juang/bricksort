@@ -123,6 +123,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     <label>Gemini API Key <span class="req">必填</span></label>
     <input type="password" id="inp-apikey" placeholder="AIzaSy..." autocomplete="off">
     <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;font-size:12px;color:var(--accent);text-decoration:none">🔑 前往 Google AI Studio 取得 API Key →</a>
+    <div style="margin-top:12px;padding:10px 14px;background:var(--green-bg);border:1px solid var(--green);border-radius:8px;font-size:12px;color:var(--green)">🔗 Rebrickable API 已預設啟用（零件編號查詢用）</div>
     <div style="margin-top:16px;padding:10px 14px;background:var(--green-bg);border:1px solid var(--green);border-radius:8px;font-size:12px;color:var(--green)">☁️ Firebase 多裝置同步已預設啟用<br><span style="color:var(--muted);font-size:11px">Project: storesmart-7ae65 · Collection: lego_parts</span></div>
     <button class="btn-primary" onclick="saveSetup()">開始使用</button>
   </div>
@@ -318,7 +319,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 // ══════════════════════════════════════════════
 const STORAGE_KEY = 'bricksort_cfg';
 const ITEMS_KEY = 'bricksort_items';
-const DEFAULT_FB = { fbProject:'storesmart-7ae65', fbApiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', fbCol:'lego_parts' };
+const DEFAULT_FB = { fbProject:'storesmart-7ae65', fbApiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', fbCol:'lego_parts', rbKey:'56ee6047eaeb92c40641ad70531deeed' };
 
 // LEGO 零件外型標準標籤（不含顏色，只描述形狀/類型）
 // BrickLink 官方分類作為特徵標籤（排除 Decorated/Promotional 變體）
@@ -474,8 +475,9 @@ function _init() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
     cfg = JSON.parse(saved);
-    if (!cfg.fbProject) { cfg = {...cfg, ...DEFAULT_FB}; localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg)); }
+    if (!cfg.fbProject || !cfg.rbKey) { cfg = {...cfg, ...DEFAULT_FB}; localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg)); }
     if (cfg.apiKey) { initFirebase(); showScreen('s-main'); refreshMain(); return; }
+  if (document.getElementById('inp-rbkey')) document.getElementById('inp-rbkey').value = cfg.rbKey || '';
   }
   showScreen('s-setup');
 }
@@ -488,7 +490,8 @@ function initFirebase() {
 function saveSetup() {
   const apiKey = document.getElementById('inp-apikey').value.trim();
   if (!apiKey) { alert('請輸入 Gemini API Key'); return; }
-  cfg = { apiKey, provider:'gemini', ...DEFAULT_FB };
+  const rbKey = document.getElementById('inp-rbkey')?.value?.trim() || '';
+  cfg = { apiKey, rbKey, provider:'gemini', ...DEFAULT_FB };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   initFirebase(); showScreen('s-main'); refreshMain();
 }
@@ -662,7 +665,13 @@ async function handlePartIdBatch() {
 
     try {
       const existingList = await buildExistingList();
-      const prompt = `你是LEGO零件專家。使用者輸入編號「${partId}」，可能是Design ID(4-5位數,如3022)或Element ID(6+位數,如302226)。若是Element ID請轉換為對應的Design ID。回應純JSON：{"design_id":"轉換後的Design ID","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
+      let rbResult = null;
+      if (cfg.rbKey) {
+        rbResult = await rebrickableLookup(partId);
+        if (rbResult) partId = rbResult.designId || partId;
+      }
+      const rbHint = rbResult ? '此零件已確認為「' + rbResult.name + '」Design ID=' + rbResult.designId + '。' : '';
+      const prompt = `你是LEGO零件專家。${rbHint}零件編號「${partId}」。回應純JSON：{"design_id":"${partId}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
       const textResp = await callGeminiAPI(prompt);
       const parsed = safeParseJSON(textResp);
       const designId = parsed.design_id || partId;
@@ -704,9 +713,23 @@ async function handlePartIdBatch() {
 async function handleSinglePartId(id) {
   currentImageData = null;
   showScreen('s-processing'); setProcessingMsg('查詢零件 ' + id + '...');
+
+  // Step 1: Rebrickable API lookup (precise, handles both Element ID and Design ID)
+  let rbResult = null;
+  if (cfg.rbKey) {
+    setProcessingMsg('Rebrickable 查詢 ' + id + '...');
+    rbResult = await rebrickableLookup(id);
+    if (rbResult) {
+      id = rbResult.designId || id; // Use correct Design ID
+      setProcessingMsg('找到 ' + rbResult.name + ' (' + id + ')，AI 分類中...');
+    } else {
+      setProcessingMsg('Rebrickable 查無此編號，AI 辨識中...');
+    }
+  }
   try {
     const existingList = await buildExistingList();
-    const prompt = `你是LEGO零件專家。使用者輸入編號「${id}」，可能是Design ID(4-5位數描述形狀,如3022)或Element ID(6+位數描述顏色+形狀,如302226)。若是Element ID請轉換為對應的Design ID填入design_id欄位。回應純JSON：{"design_id":"轉換後的Design ID","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
+    const rbHint = rbResult ? '此零件已確認為「' + rbResult.name + '」Design ID=' + rbResult.designId + '。' : '';
+    const prompt = `你是LEGO零件專家。${rbHint}零件編號「${id}」。回應純JSON：{"design_id":"${id}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
     const textResp = await callGeminiAPI(prompt);
     const item = safeParseJSON(textResp);
     await processResult(item);
@@ -1539,6 +1562,31 @@ function unlockArrangement() {
   localStorage.setItem('bricksort_locked', 'false');
   showToast('🔓 已解鎖');
   openDrawerMap();
+}
+
+// ══════════════════════════════════════════════
+// REBRICKABLE API LOOKUP
+// ══════════════════════════════════════════════
+async function rebrickableLookup(inputId) {
+  if (!cfg.rbKey) return null;
+  const isElementId = /^\d{6,}$/.test(inputId);
+  
+  try {
+    let data;
+    if (isElementId) {
+      // Element ID → get Design ID
+      const resp = await fetch('https://rebrickable.com/api/v3/lego/elements/' + inputId + '/?key=' + cfg.rbKey);
+      if (!resp.ok) return null;
+      data = await resp.json();
+      return { designId: data.design_id || data.part?.part_num || '', name: data.part?.name || '', elementId: inputId, partCatId: data.part?.part_cat_id || null };
+    } else {
+      // Design ID → get part info
+      const resp = await fetch('https://rebrickable.com/api/v3/lego/parts/' + inputId + '/?key=' + cfg.rbKey);
+      if (!resp.ok) return null;
+      data = await resp.json();
+      return { designId: data.part_num || inputId, name: data.name || '', elementId: '', partCatId: data.part_cat_id || null };
+    }
+  } catch(e) { console.warn('Rebrickable lookup failed:', e); return null; }
 }
 
 // START
