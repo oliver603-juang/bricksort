@@ -1108,8 +1108,35 @@ async function doSearch(value) {
   if (!value.trim()) return;
   const items = await loadItems(), q = value.toLowerCase();
   const results = items.filter(i => (i.name||'').toLowerCase().includes(q) || (i.nameCN||'').toLowerCase().includes(q) || (i.designId||'').toLowerCase().includes(q) || (i.slot||'').toLowerCase().includes(q) || (i.featureTags||[]).some(t=>t.toLowerCase().includes(q)));
-  document.getElementById('search-title').textContent = `搜尋「${value}」（${results.length}筆）`;
-  document.getElementById('search-results').innerHTML = results.length ? results.map(partRowHTML).join('') : '<div style="text-align:center;padding:48px;color:var(--muted)">找不到相關零件</div>';
+
+  // Check if searching for a specific slot (L1, B1, etc.)
+  const isSlotSearch = /^(L\d+|B\d+)$/i.test(value.trim());
+  let headerHtml = '';
+
+  if (isSlotSearch && results.length > 0) {
+    const slot = value.trim();
+    const isLarge = slot.startsWith('L');
+    const cap = isLarge ? LARGE_DRAWER_ML : 9999;
+    const usedVol = results.reduce((s,i) => s + (i.estimateVolumeMl||2) * (i.quantity||1), 0);
+
+    if (cap < 9999) {
+      const pct = Math.min(100, Math.round(usedVol / cap * 100));
+      const barColor = pct > 80 ? '#e24b4a' : pct > 50 ? '#F5A623' : '#4CAF50';
+      const isFull = results.some(i => i.isFull);
+      headerHtml = '<div style="padding:8px 12px;margin-bottom:8px">';
+      headerHtml += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+      headerHtml += '<span style="font-size:12px;color:var(--muted)">' + (isLarge?'大抽屜':'收納袋') + '</span>';
+      if (isFull) headerHtml += '<span style="font-size:10px;color:#e24b4a;font-weight:700">已滿</span>';
+      headerHtml += '</div>';
+      headerHtml += '<div style="display:flex;align-items:center;gap:8px">';
+      headerHtml += '<div style="flex:1;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+barColor+';border-radius:3px"></div></div>';
+      headerHtml += '<span style="font-size:10px;color:var(--muted)">'+usedVol+'ml / '+cap+'ml（'+pct+'%）</span>';
+      headerHtml += '</div></div>';
+    }
+  }
+
+  document.getElementById('search-title').textContent = '搜尋「'+value+'」（'+results.length+'筆）';
+  document.getElementById('search-results').innerHTML = headerHtml + (results.length ? results.map(partRowHTML).join('') : '<div style="text-align:center;padding:48px;color:var(--muted)">找不到相關零件</div>');
   showScreen('s-search');
 }
 
