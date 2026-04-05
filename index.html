@@ -162,7 +162,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
         <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px">
           <div style="font-size:12px;color:var(--muted);margin-bottom:6px">輸入 LEGO 零件編號（多個用空白、逗號分隔）</div>
           <div style="display:flex;gap:8px;align-items:center">
-            <input type="text" id="part-id-input" placeholder="如 3001 3023 54200" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:6px;font-size:14px;font-family:var(--mono);outline:none">
+            <input type="text" id="part-id-input" placeholder="如 3001 3023 54200" onkeydown="if(event.key==='Enter')handlePartIdBatch()" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:6px;font-size:14px;font-family:var(--mono);outline:none">
             <button onclick="handlePartIdBatch()" style="background:var(--accent);color:#0a0a0a;border:none;padding:10px 14px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">建檔</button>
           </div>
         </div>
