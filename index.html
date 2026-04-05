@@ -469,11 +469,11 @@ function calculateLegoVolume(name, aiEstimate) {
   } else if (n.includes('axle') || n.includes('pin') || n.includes('connector')) {
     const length = Math.max(d1, d2) * STUD_PITCH;
     const dia = STUD_PITCH;
-    return Math.max(0.3, Math.round(length * dia * dia / 1000 * 10) / 10);
+    return Math.max(0.3, Math.round(length * dia * dia / 1000 * 10) / 10); // 外框佔位
   } else if (n.includes('round') || n.includes('dish') || n.includes('dome') || n.includes('cylinder') || n.includes('cone')) {
     const dia = Math.max(d1, d2) * STUD_PITCH;
     h = d3 ? d3 * PLATE_H : (n.includes('plate')||n.includes('dish') ? PLATE_H : BRICK_H);
-    return Math.max(0.3, Math.round(dia * dia * h / 1000 * 10) / 10);
+    return Math.max(0.3, Math.round(dia * dia * h / 1000 * 10) / 10); // 外框佔位（方形邊界）
   } else if (n.includes('door') || n.includes('window') || n.includes('windscreen')) {
     h = d3 ? d3 * PLATE_H : BRICK_H * 2;
   } else if (n.includes('hinge') || n.includes('clip') || n.includes('bar') || n.includes('hook')) {
@@ -482,10 +482,10 @@ function calculateLegoVolume(name, aiEstimate) {
     h = d3 ? d3 * PLATE_H : BRICK_H;
   }
 
-  // Bounding box volume (mm³ → ml)
+  // 外框佔位體積 (mm³ → ml)
+  // 直接用外框體積 = 實際佔用空間（不用填充率，因為外框就是佔位）
   const vol = w * l * h / 1000;
-  // Add 20% packing inefficiency (gaps between parts when stacked)
-  return Math.max(0.3, Math.round(vol * 1.2 * 10) / 10);
+  return Math.max(0.3, Math.round(vol * 10) / 10);
 }
 
 
@@ -933,7 +933,9 @@ async function processResult(item) {
   document.getElementById('result-name').textContent = item.name_cn || item.name || '未知零件';
   document.getElementById('result-designid').textContent = designId ? 'Design ID: ' + designId : '';
   document.getElementById('result-desc').textContent = item.description || '';
-  document.getElementById('result-volume').textContent = `體積 ≈ ${vol}ml` + (item.length_cm ? ` · 長 ${item.length_cm}cm` : '');
+  const dims = calcPartDimensions(item.name || '');
+  const dimText = dims ? ` (${(dims[0]/10).toFixed(1)}×${(dims[1]/10).toFixed(1)}×${(dims[2]/10).toFixed(1)}cm)` : '';
+  document.getElementById('result-volume').textContent = `佔位體積 ≈ ${vol}ml${dimText}`;
 
   const tagsEl = document.getElementById('result-tags');
   tagsEl.innerHTML = (item.feature_tags||[]).map(t => `<span class="tag">${t}</span>`).join('');
@@ -1475,7 +1477,7 @@ async function openPartDetail(id) {
   const capColor = slotPct > 80 ? '#e24b4a' : slotPct > 50 ? '#F5A623' : '#4CAF50';
   document.getElementById('modal-rows').innerHTML = [
     ['收納位置', item.slot + (item.overflowBag ? ' + ' + item.overflowBag : '')], ['類型', item.slotType==='large'?'大抽屜':item.slotType==='bag'?'收納袋':'小抽屜'],
-    ['數量', '<input type="number" id="modal-qty" value="'+(item.quantity||1)+'" min="0" style="width:60px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:4px 8px;border-radius:4px;font-family:var(--mono);font-size:14px;text-align:center" onchange="updateQuantity(\''+item.id+'\',this.value)"> 件'], ['體積', vol+'ml × '+(item.quantity||1)+' = '+totalVol+'ml'],
+    ['數量', '<input type="number" id="modal-qty" value="'+(item.quantity||1)+'" min="0" style="width:60px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:4px 8px;border-radius:4px;font-family:var(--mono);font-size:14px;text-align:center" onchange="updateQuantity(\''+item.id+'\',this.value)"> 件'], ['佔位體積', (function(){ const d=calcPartDimensions(item.name||''); const ds=d?(' ('+((d[0]/10).toFixed(1))+'×'+((d[1]/10).toFixed(1))+'×'+((d[2]/10).toFixed(1))+'cm)'):''; return vol+'ml'+ds+' × '+(item.quantity||1)+' = '+totalVol+'ml'; })()],
     ['BrickLink 分類', item.bricklinkCategory || '-'],
     ['外型標籤', (item.featureTags||[]).join('、')], ['描述', item.description||'-'],
   ].map(([k,v])=>`<div class="modal-row"><span class="modal-key">${k}</span><span class="modal-val">${v||'-'}</span></div>`).join('');
