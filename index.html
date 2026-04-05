@@ -781,6 +781,10 @@ async function processResult(item) {
   if (!pendingPart) pendingPart = {};
   pendingPart._rbImgUrl = window._pendingRbImgUrl || '';
   window._pendingRbImgUrl = '';
+  // If no Rebrickable img yet and we have a designId, try to get one
+  if (!pendingPart._rbImgUrl && designId && cfg.rbKey) {
+    try { const rb = await rebrickableLookup(designId); if (rb?.imgUrl) pendingPart._rbImgUrl = rb.imgUrl; } catch(e) {}
+  }
   const thumbnailUrl = designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '';
 
   // Determine slot type
@@ -1042,7 +1046,7 @@ async function confirmPart() {
       featureTags: pendingPart.featureTags || [],
       bricklinkCategory: pendingPart.bricklinkCategory || '', estimateVolumeMl: pendingPart.estimateVolumeMl || 2,
       slot: pendingPart.slot, slotType: pendingPart.slotType || 'small',
-      thumbnailUrl: pendingPart.thumbnailUrl || '', imageData: pendingPart.imageData || '',
+      thumbnailUrl: pendingPart.thumbnailUrl || '', imageData: pendingPart.thumbnailUrl ? '' : (pendingPart.imageData || ''),  // Only store image if no URL
       isFull: false, quantity: 1, updatedAt: now,
     };
 
