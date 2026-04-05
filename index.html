@@ -1324,7 +1324,10 @@ async function openDrawerMap() {
     html += '</div>';
   }
 
-  html += '<div style="margin-top:12px;text-align:center"><button onclick="refreshAllThumbnails()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🖼 更新所有縮圖（Rebrickable）</button></div>';
+  html += '<div style="margin-top:12px;text-align:center;display:flex;gap:8px;justify-content:center">';
+  html += '<button onclick="refreshAllThumbnails()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🖼 更新縮圖</button>';
+  html += '<button onclick="runRepairBags()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🔧 修復收納袋</button>';
+  html += '</div>';
   html += '<div style="margin-top:20px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
   html += '<div style="font-size:13px;font-weight:700;margin-bottom:8px">手動指派到大抽屜</div>';
   html += '<div style="display:flex;gap:8px;align-items:center">';
@@ -2165,6 +2168,78 @@ async function unmergeSelected() {
   setProcessingMsg('重新編排中...');
   // Now reorder all
   await reorderAllSlots();
+}
+
+// Repair: ensure all full slots have overflow bags + detect over-capacity
+async function repairOverflowBags() {
+  const items = await loadItems();
+  let fixed = 0, autoMarked = 0;
+
+  // Step 1: Find max existing bag number
+  let maxBag = 0;
+  items.forEach(i => {
+    const ob = parseInt((i.overflowBag||'').replace('B','')) || 0;
+    const sb = (i.slotType==='bag') ? (parseInt((i.slot||'').replace('B','')) || 0) : 0;
+    if (ob > maxBag) maxBag = ob;
+    if (sb > maxBag) maxBag = sb;
+  });
+
+  // Step 2: Fix isFull items without overflowBag
+  // Group by slot so same-slot items share one bag
+  const slotGroups = {};
+  items.forEach(i => {
+    if ((i.slotType||'small') !== 'small') return;
+    if (!i.slot) return;
+    if (!slotGroups[i.slot]) slotGroups[i.slot] = [];
+    slotGroups[i.slot].push(i);
+  });
+
+  for (const [slot, slotItems] of Object.entries(slotGroups)) {
+    const hasFull = slotItems.some(i => i.isFull);
+    const hasNoBag = slotItems.some(i => i.isFull && !i.overflowBag);
+
+    // Case 1: marked full but no bag
+    if (hasFull && hasNoBag) {
+      maxBag++;
+      const bag = 'B' + maxBag;
+      for (const i of slotItems) {
+        if (i.isFull && !i.overflowBag) {
+          i.overflowBag = bag;
+          i.updatedAt = Date.now();
+          await updateItem(i);
+          fixed++;
+        }
+      }
+    }
+
+    // Case 2: over capacity but not marked full
+    const totalVol = slotItems.reduce((s,i) => s + (i.estimateVolumeMl||2)*(i.quantity||1), 0);
+    if (totalVol > SMALL_SLOT_ML && !hasFull) {
+      maxBag++;
+      const bag = 'B' + maxBag;
+      for (const i of slotItems) {
+        i.isFull = true;
+        i.overflowBag = bag;
+        i.updatedAt = Date.now();
+        await updateItem(i);
+        autoMarked++;
+      }
+    }
+  }
+
+  return { fixed, autoMarked };
+}
+
+async function runRepairBags() {
+  showScreen('s-processing'); setProcessingMsg('檢查收納袋...');
+  const result = await repairOverflowBags();
+  if (result.fixed === 0 && result.autoMarked === 0) {
+    showToast('所有已滿格子都有收納袋 ✓');
+  } else {
+    showToast('修復 ' + result.fixed + ' 個缺失收納袋，自動標滿 ' + result.autoMarked + ' 個超容量格子');
+  }
+  showScreen('s-main'); refreshMain();
+  setTimeout(() => openDrawerMap(), 500);
 }
 
 // START
