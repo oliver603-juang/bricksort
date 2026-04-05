@@ -577,7 +577,7 @@ async function handleCameraInput(event) {
   reader.onload = async(e) => {
     const resized = await resizeImage(e.target.result, 800);
     currentImageData = resized;
-    showScreen('s-processing'); setProcessingMsg('AI 辨識 LEGO 零件...');
+    showScreen('s-processing'); setProcessingMsg('AI 辨識零件...');
     try {
       const existingList = await buildExistingList();
       const prompt = `辨識圖中的積木零件（LEGO或相容品牌）。若能辨識LEGO等效編號則填入design_id，否則留空。若背景有方格紙（5mm格），請數格子估算零件實際尺寸。回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
@@ -625,6 +625,14 @@ async function processResult(item) {
   if (!match) {
     const baseDid = getBaseDesignId(item.design_id);
     if (baseDid) match = allItems.find(i => getBaseDesignId(i.designId) === baseDid);
+  }
+  if (!match) {
+    // Fallback: match by name similarity (handles CaDA/third-party without design_id)
+    const newName = (item.name_cn || item.name || '').toLowerCase();
+    if (newName.length >= 2) match = allItems.find(i => {
+      const oldName = (i.nameCN || i.name || '').toLowerCase();
+      return oldName.length >= 2 && (oldName.includes(newName) || newName.includes(oldName));
+    });
   }
 
   // Get thumbnail from Rebrickable/Bricklink
@@ -685,6 +693,35 @@ async function processResult(item) {
     banner.style.display = 'block';
     banner.innerHTML = `<div style="font-size:13px;font-weight:700;color:var(--green)">✓ 找到相同外型零件</div><div style="font-size:12px;color:var(--muted)">「${match.name||match.nameCN}」已在 ${match.slot}</div>`;
   } else { banner.style.display = 'none'; }
+
+  // Storage mode: show lookup result, not save form
+  if (currentMode === 'storage') {
+    if (match) {
+      // Found! Show where to put it
+      document.getElementById('result-slot').textContent = match.slot;
+      const typeLabel = match.slotType==='large'?'大抽屜':match.slotType==='bag'?'收納袋':'小抽屜分格';
+      document.getElementById('result-slot-type').textContent = typeLabel + '（已建檔，數量 ' + (match.quantity||1) + '）';
+      document.querySelector('#s-result .btn-primary').textContent = '✓ 數量 +1 並返回';
+      document.querySelector('#s-result .btn-primary').onclick = async () => { match.quantity = (match.quantity||1)+1; match.updatedAt = Date.now(); await updateItem(match); showToast(match.slot + ' 數量 +1'); showScreen('s-main'); refreshMain(); };
+      document.querySelector('#s-result .btn-ghost').textContent = '只查看，不更新數量';
+      document.querySelector('#s-result .btn-ghost').onclick = () => { showScreen('s-main'); };
+      document.getElementById('result-size-select').style.display = 'none';
+    } else {
+      // Not found: offer to catalog it
+      banner.style.display = 'block';
+      banner.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--orange)">⚠ 未找到已建檔的匹配零件</div><div style="font-size:12px;color:var(--muted)">這是新零件，按下方按鈕建檔收納</div>';
+      document.querySelector('#s-result .btn-primary').textContent = '📦 建檔收納此零件';
+      document.querySelector('#s-result .btn-primary').onclick = () => confirmPart();
+      document.querySelector('#s-result .btn-ghost').textContent = '取消';
+      document.querySelector('#s-result .btn-ghost').onclick = () => cancelResult();
+    }
+  } else {
+    // Catalog mode: normal save flow
+    document.querySelector('#s-result .btn-primary').textContent = '✓ 確認儲存';
+    document.querySelector('#s-result .btn-primary').onclick = () => confirmPart();
+    document.querySelector('#s-result .btn-ghost').textContent = '取消';
+    document.querySelector('#s-result .btn-ghost').onclick = () => cancelResult();
+  }
 
   showScreen('s-result');
 }
