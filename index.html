@@ -683,7 +683,7 @@ async function handlePartIdBatch() {
       const parsed = safeParseJSON(textResp);
       const designId = parsed.design_id || partId;
       const baseId = getBaseDesignId(designId) || designId || '';
-      const thumbnailUrl = baseId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${baseId}.png` : '';
+      const thumbnailUrl = (rbResult?.imgUrl) || (baseId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${baseId}.png` : '');
       const vol = parseInt(parsed.estimate_volume_ml) || 2;
       const categoryBag = isCategoryAlwaysBag(parsed.feature_tags);
       const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML;
@@ -727,7 +727,8 @@ async function handleSinglePartId(id) {
     setProcessingMsg('Rebrickable 查詢 ' + id + '...');
     rbResult = await rebrickableLookup(id);
     if (rbResult) {
-      id = rbResult.designId || id; // Use correct Design ID
+      id = rbResult.designId || id;
+      window._pendingRbImgUrl = rbResult.imgUrl || '';
       setProcessingMsg('找到 ' + rbResult.name + ' (' + id + ')，AI 分類中...');
     } else {
       setProcessingMsg('Rebrickable 查無此編號，AI 辨識中...');
@@ -777,6 +778,9 @@ async function processResult(item) {
 
   // Get thumbnail from Rebrickable/Bricklink
   const designId = item.design_id || '';
+  if (!pendingPart) pendingPart = {};
+  pendingPart._rbImgUrl = window._pendingRbImgUrl || '';
+  window._pendingRbImgUrl = '';
   const thumbnailUrl = designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '';
 
   // Determine slot type
@@ -1241,6 +1245,7 @@ async function openDrawerMap() {
     html += '</div>';
   }
 
+  html += '<div style="margin-top:12px;text-align:center"><button onclick="refreshAllThumbnails()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🖼 更新所有縮圖（Rebrickable）</button></div>';
   html += '<div style="margin-top:20px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
   html += '<div style="font-size:13px;font-weight:700;margin-bottom:8px">手動指派到大抽屜</div>';
   html += '<div style="display:flex;gap:8px;align-items:center">';
@@ -1378,7 +1383,7 @@ async function startBatch(files) {
       const textResp = await callGeminiAPI(prompt, base64);
       const parsed = safeParseJSON(textResp);
       const designId = parsed.design_id || '';
-      const thumbnailUrl = designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '';
+      const thumbnailUrl = (pendingPart?._rbImgUrl) || (designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '');
       const vol = parseInt(parsed.estimate_volume_ml) || 2;
       const categoryBag = isCategoryAlwaysBag(parsed.feature_tags);
       const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML;
@@ -1581,17 +1586,15 @@ async function rebrickableLookup(inputId) {
   try {
     let data;
     if (isElementId) {
-      // Element ID → get Design ID
       const resp = await fetch('https://rebrickable.com/api/v3/lego/elements/' + inputId + '/?key=' + cfg.rbKey);
       if (!resp.ok) return null;
       data = await resp.json();
-      return { designId: data.design_id || data.part?.part_num || '', name: data.part?.name || '', elementId: inputId, partCatId: data.part?.part_cat_id || null };
+      return { designId: data.design_id || data.part?.part_num || '', name: data.part?.name || '', elementId: inputId, partCatId: data.part?.part_cat_id || null, imgUrl: data.part?.part_img_url || '' };
     } else {
-      // Design ID → get part info
       const resp = await fetch('https://rebrickable.com/api/v3/lego/parts/' + inputId + '/?key=' + cfg.rbKey);
       if (!resp.ok) return null;
       data = await resp.json();
-      return { designId: data.part_num || inputId, name: data.name || '', elementId: '', partCatId: data.part_cat_id || null };
+      return { designId: data.part_num || inputId, name: data.name || '', elementId: '', partCatId: data.part_cat_id || null, imgUrl: data.part_img_url || '' };
     }
   } catch(e) { console.warn('Rebrickable lookup failed:', e); return null; }
 }
@@ -1641,6 +1644,7 @@ async function importSet() {
           name: r.part?.name || '',
           quantity: r.quantity || 1,
           catId: r.part?.part_cat_id || 0,
+          imgUrl: r.part?.part_img_url || '',
         };
       }
     });
@@ -1697,7 +1701,7 @@ async function importSet() {
         const parsed = safeParseJSON(textResp);
 
         const baseId = getBaseDesignId(p.designId) || p.designId;
-        const thumbnailUrl = baseId ? 'https://cdn.rebrickable.com/media/parts/ldraw/7/' + baseId + '.png' : '';
+        const thumbnailUrl = p.imgUrl || (baseId ? 'https://cdn.rebrickable.com/media/parts/ldraw/7/' + baseId + '.png' : '');
         const vol = parseInt(parsed.estimate_volume_ml) || 2;
         const tags = parsed.feature_tags || [];
         const categoryBag = isCategoryAlwaysBag(tags);
@@ -1738,6 +1742,32 @@ async function importSet() {
     showScreen('s-main');
     showToast('匯入失敗：' + err.message, 'error');
   }
+}
+
+// Refresh all thumbnails using Rebrickable API
+async function refreshAllThumbnails() {
+  if (!cfg.rbKey) { showToast('需要 Rebrickable API Key', 'error'); return; }
+  const items = await loadItems();
+  const needFix = items.filter(i => i.designId && (!i.thumbnailUrl || i.thumbnailUrl.includes('ldraw')));
+  if (!needFix.length) { showToast('所有縮圖已是最新'); return; }
+  if (!confirm('更新 ' + needFix.length + ' 個零件的縮圖？\n（使用 Rebrickable 高解析度圖片）')) return;
+
+  showScreen('s-processing'); let fixed = 0;
+  for (const item of needFix) {
+    setProcessingMsg('更新縮圖 ' + (fixed+1) + '/' + needFix.length + '...');
+    try {
+      const rb = await rebrickableLookup(item.designId);
+      if (rb?.imgUrl) {
+        item.thumbnailUrl = rb.imgUrl;
+        item.updatedAt = Date.now();
+        await updateItem(item);
+        fixed++;
+      }
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 200));
+  }
+  showToast('已更新 ' + fixed + ' 個縮圖');
+  showScreen('s-main'); refreshMain();
 }
 
 // START
