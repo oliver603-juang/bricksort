@@ -1661,6 +1661,9 @@ async function importSet() {
     allParts.forEach(r => {
       const baseId = getBaseDesignId(r.part?.part_num) || r.part?.part_num || '';
       if (!baseId) return;
+      // Skip stickers
+      const pName = (r.part?.name || '').toLowerCase();
+      if (pName.includes('sticker') || pName.includes('sheet of sticker') || (r.part?.part_cat_id === 160)) return;
       if (partMap[baseId]) { partMap[baseId].quantity += r.quantity; if (!partMap[baseId].imgUrl && r.part?.part_img_url) partMap[baseId].imgUrl = r.part.part_img_url; if (!partMap[baseId].fullId && r.part?.part_num) partMap[baseId].fullId = r.part.part_num; }
       else { partMap[baseId] = { designId: baseId, fullId: r.part?.part_num || '', name: r.part?.name || '', quantity: r.quantity || 1, catId: r.part?.part_cat_id || 0, imgUrl: r.part?.part_img_url || '' }; }
     });
