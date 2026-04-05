@@ -708,11 +708,11 @@ async function processResult(item) {
       // Found! Show where to put it
       document.getElementById('result-slot').textContent = match.slot;
       const typeLabel = match.slotType==='large'?'大抽屜':match.slotType==='bag'?'收納袋':'小抽屜分格';
-      document.getElementById('result-slot-type').textContent = typeLabel + '（已建檔，數量 ' + (match.quantity||1) + '）';
-      document.querySelector('#s-result .btn-primary').textContent = '✓ 數量 +1 並返回';
-      document.querySelector('#s-result .btn-primary').onclick = async () => { match.quantity = (match.quantity||1)+1; match.updatedAt = Date.now(); await updateItem(match); showToast(match.slot + ' 數量 +1'); showScreen('s-main'); refreshMain(); };
-      document.querySelector('#s-result .btn-ghost').textContent = '只查看，不更新數量';
-      document.querySelector('#s-result .btn-ghost').onclick = () => { showScreen('s-main'); };
+      document.getElementById('result-slot-type').textContent = typeLabel;
+      document.querySelector('#s-result .btn-primary').textContent = '← 返回';
+      document.querySelector('#s-result .btn-primary').onclick = () => { showScreen('s-main'); };
+      document.querySelector('#s-result .btn-ghost').textContent = '';
+      document.querySelector('#s-result .btn-ghost').style.display = 'none';
       document.getElementById('result-size-select').style.display = 'none';
     } else {
       // Not found: offer to catalog it
@@ -720,6 +720,7 @@ async function processResult(item) {
       banner.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--orange)">⚠ 未找到已建檔的匹配零件</div><div style="font-size:12px;color:var(--muted)">這是新零件，按下方按鈕建檔收納</div>';
       document.querySelector('#s-result .btn-primary').textContent = '📦 建檔收納此零件';
       document.querySelector('#s-result .btn-primary').onclick = () => confirmPart();
+      document.querySelector('#s-result .btn-ghost').style.display = '';
       document.querySelector('#s-result .btn-ghost').textContent = '取消';
       document.querySelector('#s-result .btn-ghost').onclick = () => cancelResult();
     }
@@ -727,6 +728,7 @@ async function processResult(item) {
     // Catalog mode: normal save flow
     document.querySelector('#s-result .btn-primary').textContent = '✓ 確認儲存';
     document.querySelector('#s-result .btn-primary').onclick = () => confirmPart();
+    document.querySelector('#s-result .btn-ghost').style.display = '';
     document.querySelector('#s-result .btn-ghost').textContent = '取消';
     document.querySelector('#s-result .btn-ghost').onclick = () => cancelResult();
   }
@@ -1060,7 +1062,7 @@ async function openPartDetail(id) {
   const vol = item.estimateVolumeMl||0;
   document.getElementById('modal-rows').innerHTML = [
     ['收納位置', item.slot], ['類型', item.slotType==='large'?'大抽屜':item.slotType==='bag'?'收納袋':'小抽屜'],
-    ['數量', (item.quantity||1)+'件'], ['體積', vol+'ml'],
+    ['數量', '<input type="number" id="modal-qty" value="'+(item.quantity||1)+'" min="0" style="width:60px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:4px 8px;border-radius:4px;font-family:var(--mono);font-size:14px;text-align:center" onchange="updateQuantity(\''+item.id+'\',this.value)"> 件'], ['體積', vol+'ml'],
     ['BrickLink 分類', item.bricklinkCategory || '-'],
     ['外型標籤', (item.featureTags||[]).join('、')], ['描述', item.description||'-'],
   ].map(([k,v])=>`<div class="modal-row"><span class="modal-key">${k}</span><span class="modal-val">${v||'-'}</span></div>`).join('');
@@ -1162,7 +1164,7 @@ async function startBatch(files) {
       else if (isOversize) slotInfo = assignBag(parsed.feature_tags || [], allItems);
       else slotInfo = assignSmallSlot(parsed.feature_tags || [], allItems);
       const now = Date.now();
-      const savedItem = { name: parsed.name||'', nameCN: parsed.name_cn||'', designId, description: parsed.description||'', featureTags: parsed.feature_tags||[], estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType||'small', thumbnailUrl, imageData: thumb||'', isFull: false, quantity: match ? (match.quantity||1)+1 : 1, id: match ? match.id : 'lego_'+now+'_'+Math.random().toString(36).slice(2,5), createdAt: match ? match.createdAt : now, updatedAt: now };
+      const savedItem = { name: parsed.name||'', nameCN: parsed.name_cn||'', designId, description: parsed.description||'', featureTags: parsed.feature_tags||[], estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType||'small', thumbnailUrl, imageData: thumb||'', isFull: false, quantity: 1, id: match ? match.id : 'lego_'+now+'_'+Math.random().toString(36).slice(2,5), createdAt: match ? match.createdAt : now, updatedAt: now };
       if (match) await updateItem(savedItem); else await saveItem(savedItem);
       item.result = savedItem; item.status = 'done'; done++;
       console.log('[BATCH] item ' + (done+errors) + ': ' + Math.round(performance.now()-_t0) + 'ms -> ' + slotInfo.slot);
@@ -1266,6 +1268,17 @@ async function handleCatalogCamera(event) {
     } catch(err) { showScreen('s-main'); showToast('辨識失敗：'+err.message,'error'); }
   };
   reader.readAsDataURL(file);
+}
+
+async function updateQuantity(id, val) {
+  const qty = Math.max(0, parseInt(val) || 0);
+  const items = await loadItems();
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.quantity = qty;
+  item.updatedAt = Date.now();
+  await updateItem(item);
+  showToast((item.nameCN||item.name) + ' 數量更新為 ' + qty);
 }
 
 // START
