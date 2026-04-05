@@ -959,7 +959,7 @@ async function openDrawerMap() {
   for (let d = 1; d <= Math.min(50, SMALL_DRAWERS); d++) {
     const ca = slotCounts[d+'a']||0, cb = slotCounts[d+'b']||0;
     const cls = (ca+cb)>0 ? 'has-items' : '';
-    html += `<div class="drawer-cell ${cls}" onclick="doSearch('${d}a')" title="${d}a:${ca}件 ${d}b:${cb}件"><div>${d}</div><div style="font-size:7px">${ca}|${cb}</div></div>`;
+    html += `<div class="drawer-cell ${cls}" onclick="searchDrawer(${d})" title="${d}a:${ca}件 ${d}b:${cb}件"><div>${d}</div><div style="font-size:7px">${ca}|${cb}</div></div>`;
   }
   html += '</div>';
   if (SMALL_DRAWERS > 50) html += `<div style="text-align:center;padding:12px;color:var(--dim);font-size:12px">顯示前 50 個抽屜 · 共 ${SMALL_DRAWERS} 個</div>`;
@@ -1180,6 +1180,26 @@ async function manualAssignLarge() {
   document.getElementById('manual-partid').value = '';
   showToast((item.nameCN||item.name) + '：' + oldSlot + ' → ' + drawer);
   openDrawerMap(); // refresh
+}
+
+async function searchDrawer(num) {
+  const items = await loadItems();
+  const results = items.filter(i => {
+    const s = (i.slot||'');
+    return s === num+'a' || s === num+'b';
+  });
+  document.getElementById('search-title').textContent = '抽屜 ' + num + '（' + results.length + '筆）';
+  let html = '';
+  for (const side of ['a','b']) {
+    const sideItems = results.filter(i => i.slot === num+side);
+    html += '<div style="margin-bottom:12px">';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="slot-badge slot-small" style="font-size:13px;padding:4px 10px">' + num + side + '</span><span style="font-size:12px;color:var(--muted)">' + sideItems.length + ' 件</span></div>';
+    if (sideItems.length) { html += sideItems.map(partRowHTML).join(''); }
+    else { html += '<div style="color:var(--dim);font-size:12px;padding:8px 12px">空</div>'; }
+    html += '</div>';
+  }
+  document.getElementById('search-results').innerHTML = html;
+  showScreen('s-search');
 }
 
 // START
