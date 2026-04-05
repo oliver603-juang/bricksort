@@ -1633,14 +1633,39 @@ async function importSet() {
     });
 
     const newParts = uniqueParts.filter(p => !existingIds.has(p.designId.toLowerCase()));
-    const skippedCount = uniqueParts.length - newParts.length;
+    const existingParts = uniqueParts.filter(p => existingIds.has(p.designId.toLowerCase()));
+    const skippedCount = existingParts.length;
+
+    // Step 4b: Update existing parts - accumulate quantity + auto-full
+    let autoFullCount = 0;
+    for (const p of existingParts) {
+      const match = existingItems.find(i => {
+        const base = getBaseDesignId(i.designId);
+        return (i.designId||'').toLowerCase() === p.designId.toLowerCase() || (base && base.toLowerCase() === p.designId.toLowerCase());
+      });
+      if (match) {
+        match.quantity = (match.quantity || 0) + p.quantity;
+        match.updatedAt = Date.now();
+        if (!match.setSource) match.setSource = setNum;
+        else if (!match.setSource.includes(setNum)) match.setSource += ',' + setNum;
+        // Auto-full: quantity × volume > slot capacity (102ml)
+        const totalVol = (match.estimateVolumeMl || 2) * match.quantity;
+        if (totalVol > SMALL_SLOT_ML && !match.isFull && (match.slotType||'small') === 'small') {
+          match.isFull = true;
+          const maxBag = Math.max(0, ...existingItems.map(i => parseInt((i.overflowBag||'').replace('B',''))||0), ...existingItems.filter(i=>i.slotType==='bag').map(i=>parseInt((i.slot||'').replace('B',''))||0));
+          match.overflowBag = 'B' + (maxBag + 1);
+          autoFullCount++;
+        }
+        await updateItem(match);
+      }
+    }
 
     // Step 5: Confirm with clear stats
-    const msg = '套組：' + (setInfo.name || setNum) + '\n\n' + '零件種類：' + uniqueParts.length + ' 種（共 ' + totalPieces + ' 件）\n' + '已建檔：' + skippedCount + ' 種 ✓（跳過）\n' + '需建檔：' + newParts.length + ' 種\n' + (newParts.length > 0 ? '預估時間：約 ' + Math.ceil(newParts.length * 4 / 60) + ' 分鐘\n' : '') + '\n開始建檔？';
+    const msg = '套組：' + (setInfo.name || setNum) + '\n\n' + '零件種類：' + uniqueParts.length + ' 種（共 ' + totalPieces + ' 件）\n' + '已建檔：' + skippedCount + ' 種（已累加數量）\n' + (autoFullCount ? '自動標滿：' + autoFullCount + ' 格（已建溢出袋）\n' : '') + '需建檔：' + newParts.length + ' 種\n' + (newParts.length > 0 ? '預估時間：約 ' + Math.ceil(newParts.length * 4 / 60) + ' 分鐘\n' : '') + '\n開始建檔？';
     if (!confirm(msg)) { showScreen('s-main'); return; }
 
     if (newParts.length === 0) {
-      showToast('所有 ' + uniqueParts.length + ' 種零件已建檔！');
+      showToast('已更新 ' + skippedCount + ' 種零件數量' + (autoFullCount ? '，' + autoFullCount + ' 格自動標滿' : '') + '！');
       showScreen('s-main'); refreshMain(); return;
     }
 
@@ -1678,7 +1703,15 @@ async function importSet() {
         else slotInfo = assignSmallSlot(tags, currentItems);
 
         const now = Date.now();
-        const savedItem = { id: 'lego_' + now + '_' + Math.random().toString(36).slice(2,5), name: p.name, nameCN: parsed.name_cn || '', designId: p.designId, fullPartNum: p.fullId || '', description: parsed.description || '', featureTags: tags, bricklinkCategory: parsed.bricklink_category || '', estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType || 'small', thumbnailUrl, imageData: '', isFull: false, quantity: p.quantity, createdAt: now, updatedAt: now, setSource: setNum };
+        const totalVol = vol * p.quantity;
+        const autoFull = totalVol > SMALL_SLOT_ML && (slotInfo.slotType||'small') === 'small';
+        let overflowBag = '';
+        if (autoFull) {
+          const curItems = await loadItems();
+          const maxBag = Math.max(0, ...curItems.map(i=>parseInt((i.overflowBag||'').replace('B',''))||0), ...curItems.filter(i=>i.slotType==='bag').map(i=>parseInt((i.slot||'').replace('B',''))||0));
+          overflowBag = 'B' + (maxBag + 1);
+        }
+        const savedItem = { id: 'lego_' + now + '_' + Math.random().toString(36).slice(2,5), name: p.name, nameCN: parsed.name_cn || '', designId: p.designId, fullPartNum: p.fullId || '', description: parsed.description || '', featureTags: tags, bricklinkCategory: parsed.bricklink_category || '', estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType || 'small', thumbnailUrl, imageData: '', isFull: autoFull, overflowBag, quantity: p.quantity, createdAt: now, updatedAt: now, setSource: setNum };
         await saveItem(savedItem);
         item.result = savedItem; item.status = 'done'; done++;
       } catch(err) { item.error = err.message; item.status = 'error'; errors++; }
