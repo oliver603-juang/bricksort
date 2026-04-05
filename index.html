@@ -152,15 +152,20 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     <input type="file" id="camera-input" accept="image/*" capture="environment" style="display:none" onchange="handleCameraInput(event)">
     
     <div id="mode-catalog-ui">
-      <div style="display:flex;gap:8px;margin-bottom:10px">
-        <button class="btn-sm" style="flex:1;padding:14px;font-size:14px" onclick="document.getElementById('lens-input').click()">📷 Lens 截圖建檔</button>
-        <button class="btn-sm" style="padding:14px;font-size:14px" onclick="document.getElementById('camera-catalog').click()">📸 拍照建檔</button>
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <button class="btn-sm" style="flex:1;padding:12px;font-size:13px" onclick="document.getElementById('lens-input').click()">📷 Lens截圖</button>
+        <button class="btn-sm" style="flex:1;padding:12px;font-size:13px" onclick="document.getElementById('camera-catalog').click()">📸 拍照</button>
+        <button class="btn-sm" style="flex:1;padding:12px;font-size:13px" onclick="document.getElementById('partid-panel').style.display=document.getElementById('partid-panel').style.display==='none'?'':'none'">🔢 零件編號</button>
         <input type="file" id="camera-catalog" accept="image/*" capture="environment" style="display:none" onchange="handleCatalogCamera(event)">
       </div>
-      <div style="display:flex;gap:8px;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:0 12px">
-        <span style="font-size:15px">🔍</span>
-        <input type="text" id="part-id-input" placeholder="輸入零件編號（如 41677）…" style="flex:1;background:none;border:none;color:var(--text);padding:12px 0;font-size:14px;outline:none">
-        <button onclick="handlePartIdInput()" style="background:var(--accent);color:#0a0a0a;border:none;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">查詢</button>
+      <div id="partid-panel" style="display:none">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">輸入 LEGO 零件編號（多個用空白、逗號分隔）</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="part-id-input" placeholder="如 3001 3023 54200" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:6px;font-size:14px;font-family:var(--mono);outline:none">
+            <button onclick="handlePartIdBatch()" style="background:var(--accent);color:#0a0a0a;border:none;padding:10px 14px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">建檔</button>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -623,19 +628,92 @@ async function handleCameraInput(event) {
 // ══════════════════════════════════════════════
 // PART ID INPUT MODE
 // ══════════════════════════════════════════════
-async function handlePartIdInput() {
-  const input = document.getElementById('part-id-input'), id = input.value.trim();
-  if (!id) { input.focus(); return; }
-  input.value = ''; currentImageData = null;
+async function handlePartIdBatch() {
+  const input = document.getElementById('part-id-input'), raw = input.value.trim();
+  if (!raw) { input.focus(); return; }
+  // Split by space, comma, 、, tab
+  const ids = raw.split(/[\s,，、	]+/).map(s => s.trim()).filter(s => s.length > 0);
+  input.value = '';
+  if (ids.length === 0) return;
+
+  // Single ID → direct process
+  if (ids.length === 1) {
+    await handleSinglePartId(ids[0]);
+    return;
+  }
+
+  // Multiple IDs → batch
+  currentImageData = null;
+  batchCancelled = false; batchRunning = true;
+  batchQueue = ids.map((id, i) => ({ id: i, file: { name: id }, status: 'pending', result: null, error: null, name: id, dataUrl: null }));
+  showScreen('s-batch');
+  document.getElementById('batch-back-btn').textContent = '✕ 取消';
+  document.getElementById('batch-done-panel').style.display = 'none';
+  renderBatchList(); updateBatchProgress(0, ids.length, null);
+
+  let done = 0, errors = 0;
+  for (let idx = 0; idx < ids.length; idx++) {
+    if (batchCancelled) break;
+    const partId = ids[idx];
+    const item = batchQueue[idx];
+    item.status = 'processing'; renderBatchList();
+    updateBatchProgress(done + errors, ids.length, item);
+
+    try {
+      const existingList = await buildExistingList();
+      const prompt = `你是LEGO零件專家。零件Design ID為「${partId}」。回應純JSON：{"design_id":"${partId}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
+      const textResp = await callGeminiAPI(prompt);
+      const parsed = safeParseJSON(textResp);
+      const designId = parsed.design_id || partId;
+      const baseId = getBaseDesignId(designId) || designId || '';
+      const thumbnailUrl = baseId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${baseId}.png` : '';
+      const vol = parseInt(parsed.estimate_volume_ml) || 2;
+      const categoryBag = isCategoryAlwaysBag(parsed.feature_tags);
+      const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML;
+      const allItems = await loadItems();
+
+      let match = null;
+      if (parsed.matched_existing_id && parsed.matched_existing_id !== 'null') match = allItems.find(i => i.id === parsed.matched_existing_id);
+      if (!match && designId) match = allItems.find(i => (i.designId||'').toLowerCase() === designId.toLowerCase());
+      if (!match && designId) { const baseDid = getBaseDesignId(designId); if (baseDid) match = allItems.find(i => getBaseDesignId(i.designId) === baseDid); }
+
+      let slotInfo;
+      if (match) slotInfo = { slot: match.slot, slotType: match.slotType || 'small' };
+      else if (isOversize) slotInfo = assignBag(parsed.feature_tags || [], allItems);
+      else slotInfo = assignSmallSlot(parsed.feature_tags || [], allItems);
+
+      const now = Date.now();
+      const savedItem = { name: parsed.name||'', nameCN: parsed.name_cn||'', designId, description: parsed.description||'', featureTags: parsed.feature_tags||[], bricklinkCategory: parsed.bricklink_category||'', estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType||'small', thumbnailUrl, imageData: '', isFull: false, quantity: 1, id: match ? match.id : 'lego_'+now+'_'+Math.random().toString(36).slice(2,5), createdAt: match ? match.createdAt : now, updatedAt: now };
+
+      if (match) await updateItem(savedItem); else await saveItem(savedItem);
+      item.result = savedItem; item.status = 'done'; done++;
+    } catch(err) { item.error = err.message; item.status = 'error'; errors++; }
+    renderBatchList(); updateBatchProgress(done + errors, ids.length, null);
+    if (!batchCancelled) await new Promise(r => setTimeout(r, 300));
+  }
+
+  batchRunning = false;
+  document.getElementById('batch-back-btn').textContent = '← 返回';
+  document.getElementById('batch-done-panel').style.display = 'block';
+  document.getElementById('batch-done-icon').textContent = errors === 0 ? '✓' : '⚠';
+  document.getElementById('batch-done-text').textContent = batchCancelled ? '已取消' : '完成！共建檔 ' + done + ' 件';
+  document.getElementById('batch-done-sub').textContent = errors > 0 ? '失敗 ' + errors + ' 件' : '所有零件已儲存';
+}
+
+async function handleSinglePartId(id) {
+  currentImageData = null;
   showScreen('s-processing'); setProcessingMsg('查詢零件 ' + id + '...');
   try {
     const existingList = await buildExistingList();
-    const prompt = `你是積木零件專家（含LEGO及相容品牌）。零件編號為「${id}」（可能是LEGO Design ID或第三方品牌編號）。若能對應LEGO編號則填入design_id，否則用輸入的編號。回應純JSON：{"design_id":"${id}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
+    const prompt = `你是LEGO零件專家。零件Design ID為「${id}」。回應純JSON：{"design_id":"${id}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
     const textResp = await callGeminiAPI(prompt);
     const item = safeParseJSON(textResp);
     await processResult(item);
   } catch(err) { showScreen('s-main'); showToast('查詢失敗：'+err.message,'error'); }
 }
+
+// Keep old function name as alias
+async function handlePartIdInput() { handlePartIdBatch(); }
 
 // ══════════════════════════════════════════════
 // PROCESS RESULT → ASSIGN SLOT
