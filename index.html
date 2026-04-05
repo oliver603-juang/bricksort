@@ -1607,19 +1607,17 @@ async function importSet() {
   if (!setNum) { document.getElementById('set-id-input')?.focus(); return; }
   if (!cfg.rbKey) { showToast('請先設定 Rebrickable API Key', 'error'); return; }
   document.getElementById('set-id-input').value = '';
-
-  // Add suffix if needed: 21274 → 21274-1
   if (!setNum.includes('-')) setNum += '-1';
 
-  showScreen('s-processing'); setProcessingMsg('從 Rebrickable 查詢套組 ' + setNum + '...');
+  showScreen('s-processing'); setProcessingMsg('查詢套組 ' + setNum + '...');
 
   try {
     // Step 1: Get set info
     const setResp = await fetch('https://rebrickable.com/api/v3/lego/sets/' + setNum + '/?key=' + cfg.rbKey);
-    if (!setResp.ok) { throw new Error('找不到套組 ' + setNum); }
+    if (!setResp.ok) throw new Error('找不到套組 ' + setNum);
     const setInfo = await setResp.json();
 
-    // Step 2: Get all parts (paginated)
+    // Step 2: Get ALL parts (paginated)
     let allParts = [], page = 1;
     while (true) {
       setProcessingMsg('讀取零件清單 (第' + page + '頁)...');
@@ -1635,67 +1633,51 @@ async function importSet() {
     allParts.forEach(r => {
       const baseId = getBaseDesignId(r.part?.part_num) || r.part?.part_num || '';
       if (!baseId) return;
-      if (partMap[baseId]) {
-        partMap[baseId].quantity += r.quantity;
-      } else {
-        partMap[baseId] = {
-          designId: baseId,
-          fullId: r.part?.part_num || '',
-          name: r.part?.name || '',
-          quantity: r.quantity || 1,
-          catId: r.part?.part_cat_id || 0,
-          imgUrl: r.part?.part_img_url || '',
-        };
-      }
+      if (partMap[baseId]) { partMap[baseId].quantity += r.quantity; }
+      else { partMap[baseId] = { designId: baseId, fullId: r.part?.part_num || '', name: r.part?.name || '', quantity: r.quantity || 1, catId: r.part?.part_cat_id || 0, imgUrl: r.part?.part_img_url || '' }; }
     });
-
     const uniqueParts = Object.values(partMap);
     const totalPieces = uniqueParts.reduce((s, p) => s + p.quantity, 0);
 
-    // Step 4: Confirm
-    if (!confirm('套組：' + (setInfo.name || setNum) + '\n\n' + uniqueParts.length + ' 種零件，共 ' + totalPieces + ' 件\n\n開始批次建檔？（需要數分鐘）')) {
-      showScreen('s-main'); return;
+    // Step 4: Check existing items ONCE (not per-part)
+    setProcessingMsg('比對已建檔零件...');
+    const existingItems = await loadItems();
+    const existingIds = new Set();
+    existingItems.forEach(i => {
+      if (i.designId) existingIds.add(i.designId.toLowerCase());
+      const base = getBaseDesignId(i.designId);
+      if (base) existingIds.add(base.toLowerCase());
+    });
+
+    const newParts = uniqueParts.filter(p => !existingIds.has(p.designId.toLowerCase()));
+    const skippedCount = uniqueParts.length - newParts.length;
+
+    // Step 5: Confirm with clear stats
+    const msg = '套組：' + (setInfo.name || setNum) + '\n\n' + '零件種類：' + uniqueParts.length + ' 種（共 ' + totalPieces + ' 件）\n' + '已建檔：' + skippedCount + ' 種 ✓（跳過）\n' + '需建檔：' + newParts.length + ' 種\n' + (newParts.length > 0 ? '預估時間：約 ' + Math.ceil(newParts.length * 4 / 60) + ' 分鐘\n' : '') + '\n開始建檔？';
+    if (!confirm(msg)) { showScreen('s-main'); return; }
+
+    if (newParts.length === 0) {
+      showToast('所有 ' + uniqueParts.length + ' 種零件已建檔！');
+      showScreen('s-main'); refreshMain(); return;
     }
 
-    // Step 5: Batch process with Gemini for classification
+    // Step 6: Batch process ONLY new parts
     batchCancelled = false; batchRunning = true;
-    batchQueue = uniqueParts.map((p, i) => ({
-      id: i, file: { name: p.designId + ' ' + p.name }, status: 'pending',
-      result: null, error: null, name: p.designId + ' ' + p.name, dataUrl: null
-    }));
+    batchQueue = newParts.map((p, i) => ({ id: i, file: { name: p.designId + ' ' + p.name }, status: 'pending', result: null, error: null, name: p.designId + ' ' + p.name, dataUrl: null }));
     showScreen('s-batch');
     document.getElementById('batch-back-btn').textContent = '✕ 取消';
     document.getElementById('batch-done-panel').style.display = 'none';
-    renderBatchList();
-    updateBatchProgress(0, uniqueParts.length, null);
+    renderBatchList(); updateBatchProgress(0, newParts.length, null);
 
-    let done = 0, errors = 0, skipped = 0;
-
-    // Process in batches of 10 via Gemini
-    for (let i = 0; i < uniqueParts.length; i++) {
+    let done = 0, errors = 0;
+    for (let i = 0; i < newParts.length; i++) {
       if (batchCancelled) break;
-      const p = uniqueParts[i];
+      const p = newParts[i];
       const item = batchQueue[i];
       item.status = 'processing'; renderBatchList();
-      updateBatchProgress(done + errors + skipped, uniqueParts.length, item);
+      updateBatchProgress(done + errors, newParts.length, item);
 
       try {
-        const existingItems = await loadItems();
-        // Check if already exists
-        let match = existingItems.find(ex => (ex.designId||'').toLowerCase() === p.designId.toLowerCase());
-        if (!match) {
-          const base = getBaseDesignId(p.designId);
-          if (base) match = existingItems.find(ex => getBaseDesignId(ex.designId) === base);
-        }
-
-        if (match) {
-          // Already cataloged, skip
-          item.result = match;
-          item.status = 'done'; skipped++; done++;
-          continue;
-        }
-
-        // Call Gemini for classification
         const prompt = 'LEGO零件「' + p.name + '」Design ID=' + p.designId + '。回應純JSON：{"bricklink_category":"BrickLink分類","feature_tags":["1~3個,限選:' + LEGO_TAGS + '"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"name_cn":"中文名","description":"15字描述"}';
         const textResp = await callGeminiAPI(prompt);
         const parsed = safeParseJSON(textResp);
@@ -1707,28 +1689,17 @@ async function importSet() {
         const categoryBag = isCategoryAlwaysBag(tags);
         const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML;
 
+        const currentItems = await loadItems();
         let slotInfo;
-        if (isOversize) slotInfo = assignBag(tags, existingItems);
-        else slotInfo = assignSmallSlot(tags, existingItems);
+        if (isOversize) slotInfo = assignBag(tags, currentItems);
+        else slotInfo = assignSmallSlot(tags, currentItems);
 
         const now = Date.now();
-        const savedItem = {
-          id: 'lego_' + now + '_' + Math.random().toString(36).slice(2,5),
-          name: p.name, nameCN: parsed.name_cn || '', designId: p.designId,
-          description: parsed.description || '', featureTags: tags,
-          bricklinkCategory: parsed.bricklink_category || '',
-          estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType || 'small',
-          thumbnailUrl, imageData: '', isFull: false,
-          quantity: p.quantity, createdAt: now, updatedAt: now,
-          setSource: setNum,
-        };
+        const savedItem = { id: 'lego_' + now + '_' + Math.random().toString(36).slice(2,5), name: p.name, nameCN: parsed.name_cn || '', designId: p.designId, description: parsed.description || '', featureTags: tags, bricklinkCategory: parsed.bricklink_category || '', estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType || 'small', thumbnailUrl, imageData: '', isFull: false, quantity: p.quantity, createdAt: now, updatedAt: now, setSource: setNum };
         await saveItem(savedItem);
         item.result = savedItem; item.status = 'done'; done++;
-      } catch(err) {
-        item.error = err.message; item.status = 'error'; errors++;
-      }
-      renderBatchList();
-      updateBatchProgress(done + errors, uniqueParts.length, null);
+      } catch(err) { item.error = err.message; item.status = 'error'; errors++; }
+      renderBatchList(); updateBatchProgress(done + errors, newParts.length, null);
       if (!batchCancelled) await new Promise(r => setTimeout(r, 200));
     }
 
@@ -1737,14 +1708,10 @@ async function importSet() {
     document.getElementById('batch-done-panel').style.display = 'block';
     document.getElementById('batch-done-icon').textContent = errors === 0 ? '✓' : '⚠';
     document.getElementById('batch-done-text').textContent = batchCancelled ? '已取消' : '套組匯入完成！';
-    document.getElementById('batch-done-sub').textContent = '建檔 ' + done + ' 種' + (skipped ? '（跳過已有 ' + skipped + ' 種）' : '') + (errors ? '，失敗 ' + errors + ' 種' : '');
-  } catch(err) {
-    showScreen('s-main');
-    showToast('匯入失敗：' + err.message, 'error');
-  }
+    document.getElementById('batch-done-sub').textContent = '新建 ' + done + ' 種，已有 ' + skippedCount + ' 種' + (errors ? '，失敗 ' + errors + ' 種' : '');
+  } catch(err) { showScreen('s-main'); showToast('匯入失敗：' + err.message, 'error'); }
 }
 
-// Refresh all thumbnails using Rebrickable API
 async function refreshAllThumbnails() {
   if (!cfg.rbKey) { showToast('需要 Rebrickable API Key', 'error'); return; }
   const items = await loadItems();
