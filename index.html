@@ -1184,14 +1184,16 @@ async function openDrawerMap() {
 
   // Render zone with snake numbering
   // Build thumbnail map: drawer number → [imgA, imgB]
+  // Build thumbnail arrays: drawer → { a: [img1,img2,...], b: [...] }
   const drawerThumbs = {};
   items.forEach(i => {
     if (!i.slot) return;
     const m = i.slot.match(/^(\d+)(a|b)$/);
     if (!m) return;
     const d = m[1], side = m[2];
-    if (!drawerThumbs[d]) drawerThumbs[d] = { a:'', b:'' };
-    if (!drawerThumbs[d][side]) drawerThumbs[d][side] = i.thumbnailUrl || i.imageData || '';
+    if (!drawerThumbs[d]) drawerThumbs[d] = { a:[], b:[] };
+    const img = i.thumbnailUrl || i.imageData || '';
+    if (img && drawerThumbs[d][side].length < 3) drawerThumbs[d][side].push(img);
   });
 
   function renderZone(zone, offset) {
@@ -1205,8 +1207,15 @@ async function openDrawerMap() {
         const cls = (ca+cb)>0 ? 'has-items' : '';
         const isFull = items.some(i => (i.slot===d+'a'||i.slot===d+'b') && i.isFull);
         const fullCls = isFull ? ' full' : '';
-        const t = drawerThumbs[d] || {a:'',b:''};
-        const thumbHtml = (t.a || t.b) ? '<div style="display:flex;gap:1px;justify-content:center;margin-top:2px">' + (t.a ? '<img src="'+t.a+'" style="width:18px;height:18px;object-fit:contain;border-radius:2px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">' : '<div style="width:18px"></div>') + (t.b ? '<img src="'+t.b+'" style="width:18px;height:18px;object-fit:contain;border-radius:2px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">' : '<div style="width:18px"></div>') + '</div>' : '';
+        const t = drawerThumbs[d] || {a:[],b:[]};
+        const allImgs = [...(t.a||[]), ...(t.b||[])];
+        let thumbHtml = '';
+        if (allImgs.length > 0) {
+          const sz = allImgs.length >= 3 ? 12 : allImgs.length === 2 ? 15 : 18;
+          thumbHtml = '<div style="display:flex;gap:1px;justify-content:center;margin-top:1px;flex-wrap:wrap">';
+          allImgs.slice(0,3).forEach(url => { thumbHtml += '<img src="'+url+'" style="width:'+sz+'px;height:'+sz+'px;object-fit:contain;border-radius:2px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">'; });
+          thumbHtml += '</div>';
+        }
         h += '<div class="drawer-cell'+fullCls+' '+cls+'" onclick="searchDrawer('+d+')" title="'+d+'a:'+ca+'件 '+d+'b:'+cb+'件"><div style="font-size:11px">'+d+'</div>'+thumbHtml+'<div style="font-size:7px">'+ca+'|'+cb+'</div></div>';
       }
     }
