@@ -179,11 +179,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     </div>
   </div>
 
-  <div class="search-bar">
-    <span style="color:var(--muted)">⌕</span>
-    <input type="text" id="search-input" placeholder="搜尋零件、抽屜號…" onkeydown="if(event.key==='Enter')doSearch(this.value)">
-    <button onclick="doSearch(document.getElementById('search-input').value)" style="background:var(--accent);color:#0a0a0a;border:none;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">搜尋</button>
-  </div>
+
 
   <div id="stats-row" class="stats-row"></div>
   <div id="sync-status" class="sync-bar"></div>
