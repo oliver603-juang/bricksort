@@ -1868,70 +1868,80 @@ async function mergeSlots() {
   const items = await loadItems();
   const smallItems = items.filter(i => (i.slotType||'small') === 'small' && i.slot);
 
-  // Build slot usage map
-  const slotItems = {};
+  // Build single-item slots grouped by category
+  const slotMap = {};
   smallItems.forEach(i => {
-    if (!slotItems[i.slot]) slotItems[i.slot] = [];
-    slotItems[i.slot].push(i);
+    if (!slotMap[i.slot]) slotMap[i.slot] = { items: [], vol: 0, group: getCategoryGroup(i.featureTags) || 'other' };
+    slotMap[i.slot].items.push(i);
+    slotMap[i.slot].vol += (i.estimateVolumeMl||2) * (i.quantity||1);
   });
 
-  // Only consider slots with exactly 1 item type (single designId)
-  const singleSlots = Object.entries(slotItems)
-    .filter(([s, arr]) => arr.length === 1)
-    .map(([s, arr]) => ({ slot: s, item: arr[0], vol: (arr[0].estimateVolumeMl || 2) * (arr[0].quantity || 1) }));
+  // Only consider slots with 1 item (candidates for merging)
+  const singles = Object.entries(slotMap)
+    .filter(([s, d]) => d.items.length === 1)
+    .map(([s, d]) => ({ slot: s, ...d }));
 
-  if (singleSlots.length < 2) { showToast('沒有可融合的格子', 'error'); return; }
+  if (singles.length < 2) { showToast('沒有可融合的格子', 'error'); return; }
 
-  // Find best merge pair (greedy)
-  let bestPair = null, bestScore = -1;
+  const MAX_VOL = SMALL_SLOT_ML * 0.85;
 
-  for (let i = 0; i < singleSlots.length; i++) {
-    for (let j = i + 1; j < singleSlots.length; j++) {
-      const a = singleSlots[i], b = singleSlots[j];
+  // Find best triple (or pair) with same category group
+  let bestCombo = null, bestScore = -1;
 
-      // Check: combined volume fits in one slot
-      const combinedVol = a.vol + b.vol;
-      if (combinedVol > SMALL_SLOT_ML * 0.8) continue; // 80% threshold, leave margin
+  for (let i = 0; i < singles.length; i++) {
+    for (let j = i + 1; j < singles.length; j++) {
+      if (singles[i].group !== singles[j].group) continue;
+      const vol2 = singles[i].vol + singles[j].vol;
+      if (vol2 > MAX_VOL) continue;
 
-      // Check: feature tags overlap
-      const tagsA = new Set((a.item.featureTags||[]).map(t=>t.toLowerCase()));
-      const tagsB = new Set((b.item.featureTags||[]).map(t=>t.toLowerCase()));
-      let overlap = 0;
-      tagsA.forEach(t => { if (tagsB.has(t)) overlap++; });
-      if (overlap === 0) continue; // No common tags, don't merge
+      // Try to find a 3rd slot in same group
+      for (let k = j + 1; k < singles.length; k++) {
+        if (singles[k].group !== singles[i].group) continue;
+        const vol3 = vol2 + singles[k].vol;
+        if (vol3 > MAX_VOL) continue;
 
-      // Score: more overlap + less volume = better
-      const score = (overlap * 100) / (combinedVol + 1);
-      if (score > bestScore) {
-        bestScore = score;
-        bestPair = { a, b, combinedVol, overlap };
+        const score = (3 * 100) / (vol3 + 1); // 3 items merged
+        if (score > bestScore) {
+          bestScore = score;
+          bestCombo = { target: singles[i], sources: [singles[j], singles[k]], combinedVol: vol3, count: 3 };
+        }
+      }
+
+      // Also consider just pair (if no triple found yet or pair is better)
+      if (!bestCombo) {
+        const score = (2 * 100) / (vol2 + 1);
+        if (score > bestScore) {
+          bestScore = score;
+          bestCombo = { target: singles[i], sources: [singles[j]], combinedVol: vol2, count: 2 };
+        }
       }
     }
   }
 
-  if (!bestPair) { showToast('目前沒有適合融合的格子組合（體積太大或分類不同）'); return; }
+  if (!bestCombo) { showToast('目前沒有適合融合的格子組合（體積太大或分類不同）'); return; }
 
-  const { a, b, combinedVol, overlap } = bestPair;
+  const { target, sources, combinedVol, count } = bestCombo;
   const pctUsed = Math.round(combinedVol / SMALL_SLOT_ML * 100);
+  const freedSlots = sources.map(s => s.slot).join('、');
 
-  const msg = '找到最佳融合組合：\n\n'
-    + '格子 ' + a.slot + '：' + (a.item.nameCN || a.item.name) + '\n'
-    + '  體積 ' + a.vol + 'ml，數量 ' + (a.item.quantity||1) + '\n\n'
-    + '格子 ' + b.slot + '：' + (b.item.nameCN || b.item.name) + '\n'
-    + '  體積 ' + b.vol + 'ml，數量 ' + (b.item.quantity||1) + '\n\n'
-    + '共同標籤：' + overlap + ' 個\n'
+  const msg = '找到最佳融合組合（' + count + ' 格 → 1 格）：\n\n'
+    + '▸ ' + target.slot + '：' + (target.items[0].nameCN || target.items[0].name) + '（' + target.vol + 'ml）\n'
+    + sources.map(s => '▸ ' + s.slot + '：' + (s.items[0].nameCN || s.items[0].name) + '（' + s.vol + 'ml）').join('\n') + '\n\n'
+    + '分類：' + target.group + '\n'
     + '合併後體積：' + combinedVol + 'ml（佔格子 ' + pctUsed + '%）\n\n'
-    + '→ 將 ' + b.slot + ' 的零件移到 ' + a.slot + '，釋放 ' + b.slot + '\n\n'
-    + '確定融合？';
+    + '→ 全部移到 ' + target.slot + '，釋放 ' + freedSlots + '\n\n確定融合？';
 
   if (!confirm(msg)) return;
 
-  // Execute merge: move b's item to a's slot
-  b.item.slot = a.slot;
-  b.item.updatedAt = Date.now();
-  await updateItem(b.item);
+  for (const src of sources) {
+    for (const item of src.items) {
+      item.slot = target.slot;
+      item.updatedAt = Date.now();
+      await updateItem(item);
+    }
+  }
 
-  showToast(b.slot + ' → ' + a.slot + ' 融合完成，釋放 ' + b.slot);
+  showToast(freedSlots + ' → ' + target.slot + ' 融合完成，釋放 ' + sources.length + ' 個格子');
   refreshMain();
 }
 
