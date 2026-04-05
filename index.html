@@ -548,12 +548,14 @@ function calcPartDimensions(name) {
 }
 
 // 檢查零件能否放進小抽屜格子（45×35mm 開口）
-function fitsInSlot(name) {
+function fitsInSlot(name, item) {
+  // Use stored dimensions if available
+  if (item && item.dimW > 0 && item.dimL > 0 && item.dimH > 0) {
+    const dims = [item.dimW*10, item.dimL*10, item.dimH*10].sort((a,b) => b-a); // cm→mm, sorted
+    return dims[1] <= SLOT_WIDTH && dims[2] <= SLOT_HEIGHT;
+  }
   const dims = calcPartDimensions(name);
-  if (!dims) return true; // 無法解析尺寸，假設可以放
-  // 最長邊沿深度方向堆疊（65mm），不受限
-  // 第2長邊 ≤ 45mm（格子寬度）
-  // 第3長邊 ≤ 35mm（格子高度）
+  if (!dims) return true;
   return dims[1] <= SLOT_WIDTH && dims[2] <= SLOT_HEIGHT;
 }
 
@@ -943,6 +945,9 @@ async function processResult(item) {
     dimStudsW: parseInt(item.dim_studs_w) || 0,
     dimStudsL: parseInt(item.dim_studs_l) || 0,
     dimPlatesH: parseInt(item.dim_plates_h) || 0,
+    dimW: parseFloat(((parseInt(item.dim_studs_w)||0)*0.8).toFixed(1)) || 0,
+    dimL: parseFloat(((parseInt(item.dim_studs_l)||0)*0.8).toFixed(1)) || 0,
+    dimH: parseFloat(((parseInt(item.dim_plates_h)||0)*0.32).toFixed(1)) || 0,
     featureTags: item.feature_tags || [],
     bricklinkCategory: item.bricklink_category || '',
     estimateVolumeMl: vol,
@@ -1162,6 +1167,7 @@ async function confirmPart() {
       featureTags: pendingPart.featureTags || [],
       bricklinkCategory: pendingPart.bricklinkCategory || '', estimateVolumeMl: pendingPart.estimateVolumeMl || 2,
       slot: pendingPart.slot, slotType: pendingPart.slotType || 'small',
+      dimW: pendingPart.dimW || 0, dimL: pendingPart.dimL || 0, dimH: pendingPart.dimH || 0,
       thumbnailUrl: pendingPart.thumbnailUrl || '', imageData: pendingPart.thumbnailUrl ? '' : (pendingPart.imageData || ''),  // Only store image if no URL
       isFull: false, quantity: 1, updatedAt: now,
     };
@@ -1503,14 +1509,11 @@ async function openPartDetail(id) {
   const capColor = slotPct > 80 ? '#e24b4a' : slotPct > 50 ? '#F5A623' : '#4CAF50';
   document.getElementById('modal-rows').innerHTML = [
     ['收納位置', item.slot + (item.overflowBag ? ' + ' + item.overflowBag : '')], ['類型', item.slotType==='large'?'大抽屜':item.slotType==='bag'?'收納袋':'小抽屜'],
-    ['數量', '<input type="number" id="modal-qty" value="'+(item.quantity||1)+'" min="0" style="width:60px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:4px 8px;border-radius:4px;font-family:var(--mono);font-size:14px;text-align:center" onchange="updateQuantity(\''+item.id+'\',this.value)"> 件'], ['佔位體積', (function(){
-      let ds='';
-      if (item.dimStudsW && item.dimStudsL && item.dimPlatesH) {
-        const w=(item.dimStudsW*0.8).toFixed(1), l=(item.dimStudsL*0.8).toFixed(1), h=(item.dimPlatesH*0.32).toFixed(1);
-        ds=' ('+w+'×'+l+'×'+h+'cm)';
-      } else { const d=calcPartDimensions(item.name||''); if(d) ds=' ('+((d[0]/10).toFixed(1))+'×'+((d[1]/10).toFixed(1))+'×'+((d[2]/10).toFixed(1))+'cm)'; }
-      return vol+'ml'+ds+' × '+(item.quantity||1)+' = '+totalVol+'ml';
-    })()],
+    ['數量', '<input type="number" id="modal-qty" value="'+(item.quantity||1)+'" min="0" style="width:60px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:4px 8px;border-radius:4px;font-family:var(--mono);font-size:14px;text-align:center" onchange="updateQuantity(\''+item.id+'\',this.value)"> 件'], ['佔位體積', '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">' +
+      '<input type="number" id="modal-dim-w" value="'+(item.dimW||0)+'" min="0" step="0.1" style="width:42px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:2px 4px;border-radius:3px;font-size:12px;text-align:center" onchange="updateDimensions(\''+item.id+'\')">×' +
+      '<input type="number" id="modal-dim-l" value="'+(item.dimL||0)+'" min="0" step="0.1" style="width:42px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:2px 4px;border-radius:3px;font-size:12px;text-align:center" onchange="updateDimensions(\''+item.id+'\')">×' +
+      '<input type="number" id="modal-dim-h" value="'+(item.dimH||0)+'" min="0" step="0.1" style="width:42px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:2px 4px;border-radius:3px;font-size:12px;text-align:center" onchange="updateDimensions(\''+item.id+'\')">cm' +
+      ' = <span id="modal-vol-val">'+vol+'</span>ml × '+(item.quantity||1)+'件 = '+totalVol+'ml</div>'],
     ['BrickLink 分類', item.bricklinkCategory || '-'],
     ['外型標籤', (item.featureTags||[]).join('、')], ['描述', item.description||'-'],
   ].map(([k,v])=>`<div class="modal-row"><span class="modal-key">${k}</span><span class="modal-val">${v||'-'}</span></div>`).join('');
@@ -2066,7 +2069,10 @@ async function importSet() {
           const maxBag = Math.max(0, ...curItems.map(i=>parseInt((i.overflowBag||'').replace('B',''))||0), ...curItems.filter(i=>i.slotType==='bag').map(i=>parseInt((i.slot||'').replace('B',''))||0));
           overflowBag = 'B' + (maxBag + 1);
         }
-        const savedItem = { id: 'lego_' + now + '_' + Math.random().toString(36).slice(2,5), name: p.name, nameCN: parsed.name_cn || '', designId: p.designId, fullPartNum: p.fullId || '', description: parsed.description || '', featureTags: tags, bricklinkCategory: parsed.bricklink_category || '', estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType || 'small', thumbnailUrl, imageData: '', isFull: autoFull, overflowBag, quantity: p.quantity, createdAt: now, updatedAt: now, setSource: setNum };
+        const savedItem = { id: 'lego_' + now + '_' + Math.random().toString(36).slice(2,5), name: p.name, nameCN: parsed.name_cn || '', designId: p.designId, fullPartNum: p.fullId || '', description: parsed.description || '',
+          dimW: parseFloat(((parseInt(parsed.dim_studs_w)||0)*0.8).toFixed(1)) || 0,
+          dimL: parseFloat(((parseInt(parsed.dim_studs_l)||0)*0.8).toFixed(1)) || 0,
+          dimH: parseFloat(((parseInt(parsed.dim_plates_h)||0)*0.32).toFixed(1)) || 0, featureTags: tags, bricklinkCategory: parsed.bricklink_category || '', estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType || 'small', thumbnailUrl, imageData: '', isFull: autoFull, overflowBag, quantity: p.quantity, createdAt: now, updatedAt: now, setSource: setNum };
         await saveItem(savedItem);
         item.result = savedItem; item.status = 'done'; done++;
       } catch(err) { item.error = err.message; item.status = 'error'; errors++; }
@@ -2406,8 +2412,13 @@ async function recalcVolumes() {
     if (idx % 20 === 0) setProcessingMsg('計算體積 ' + (idx+1) + '/' + smallItems.length + '...');
     const oldVol = item.estimateVolumeMl || 2;
     let newVol = oldVol;
-    if (item.dimStudsW && item.dimStudsL && item.dimPlatesH) {
-      newVol = Math.max(0.3, Math.round(item.dimStudsW * STUD_PITCH * item.dimStudsL * STUD_PITCH * item.dimPlatesH * PLATE_H / 1000 * 10) / 10);
+    if (item.dimW > 0 && item.dimL > 0 && item.dimH > 0) {
+      // Use stored cm dimensions
+      newVol = Math.max(0.3, Math.round(item.dimW * item.dimL * item.dimH * 10) / 10);
+    } else if (item.dimStudsW && item.dimStudsL && item.dimPlatesH) {
+      const w = item.dimStudsW * 0.8, l = item.dimStudsL * 0.8, h = item.dimPlatesH * 0.32;
+      item.dimW = parseFloat(w.toFixed(1)); item.dimL = parseFloat(l.toFixed(1)); item.dimH = parseFloat(h.toFixed(1));
+      newVol = Math.max(0.3, Math.round(w * l * h * 10) / 10);
     } else {
       newVol = calculateLegoVolume(item.name || '', oldVol);
     }
@@ -2424,6 +2435,25 @@ async function recalcVolumes() {
   const repair = await repairOverflowBags();
   if (repair.autoMarked > 0) showToast('另有 ' + repair.autoMarked + ' 格超容量，已自動標滿');
   setTimeout(() => openDrawerMap(), 500);
+}
+
+async function updateDimensions(id) {
+  const w = parseFloat(document.getElementById('modal-dim-w').value) || 0;
+  const l = parseFloat(document.getElementById('modal-dim-l').value) || 0;
+  const h = parseFloat(document.getElementById('modal-dim-h').value) || 0;
+  if (w <= 0 || l <= 0 || h <= 0) return;
+
+  const vol = Math.round(w * l * h * 10) / 10; // cm³ = ml
+  document.getElementById('modal-vol-val').textContent = vol;
+
+  const items = await loadItems();
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.dimW = w; item.dimL = l; item.dimH = h;
+  item.estimateVolumeMl = vol;
+  item.updatedAt = Date.now();
+  await updateItem(item);
+  showToast((item.nameCN||item.name) + ' 尺寸更新：' + w + '×' + l + '×' + h + 'cm = ' + vol + 'ml');
 }
 
 // START
