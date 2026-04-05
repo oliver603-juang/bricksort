@@ -1200,7 +1200,10 @@ async function openDrawerMap() {
       if (d > ZONE_C.drawers) continue;
       const c = slotCounts['L'+d]||0;
       const cls = c>0?'has-items':'';
-      html += '<div class="drawer-cell '+cls+'" style="aspect-ratio:2/1" onclick="doSearch(\'L'+d+'\')"><div>L'+d+'</div><div style="font-size:7px">'+c+'件</div></div>';
+      const lItem = items.find(i => i.slot === 'L'+d);
+      const lThumb = lItem ? (lItem.thumbnailUrl || lItem.imageData || '') : '';
+      const lThumbHtml = lThumb ? '<img src="'+lThumb+'" style="width:24px;height:24px;object-fit:contain;border-radius:2px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">' : '';
+      html += '<div class="drawer-cell '+cls+'" style="min-height:56px" onclick="doSearch(\'L'+d+'\')"><div style="font-size:11px">L'+d+'</div>'+lThumbHtml+'<div style="font-size:7px">'+c+'件</div></div>';
     }
   }
   html += '</div>';
@@ -1210,7 +1213,12 @@ async function openDrawerMap() {
   html += '<div style="font-size:13px;color:var(--muted);margin:16px 0 12px">收納袋 B1~Bn</div>';
   if (bags.length) {
     html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
-    bags.forEach(b => { html += `<div class="slot-badge slot-bag" style="cursor:pointer;padding:6px 14px" onclick="doSearch('${b}')">${b} (${slotCounts[b]})</div>`; });
+    bags.forEach(b => {
+      const bagItem = items.find(i => i.slot === b);
+      const bagThumb = bagItem ? (bagItem.thumbnailUrl || bagItem.imageData || '') : '';
+      const bagThumbHtml = bagThumb ? '<img src="'+bagThumb+'" style="width:20px;height:20px;object-fit:contain;border-radius:2px;vertical-align:middle;margin-right:4px;background:rgba(255,255,255,0.1)" onerror="this.style.display=\'none\'">' : '';
+      html += '<div class="slot-badge slot-bag" style="cursor:pointer;padding:6px 14px;display:inline-flex;align-items:center" onclick="doSearch(\''+b+'\')">' + bagThumbHtml + b + ' (' + slotCounts[b] + ')</div>';
+    });
     html += '</div>';
   } else {
     html += '<div style="color:var(--dim);font-size:12px;padding:8px 0">尚無收納袋（大型零件自動分配）</div>';
