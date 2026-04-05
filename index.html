@@ -964,28 +964,27 @@ function findNearestFreeSlot(nearDrawerNum, slotTags, slotFull) {
   return 'FULL';
 }
 
-function assignBag(tags, allItems) {
-  const bagItems = allItems.filter(i => i.slotType === 'bag');
-  if (bagItems.length === 0) return { slot: 'B1', slotType: 'bag' };
-
-  const newTags = new Set((tags||[]).map(t=>t.toLowerCase()));
-  const bagTags = {}, bagFull = {};
-  bagItems.forEach(i => {
-    const b = i.slot || 'B1';
-    if (!bagTags[b]) bagTags[b] = new Set();
-    (i.featureTags||[]).forEach(t => bagTags[b].add(t.toLowerCase()));
-    if (i.isFull) bagFull[b] = true;
-  });
-
-  // Find matching non-full bag
-  for (const [bag, btags] of Object.entries(bagTags)) {
-    if (bagFull[bag]) continue;
-    const overlap = [...newTags].filter(t => btags.has(t)).length;
-    if (overlap > 0) return { slot: bag, slotType: 'bag' };
+function assignBag(tags, allItems, setSource) {
+  // 規則 C+B：同套組大型零件共用袋 → 同分類共用袋 → 新袋
+  const bagItems = allItems.filter(i => i.slotType === 'bag' || (i.slot||'').startsWith('B'));
+  
+  // Step 1 (C): 找同套組的現有袋子
+  if (setSource) {
+    const sameSrcBag = bagItems.find(i => i.setSource && i.setSource.includes(setSource));
+    if (sameSrcBag) return { slot: sameSrcBag.slot, slotType: 'bag' };
   }
 
-  // Next new bag
-  const maxBag = Object.keys(bagTags).map(b => parseInt(b.replace('B',''))||0).reduce((a,b)=>Math.max(a,b),0);
+  // Step 2 (B): 找同分類的現有袋子
+  const newGroup = getCategoryGroup(tags);
+  if (newGroup) {
+    const sameGroupBag = bagItems.find(i => getCategoryGroup(i.featureTags) === newGroup);
+    if (sameGroupBag) return { slot: sameGroupBag.slot, slotType: 'bag' };
+  }
+
+  // Step 3: 新袋子
+  const existingNums = bagItems.map(i => parseInt((i.slot||'').replace('B','')) || 0);
+  const overflowNums = allItems.map(i => parseInt((i.overflowBag||'').replace('B','')) || 0);
+  const maxBag = Math.max(0, ...existingNums, ...overflowNums);
   return { slot: 'B' + (maxBag + 1), slotType: 'bag' };
 }
 
@@ -1713,7 +1712,7 @@ async function importSet() {
 
         const currentItems = await loadItems();
         let slotInfo;
-        if (isOversize) slotInfo = assignBag(tags, currentItems);
+        if (isOversize) slotInfo = assignBag(tags, currentItems, setNum);
         else slotInfo = assignSmallSlot(tags, currentItems);
 
         const now = Date.now();
