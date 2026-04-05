@@ -488,6 +488,51 @@ function calculateLegoVolume(name, aiEstimate) {
   return Math.max(0.3, Math.round(vol * 1.2 * 10) / 10);
 }
 
+
+// 計算零件的外框尺寸（mm），返回 [最長邊, 第2長邊, 最短邊] 排序
+const SLOT_WIDTH = 45;   // 格子寬度 mm
+const SLOT_HEIGHT = 35;  // 格子高度 mm（深度方向可堆疊，不受限）
+
+function calcPartDimensions(name) {
+  if (!name) return null;
+  const n = name.toLowerCase();
+  const m = n.match(/(\d+)\s*x\s*(\d+)(?:\s*x\s*(\d+))?/);
+  if (!m) return null;
+
+  const d1 = parseInt(m[1]), d2 = parseInt(m[2]), d3 = m[3] ? parseInt(m[3]) : null;
+  let w = d1 * STUD_PITCH; // mm
+  let l = d2 * STUD_PITCH; // mm
+  let h;
+
+  if (n.includes('plate') || n.includes('tile') || n.includes('baseplate')) {
+    h = d3 ? d3 * PLATE_H : PLATE_H;
+  } else if (n.includes('brick')) {
+    h = d3 ? d3 * PLATE_H * 3 : BRICK_H;
+  } else if (n.includes('slope') || n.includes('wedge')) {
+    h = d3 ? d3 * PLATE_H : BRICK_H;
+  } else if (n.includes('panel') || n.includes('wall') || n.includes('fence') || n.includes('door') || n.includes('window')) {
+    h = d3 ? d3 * PLATE_H : BRICK_H * 2;
+  } else if (n.includes('beam') || n.includes('liftarm')) {
+    h = STUD_PITCH;
+  } else {
+    h = d3 ? d3 * PLATE_H : BRICK_H;
+  }
+
+  // Sort dimensions: [longest, middle, shortest]
+  const dims = [w, l, h].sort((a, b) => b - a);
+  return dims;
+}
+
+// 檢查零件能否放進小抽屜格子（45×35mm 開口）
+function fitsInSlot(name) {
+  const dims = calcPartDimensions(name);
+  if (!dims) return true; // 無法解析尺寸，假設可以放
+  // 最長邊沿深度方向堆疊（65mm），不受限
+  // 第2長邊 ≤ 45mm（格子寬度）
+  // 第3長邊 ≤ 35mm（格子高度）
+  return dims[1] <= SLOT_WIDTH && dims[2] <= SLOT_HEIGHT;
+}
+
 // 抽屜系統
 const SMALL_DRAWERS = 450;       // A區 360 + B區 90      // 1~396, 各有 a/b 兩格
 const SMALL_SLOT_ML = 102;       // 45×65×35mm per a/b slot      // 每格 150cc
@@ -854,7 +899,8 @@ async function processResult(item) {
   const aiVol = parseInt(item.estimate_volume_ml) || 2;
   const vol = calculateLegoVolume(item.name || item.name_cn || '', aiVol);
   const categoryBag = isCategoryAlwaysBag(item.feature_tags);
-  const isOversize = categoryBag || item.is_oversize || vol > OVERSIZE_ML || (item.length_cm && item.length_cm > 7);
+  const dimTooLarge = !fitsInSlot(item.name || '');
+  const isOversize = categoryBag || item.is_oversize || vol > OVERSIZE_ML || (item.length_cm && item.length_cm > 7) || dimTooLarge;
 
   let slotInfo;
   if (match) {
@@ -1364,7 +1410,11 @@ async function openDrawerMap() {
     html += '<div style="margin-top:20px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
     html += '<div style="font-size:13px;font-weight:700">🔗 融合格子（' + fusedSlots.length + ' 格）</div>';
+    html += '<div style="display:flex;gap:6px">';
+    html += '<button onclick="document.querySelectorAll(\'.unmerge-cb\').forEach(c=>c.checked=true)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;border-radius:4px;font-size:10px;cursor:pointer">全選</button>';
+    html += '<button onclick="document.querySelectorAll(\'.unmerge-cb\').forEach(c=>c.checked=false)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;border-radius:4px;font-size:10px;cursor:pointer">全不選</button>';
     html += '<button onclick="unmergeSelected()" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:4px 12px;border-radius:4px;font-size:11px;cursor:pointer">拆分勾選 → 重新編排</button>';
+    html += '</div>';
     html += '</div>';
     fusedSlots.forEach(([slot, arr]) => {
       const vol = arr.reduce((s,i) => s + (i.estimateVolumeMl||2)*(i.quantity||1), 0);
@@ -1965,7 +2015,8 @@ async function importSet() {
         const vol = calculateLegoVolume(p.name, aiVol);
         const tags = parsed.feature_tags || [];
         const categoryBag = isCategoryAlwaysBag(tags);
-        const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML;
+        const dimTooLarge = !fitsInSlot(p.name || '');
+        const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML || dimTooLarge;
 
         const currentItems = await loadItems();
         let slotInfo;
@@ -2052,9 +2103,9 @@ async function mergeSlots() {
     slotMap[i.slot].vol += (i.estimateVolumeMl||2) * (i.quantity||1);
   });
 
-  // Only consider slots with 1 item (candidates for merging)
+  // Only consider slots with 1 item AND part fits in slot dimensions
   const singles = Object.entries(slotMap)
-    .filter(([s, d]) => d.items.length === 1)
+    .filter(([s, d]) => d.items.length === 1 && fitsInSlot(d.items[0].name || ''))
     .map(([s, d]) => ({ slot: s, ...d }));
 
   if (singles.length < 2) { showToast('沒有可融合的格子', 'error'); return; }
@@ -2140,6 +2191,9 @@ async function mergeAll() {
   // Group slots by category group
   const byGroup = {};
   Object.entries(slotData).forEach(([slot, data]) => {
+    // Skip slots with parts too large for merging (won't fit 45×35mm opening)
+    const hasLargePart = data.items.some(i => !fitsInSlot(i.name || ''));
+    if (hasLargePart) return;
     const g = data.group;
     if (!byGroup[g]) byGroup[g] = [];
     byGroup[g].push({ slot, ...data });
