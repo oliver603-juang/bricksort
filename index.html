@@ -1630,46 +1630,116 @@ async function updateQuantity(id, val) {
 // REORDER & LOCK
 // ══════════════════════════════════════════════
 async function reorderAllSlots() {
-  if (!confirm('重新編排所有零件的抽屜位置？\n（按 BrickLink 分類排序，相同分類放相鄰格子）\n\n⚠ 如已放入實體抽屜，需要重新擺放零件！')) return;
+  if (!confirm('重新編排所有零件的抽屜位置？\n（按分類排序，融合格子保持不變）\n\n⚠ 如已放入實體抽屜，需要重新擺放零件！')) return;
   
   showScreen('s-processing'); setProcessingMsg('重新編排中...');
   const items = await loadItems();
-  const smallItems = items.filter(i => (i.slotType||'small') === 'small');
-  
-  // Sort by category group, then by category tag, then by name
-  smallItems.sort((a, b) => {
-    // 1. 按分類群組排序
+  const smallItems = items.filter(i => (i.slotType||'small') === 'small' && i.slot);
+
+  // Identify merged groups (slots with 2+ items)
+  const slotCounts = {};
+  smallItems.forEach(i => { slotCounts[i.slot] = (slotCounts[i.slot]||0) + 1; });
+  const mergedSlots = new Set(Object.keys(slotCounts).filter(s => slotCounts[s] >= 2));
+
+  // Split into merged groups and singles
+  const mergedGroups = []; // each: { items: [...], vol, group }
+  const singles = [];      // individual items to reorder
+
+  // Collect merged groups
+  const processedSlots = new Set();
+  smallItems.forEach(i => {
+    if (mergedSlots.has(i.slot)) {
+      if (!processedSlots.has(i.slot)) {
+        processedSlots.add(i.slot);
+        const groupItems = smallItems.filter(x => x.slot === i.slot);
+        mergedGroups.push({
+          items: groupItems,
+          vol: groupItems.reduce((s,x) => s + (x.estimateVolumeMl||2)*(x.quantity||1), 0),
+          group: getCategoryGroup(groupItems[0]?.featureTags) || 'zzz',
+          tag: (groupItems[0]?.featureTags||[])[0] || 'zzz',
+          minVol: Math.min(...groupItems.map(x => x.estimateVolumeMl||2)),
+        });
+      }
+    } else {
+      singles.push(i);
+    }
+  });
+
+  // Sort singles by category → tag → volume → name
+  singles.sort((a, b) => {
     const gA = getCategoryGroup(a.featureTags) || 'zzz';
     const gB = getCategoryGroup(b.featureTags) || 'zzz';
     if (gA !== gB) return gA.localeCompare(gB);
-    // 2. 同群組內，按分類標籤排序
     const tA = (a.featureTags||[])[0] || 'zzz';
     const tB = (b.featureTags||[])[0] || 'zzz';
     if (tA !== tB) return tA.localeCompare(tB);
-    // 3. 同分類內，按體積由小到大
     const vA = a.estimateVolumeMl || 0;
     const vB = b.estimateVolumeMl || 0;
     if (vA !== vB) return vA - vB;
-    // 4. 體積相同，按名稱排序
     return (a.nameCN||a.name||'').localeCompare(b.nameCN||b.name||'');
   });
+
+  // Sort merged groups by same criteria (use first item's data)
+  mergedGroups.sort((a, b) => {
+    if (a.group !== b.group) return a.group.localeCompare(b.group);
+    if (a.tag !== b.tag) return a.tag.localeCompare(b.tag);
+    return a.minVol - b.minVol;
+  });
+
+  // Unified sort: merge singles and merged groups into one list, sort together
+  const units = [];
+  singles.forEach(item => {
+    units.push({
+      type: 'single', data: item,
+      sortGroup: getCategoryGroup(item.featureTags) || 'zzz',
+      sortTag: (item.featureTags||[])[0] || 'zzz',
+      sortVol: item.estimateVolumeMl || 0
+    });
+  });
+  mergedGroups.forEach(mg => {
+    units.push({
+      type: 'merged', data: mg,
+      sortGroup: mg.group,
+      sortTag: mg.tag,
+      sortVol: mg.minVol
+    });
+  });
+
+  // Sort all units by: group → tag → volume
+  units.sort((a, b) => {
+    if (a.sortGroup !== b.sortGroup) return a.sortGroup.localeCompare(b.sortGroup);
+    if (a.sortTag !== b.sortTag) return a.sortTag.localeCompare(b.sortTag);
+    return a.sortVol - b.sortVol;
+  });
+
+  // Assign slots sequentially
+  const allSlots = [];
+  for (let d = 1; d <= SMALL_DRAWERS; d++) { allSlots.push(d+'a'); allSlots.push(d+'b'); }
   
-  // Reassign slots sequentially
   let slotIdx = 0;
-  const slots = [];
-  for (let d = 1; d <= SMALL_DRAWERS; d++) { slots.push(d+'a'); slots.push(d+'b'); }
-  
-  for (const item of smallItems) {
-    if (slotIdx >= slots.length) break;
-    const newSlot = slots[slotIdx++];
-    if (item.slot !== newSlot) {
-      item.slot = newSlot;
-      item.updatedAt = Date.now();
-      await updateItem(item);
+  for (const unit of units) {
+    if (slotIdx >= allSlots.length) break;
+    const newSlot = allSlots[slotIdx++];
+
+    if (unit.type === 'single') {
+      if (unit.data.slot !== newSlot) {
+        unit.data.slot = newSlot;
+        unit.data.updatedAt = Date.now();
+        await updateItem(unit.data);
+      }
+    } else {
+      // Merged group: all items get same slot
+      for (const item of unit.data.items) {
+        if (item.slot !== newSlot) {
+          item.slot = newSlot;
+          item.updatedAt = Date.now();
+          await updateItem(item);
+        }
+      }
     }
   }
-  
-  showToast('已重新編排 ' + smallItems.length + ' 件零件');
+
+  showToast('已重新編排（' + singles.length + ' 個獨立 + ' + mergedGroups.length + ' 個融合格子）');
   showScreen('s-main'); refreshMain();
   setTimeout(() => openDrawerMap(), 500);
 }
