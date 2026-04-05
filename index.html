@@ -883,63 +883,42 @@ async function processResult(item) {
 // SLOT ASSIGNMENT
 // ══════════════════════════════════════════════
 function assignSmallSlot(tags, allItems) {
-  const smallItems = allItems.filter(i => (i.slotType||'small') === 'small');
-  if (smallItems.length === 0) return { slot: '1a', slotType: 'small' };
+  // 規則：每個格子只放一種零件（一個 designId）
+  // 同分類的不同零件放在相鄰格子
 
-  // Step 1: 用 BrickLink 分類群組匹配（Tier 系統）
-  const newGroup = getCategoryGroup(tags);
-  const slotGroups = {};  // slot → Set of groups
-  const slotTags = {};    // slot → Set of tags
-  const slotFull = {};
-
-  smallItems.forEach(i => {
-    const s = i.slot || '1a';
-    if (!slotTags[s]) { slotTags[s] = new Set(); slotGroups[s] = new Set(); }
-    (i.featureTags||[]).forEach(t => slotTags[s].add(t.toLowerCase()));
-    const g = getCategoryGroup(i.featureTags);
-    if (g) slotGroups[s].add(g);
-    if (i.isFull) slotFull[s] = true;
+  // Build slot map: which designId is in each slot
+  const slotDesignId = {};   // slot → designId
+  const slotFull = {};       // slot → isFull
+  const slotGroups = {};     // slot → Set of category groups
+  allItems.forEach(item => {
+    if (!item.slot || item.slotType !== 'small') return;
+    slotDesignId[item.slot] = item.designId || '';
+    if (item.isFull) slotFull[item.slot] = true;
+    const g = getCategoryGroup(item.featureTags);
+    if (g) { if (!slotGroups[item.slot]) slotGroups[item.slot] = new Set(); slotGroups[item.slot].add(g); }
   });
 
-  // Step 2: 優先找相同分組的格子（Tier 3 共用格子的關鍵）
+  const newGroup = getCategoryGroup(tags);
+
+  // Step 1: 找同分組已有的最大抽屜號，從附近找空格（保持相鄰）
+  let nearDrawer = 0;
   if (newGroup) {
-    for (const [slot, groups] of Object.entries(slotGroups)) {
-      if (slotFull[slot]) continue;
-      if (groups.has(newGroup)) return { slot, slotType: 'small' };
-    }
-  }
-
-  // Step 3: 找相似標籤的相鄰格
-  const newTags = new Set((tags||[]).map(t=>t.toLowerCase()));
-  let bestSlot = null, bestOverlap = 0;
-  for (const [slot, stags] of Object.entries(slotTags)) {
-    if (slotFull[slot]) continue;
-    const overlap = [...newTags].filter(t => stags.has(t)).length;
-    if (overlap > bestOverlap) { bestOverlap = overlap; bestSlot = slot; }
-  }
-
-  if (bestSlot && bestOverlap > 0) {
-    const adjSlot = getAdjacentSlot(bestSlot, slotTags, slotFull);
-    return { slot: adjSlot, slotType: 'small' };
-  }
-
-  // Step 4: 無匹配 → 找離同分組最近的空格（而非全局下一個空格）
-  // 先找同分組已有的最大抽屜號，從那裡附近開始找空格
-  if (newGroup) {
-    let maxGroupDrawer = 0;
     for (const [slot, groups] of Object.entries(slotGroups)) {
       if (groups.has(newGroup)) {
         const dNum = parseInt(slot.match(/^(\d+)/)?.[1] || '0');
-        if (dNum > maxGroupDrawer) maxGroupDrawer = dNum;
+        if (dNum > nearDrawer) nearDrawer = dNum;
       }
-    }
-    if (maxGroupDrawer > 0) {
-      return { slot: findNearestFreeSlot(maxGroupDrawer, slotTags, slotFull), slotType: 'small' };
     }
   }
 
-  // Step 5: 完全無匹配 → 全局下一個空格
-  return { slot: getNextFreeSlot(slotTags, slotFull), slotType: 'small' };
+  // Step 2: 從 nearDrawer 附近找空格（蛇形搜尋）
+  if (nearDrawer > 0) {
+    const slot = findNearestFreeSlot(nearDrawer, slotDesignId, slotFull);
+    if (slot !== 'FULL') return { slot, slotType: 'small' };
+  }
+
+  // Step 3: 全局找空格
+  return { slot: getNextFreeSlot(slotDesignId, slotFull), slotType: 'small' };
 }
 
 function getAdjacentSlot(slot, slotTags, slotFull) {
