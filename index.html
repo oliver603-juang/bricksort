@@ -1286,6 +1286,44 @@ async function openDrawerMap() {
     html += '</div>';
   }
 
+  // Merged slots list (slots with 2+ item types)
+  const mergedSlots = {};
+  items.forEach(i => {
+    if ((i.slotType||'small') !== 'small' || !i.slot) return;
+    if (!mergedSlots[i.slot]) mergedSlots[i.slot] = [];
+    mergedSlots[i.slot].push(i);
+  });
+  const fusedSlots = Object.entries(mergedSlots).filter(([s,arr]) => arr.length >= 2).sort((a,b) => {
+    const na = parseInt(a[0]) || 999; const nb = parseInt(b[0]) || 999; return na - nb;
+  });
+
+  if (fusedSlots.length > 0) {
+    html += '<div style="margin-top:20px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
+    html += '<div style="font-size:13px;font-weight:700">🔗 融合格子（' + fusedSlots.length + ' 格）</div>';
+    html += '<button onclick="unmergeSelected()" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:4px 12px;border-radius:4px;font-size:11px;cursor:pointer">拆分勾選 → 重新編排</button>';
+    html += '</div>';
+    fusedSlots.forEach(([slot, arr]) => {
+      const vol = arr.reduce((s,i) => s + (i.estimateVolumeMl||2)*(i.quantity||1), 0);
+      const pct = Math.min(100, Math.round(vol / SMALL_SLOT_ML * 100));
+      const barColor = pct > 80 ? '#e24b4a' : pct > 50 ? '#F5A623' : '#4CAF50';
+      const thumbs = arr.slice(0,3).map(i => i.thumbnailUrl || i.imageData || '').filter(Boolean);
+      const thumbsHtml = thumbs.map(u => '<img src="'+u+'" style="width:22px;height:22px;object-fit:contain;border-radius:3px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">').join('');
+
+      html += '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:4px;background:var(--surface);border-radius:6px;cursor:pointer">';
+      html += '<input type="checkbox" class="unmerge-cb" value="'+slot+'" style="accent-color:var(--accent)">';
+      html += '<span class="slot-badge slot-small" style="font-size:11px;padding:2px 8px;min-width:32px;text-align:center">'+slot+'</span>';
+      html += '<div style="display:flex;gap:2px">'+thumbsHtml+'</div>';
+      html += '<div style="flex:1;display:flex;flex-direction:column;gap:2px">';
+      html += '<div style="font-size:10px;color:var(--muted)">'+arr.map(i=>(i.nameCN||i.name||'').substring(0,12)).join(' · ')+'</div>';
+      html += '<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+barColor+';border-radius:2px"></div></div><span style="font-size:9px;color:var(--muted)">'+pct+'%</span></div>';
+      html += '</div>';
+      html += '<span style="font-size:10px;color:var(--dim)">'+arr.length+'種</span>';
+      html += '</label>';
+    });
+    html += '</div>';
+  }
+
   html += '<div style="margin-top:12px;text-align:center"><button onclick="refreshAllThumbnails()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🖼 更新所有縮圖（Rebrickable）</button></div>';
   html += '<div style="margin-top:20px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
   html += '<div style="font-size:13px;font-weight:700;margin-bottom:8px">手動指派到大抽屜</div>';
@@ -2029,6 +2067,34 @@ async function mergeConfirm() {
   } else {
     await mergeSlots();
   }
+}
+
+async function unmergeSelected() {
+  const checkboxes = document.querySelectorAll('.unmerge-cb:checked');
+  if (checkboxes.length === 0) { showToast('請先勾選要拆分的融合格子', 'error'); return; }
+
+  const slots = [...checkboxes].map(cb => cb.value);
+  if (!confirm('拆分 ' + slots.length + ' 個融合格子？\n（' + slots.join(', ') + '）\n\n拆分後每種零件恢復獨立格子，然後自動重新編排。')) return;
+
+  showScreen('s-processing'); setProcessingMsg('拆分融合格子...');
+  const items = await loadItems();
+
+  // For each selected slot, give each item its own temporary slot
+  let tempSlotNum = SMALL_DRAWERS + 100; // temp slots beyond real range
+  for (const slot of slots) {
+    const slotItems = items.filter(i => i.slot === slot);
+    if (slotItems.length <= 1) continue;
+    // Keep first item in original slot, move others to temp
+    for (let k = 1; k < slotItems.length; k++) {
+      slotItems[k].slot = (++tempSlotNum) + 'a';
+      slotItems[k].updatedAt = Date.now();
+      await updateItem(slotItems[k]);
+    }
+  }
+
+  setProcessingMsg('重新編排中...');
+  // Now reorder all
+  await reorderAllSlots();
 }
 
 // START
