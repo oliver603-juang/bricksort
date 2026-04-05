@@ -1490,12 +1490,19 @@ async function reorderAllSlots() {
   
   // Sort by category group, then by category tag, then by name
   smallItems.sort((a, b) => {
+    // 1. 按分類群組排序
     const gA = getCategoryGroup(a.featureTags) || 'zzz';
     const gB = getCategoryGroup(b.featureTags) || 'zzz';
     if (gA !== gB) return gA.localeCompare(gB);
+    // 2. 同群組內，按分類標籤排序
     const tA = (a.featureTags||[])[0] || 'zzz';
     const tB = (b.featureTags||[])[0] || 'zzz';
     if (tA !== tB) return tA.localeCompare(tB);
+    // 3. 同分類內，按體積由小到大
+    const vA = a.estimateVolumeMl || 0;
+    const vB = b.estimateVolumeMl || 0;
+    if (vA !== vB) return vA - vB;
+    // 4. 體積相同，按名稱排序
     return (a.nameCN||a.name||'').localeCompare(b.nameCN||b.name||'');
   });
   
