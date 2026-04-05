@@ -285,7 +285,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   <div id="modal-rows"></div>
   <div style="display:flex;gap:8px;margin-top:16px">
     <button class="btn-sm" onclick="closeModalPanel()">關閉</button>
-    <button class="btn-sm" id="modal-full-btn" onclick="toggleFull()">標記已滿</button>
+    <div id="modal-capacity" style="padding:0 20px 12px"></div>
+  <button class="btn-sm" id="modal-full-btn" onclick="toggleFull()">標記已滿</button>
     <button class="btn-danger" id="modal-delete-btn">刪除</button>
   </div>
 </div>
@@ -1277,14 +1278,25 @@ async function openPartDetail(id) {
   document.getElementById('modal-name').textContent = item.nameCN || item.name || '';
   document.getElementById('modal-designid').textContent = item.designId ? 'Design ID: '+item.designId : '';
   const vol = item.estimateVolumeMl||0;
+  const totalVol = vol * (item.quantity||1);
+  const slotCap = (item.slotType||'small')==='small' ? SMALL_SLOT_ML : (item.slotType==='large' ? LARGE_DRAWER_ML : 9999);
+  const slotPct = Math.min(100, Math.round(totalVol / slotCap * 100));
+  const capColor = slotPct > 80 ? '#e24b4a' : slotPct > 50 ? '#F5A623' : '#4CAF50';
   document.getElementById('modal-rows').innerHTML = [
     ['收納位置', item.slot + (item.overflowBag ? ' + ' + item.overflowBag : '')], ['類型', item.slotType==='large'?'大抽屜':item.slotType==='bag'?'收納袋':'小抽屜'],
-    ['數量', '<input type="number" id="modal-qty" value="'+(item.quantity||1)+'" min="0" style="width:60px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:4px 8px;border-radius:4px;font-family:var(--mono);font-size:14px;text-align:center" onchange="updateQuantity(\''+item.id+'\',this.value)"> 件'], ['體積', vol+'ml'],
+    ['數量', '<input type="number" id="modal-qty" value="'+(item.quantity||1)+'" min="0" style="width:60px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:4px 8px;border-radius:4px;font-family:var(--mono);font-size:14px;text-align:center" onchange="updateQuantity(\''+item.id+'\',this.value)"> 件'], ['體積', vol+'ml × '+(item.quantity||1)+' = '+totalVol+'ml'],
     ['BrickLink 分類', item.bricklinkCategory || '-'],
     ['外型標籤', (item.featureTags||[]).join('、')], ['描述', item.description||'-'],
   ].map(([k,v])=>`<div class="modal-row"><span class="modal-key">${k}</span><span class="modal-val">${v||'-'}</span></div>`).join('');
   document.getElementById('modal-delete-btn').onclick = () => confirmDeletePart(item.id, item.nameCN||item.name);
-  document.getElementById('modal-full-btn').textContent = item.isFull ? '取消已滿' : '標記已滿';
+  // Capacity bar in modal
+    const capBar = document.getElementById('modal-capacity');
+    if (capBar && item.slotType !== 'bag') {
+      capBar.style.display = '';
+      capBar.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">格子容量</span><div style="flex:1;height:8px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden"><div style="width:'+slotPct+'%;height:100%;background:'+capColor+';border-radius:4px"></div></div><span style="font-size:11px;color:var(--muted)">'+slotPct+'%</span></div>';
+    } else if (capBar) { capBar.style.display = 'none'; }
+
+    document.getElementById('modal-full-btn').textContent = item.isFull ? '取消已滿' : '標記已滿';
   document.getElementById('modal-full-btn').style.background = item.isFull ? 'var(--green-bg)' : '';
   document.getElementById('modal-full-btn').style.borderColor = item.isFull ? 'var(--green)' : '';
   document.getElementById('modal-full-btn').style.color = item.isFull ? 'var(--green)' : '';
@@ -1478,8 +1490,20 @@ async function searchDrawer(num) {
   let html = '';
   for (const side of ['a','b']) {
     const sideItems = results.filter(i => i.slot === num+side);
-    html += '<div style="margin-bottom:12px">';
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="slot-badge slot-small" style="font-size:13px;padding:4px 10px">' + num + side + '</span><span style="font-size:12px;color:var(--muted)">' + sideItems.length + ' 件</span></div>';
+    const usedVol = sideItems.reduce((s,i) => s + (i.estimateVolumeMl||2) * (i.quantity||1), 0);
+    const pct = Math.min(100, Math.round(usedVol / SMALL_SLOT_ML * 100));
+    const barColor = pct > 80 ? 'var(--red,#e24b4a)' : pct > 50 ? 'var(--accent)' : 'var(--green)';
+    const isFull = sideItems.some(i => i.isFull);
+
+    html += '<div style="margin-bottom:14px">';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span class="slot-badge slot-small" style="font-size:13px;padding:4px 10px">' + num + side + '</span><span style="font-size:12px;color:var(--muted)">' + sideItems.length + ' 件</span>';
+    if (isFull) html += '<span style="font-size:10px;color:var(--red,#e24b4a);font-weight:700">已滿</span>';
+    html += '</div>';
+    // Capacity bar
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:0 4px">';
+    html += '<div style="flex:1;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+barColor+';border-radius:3px;transition:width .3s"></div></div>';
+    html += '<span style="font-size:10px;color:var(--muted);min-width:42px;text-align:right">'+usedVol+'ml/'+SMALL_SLOT_ML+'ml</span>';
+    html += '</div>';
     if (sideItems.length) { html += sideItems.map(partRowHTML).join(''); }
     else { html += '<div style="color:var(--dim);font-size:12px;padding:8px 12px">空</div>'; }
     html += '</div>';
