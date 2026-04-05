@@ -661,7 +661,7 @@ async function handlePartIdBatch() {
 
     try {
       const existingList = await buildExistingList();
-      const prompt = `你是LEGO零件專家。零件Design ID為「${partId}」。回應純JSON：{"design_id":"${partId}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
+      const prompt = `你是LEGO零件專家。使用者輸入編號「${partId}」，可能是Design ID(4-5位數,如3022)或Element ID(6+位數,如302226)。若是Element ID請轉換為對應的Design ID。回應純JSON：{"design_id":"轉換後的Design ID","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
       const textResp = await callGeminiAPI(prompt);
       const parsed = safeParseJSON(textResp);
       const designId = parsed.design_id || partId;
@@ -705,7 +705,7 @@ async function handleSinglePartId(id) {
   showScreen('s-processing'); setProcessingMsg('查詢零件 ' + id + '...');
   try {
     const existingList = await buildExistingList();
-    const prompt = `你是LEGO零件專家。零件Design ID為「${id}」。回應純JSON：{"design_id":"${id}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
+    const prompt = `你是LEGO零件專家。使用者輸入編號「${id}」，可能是Design ID(4-5位數描述形狀,如3022)或Element ID(6+位數描述顏色+形狀,如302226)。若是Element ID請轉換為對應的Design ID填入design_id欄位。回應純JSON：{"design_id":"轉換後的Design ID","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"estimate_volume_ml":數字,"is_oversize":bool,"length_cm":數字,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
     const textResp = await callGeminiAPI(prompt);
     const item = safeParseJSON(textResp);
     await processResult(item);
