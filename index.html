@@ -1616,7 +1616,7 @@ async function importSet() {
     allParts.forEach(r => {
       const baseId = getBaseDesignId(r.part?.part_num) || r.part?.part_num || '';
       if (!baseId) return;
-      if (partMap[baseId]) { partMap[baseId].quantity += r.quantity; }
+      if (partMap[baseId]) { partMap[baseId].quantity += r.quantity; if (!partMap[baseId].imgUrl && r.part?.part_img_url) partMap[baseId].imgUrl = r.part.part_img_url; if (!partMap[baseId].fullId && r.part?.part_num) partMap[baseId].fullId = r.part.part_num; }
       else { partMap[baseId] = { designId: baseId, fullId: r.part?.part_num || '', name: r.part?.name || '', quantity: r.quantity || 1, catId: r.part?.part_cat_id || 0, imgUrl: r.part?.part_img_url || '' }; }
     });
     const uniqueParts = Object.values(partMap);
@@ -1678,7 +1678,7 @@ async function importSet() {
         else slotInfo = assignSmallSlot(tags, currentItems);
 
         const now = Date.now();
-        const savedItem = { id: 'lego_' + now + '_' + Math.random().toString(36).slice(2,5), name: p.name, nameCN: parsed.name_cn || '', designId: p.designId, description: parsed.description || '', featureTags: tags, bricklinkCategory: parsed.bricklink_category || '', estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType || 'small', thumbnailUrl, imageData: '', isFull: false, quantity: p.quantity, createdAt: now, updatedAt: now, setSource: setNum };
+        const savedItem = { id: 'lego_' + now + '_' + Math.random().toString(36).slice(2,5), name: p.name, nameCN: parsed.name_cn || '', designId: p.designId, fullPartNum: p.fullId || '', description: parsed.description || '', featureTags: tags, bricklinkCategory: parsed.bricklink_category || '', estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType || 'small', thumbnailUrl, imageData: '', isFull: false, quantity: p.quantity, createdAt: now, updatedAt: now, setSource: setNum };
         await saveItem(savedItem);
         item.result = savedItem; item.status = 'done'; done++;
       } catch(err) { item.error = err.message; item.status = 'error'; errors++; }
@@ -1698,25 +1698,31 @@ async function importSet() {
 async function refreshAllThumbnails() {
   if (!cfg.rbKey) { showToast('需要 Rebrickable API Key', 'error'); return; }
   const items = await loadItems();
-  const needFix = items.filter(i => i.designId && (!i.thumbnailUrl || i.thumbnailUrl.includes('ldraw')));
+  const needFix = items.filter(i => i.designId && (!i.thumbnailUrl || i.thumbnailUrl.includes('ldraw') || i.thumbnailUrl.includes('null')));
   if (!needFix.length) { showToast('所有縮圖已是最新'); return; }
   if (!confirm('更新 ' + needFix.length + ' 個零件的縮圖？\n（使用 Rebrickable 高解析度圖片）')) return;
 
-  showScreen('s-processing'); let fixed = 0;
-  for (const item of needFix) {
-    setProcessingMsg('更新縮圖 ' + (fixed+1) + '/' + needFix.length + '...');
+  showScreen('s-processing'); let fixed = 0, failed = 0;
+  for (let idx = 0; idx < needFix.length; idx++) {
+    const item = needFix[idx];
+    setProcessingMsg('更新縮圖 ' + (idx+1) + '/' + needFix.length + ' (' + (item.designId) + ')...');
     try {
-      const rb = await rebrickableLookup(item.designId);
+      // Try 1: base designId
+      let rb = await rebrickableLookup(item.designId);
+      // Try 2: fullPartNum (with print suffix, e.g. 35750pr0001)
+      if (!rb?.imgUrl && item.fullPartNum && item.fullPartNum !== item.designId) {
+        rb = await rebrickableLookup(item.fullPartNum);
+      }
       if (rb?.imgUrl) {
         item.thumbnailUrl = rb.imgUrl;
         item.updatedAt = Date.now();
         await updateItem(item);
         fixed++;
-      }
-    } catch(e) {}
-    await new Promise(r => setTimeout(r, 200));
+      } else { failed++; }
+    } catch(e) { failed++; }
+    await new Promise(r => setTimeout(r, 300));
   }
-  showToast('已更新 ' + fixed + ' 個縮圖');
+  showToast('已更新 ' + fixed + ' 個縮圖' + (failed ? '，' + failed + ' 個無圖' : ''));
   showScreen('s-main'); refreshMain();
 }
 
