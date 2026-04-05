@@ -1709,9 +1709,17 @@ async function refreshAllThumbnails() {
     try {
       // Try 1: base designId
       let rb = await rebrickableLookup(item.designId);
-      // Try 2: fullPartNum (with print suffix, e.g. 35750pr0001)
+      // Try 2: fullPartNum (with print suffix)
       if (!rb?.imgUrl && item.fullPartNum && item.fullPartNum !== item.designId) {
         rb = await rebrickableLookup(item.fullPartNum);
+      }
+      // Try 3: auto-detect print variants (for old imports without fullPartNum)
+      if (!rb?.imgUrl) {
+        for (const suffix of ['pr0001','pb01','pb0001','pat0001']) {
+          const variant = item.designId + suffix;
+          rb = await rebrickableLookup(variant);
+          if (rb?.imgUrl) { item.fullPartNum = variant; break; }
+        }
       }
       if (rb?.imgUrl) {
         item.thumbnailUrl = rb.imgUrl;
