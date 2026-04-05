@@ -1390,6 +1390,7 @@ async function openDrawerMap() {
   html += '<div style="margin-top:12px;text-align:center;display:flex;gap:8px;justify-content:center">';
   html += '<button onclick="refreshAllThumbnails()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🖼 更新縮圖</button>';
   html += '<button onclick="runRepairBags()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🔧 修復收納袋</button>';
+  html += '<button onclick="recalcVolumes()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">📐 重算體積</button>';
   html += '</div>';
   html += '<div style="margin-top:20px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
   html += '<div style="font-size:13px;font-weight:700;margin-bottom:8px">手動指派到大抽屜</div>';
@@ -2303,6 +2304,32 @@ async function runRepairBags() {
     showToast('修復 ' + result.fixed + ' 個缺失收納袋，自動標滿 ' + result.autoMarked + ' 個超容量格子');
   }
   showScreen('s-main'); refreshMain();
+  setTimeout(() => openDrawerMap(), 500);
+}
+
+async function recalcVolumes() {
+  const items = await loadItems();
+  const smallItems = items.filter(i => i.designId || i.name);
+  if (!confirm('重新計算 ' + smallItems.length + ' 個零件的體積？\n（使用外框體積算法，更準確）')) return;
+
+  showScreen('s-processing'); let updated = 0;
+  for (let idx = 0; idx < smallItems.length; idx++) {
+    const item = smallItems[idx];
+    if (idx % 20 === 0) setProcessingMsg('計算體積 ' + (idx+1) + '/' + smallItems.length + '...');
+    const oldVol = item.estimateVolumeMl || 2;
+    const newVol = calculateLegoVolume(item.name || '', oldVol);
+    if (newVol !== oldVol) {
+      item.estimateVolumeMl = newVol;
+      item.updatedAt = Date.now();
+      await updateItem(item);
+      updated++;
+    }
+  }
+  showToast('已更新 ' + updated + ' 個零件的體積');
+  showScreen('s-main'); refreshMain();
+  // Also repair overflow bags based on new volumes
+  const repair = await repairOverflowBags();
+  if (repair.autoMarked > 0) showToast('另有 ' + repair.autoMarked + ' 格超容量，已自動標滿');
   setTimeout(() => openDrawerMap(), 500);
 }
 
