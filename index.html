@@ -1553,7 +1553,8 @@ async function openDrawerMap(zoneFilter) {
 
   } // end showBag
 
-  // Reorder & Lock panel
+  // Reorder & Lock panel (only show on small drawer view)
+  if (showSmall) {
   const isLocked = localStorage.getItem('bricksort_locked') === 'true';
   const totalItems = items.length;
   
@@ -1574,49 +1575,6 @@ async function openDrawerMap(zoneFilter) {
     html += '<span style="font-size:11px;color:var(--muted);flex:1">零件已放入實體抽屜，新零件將分配到最近空格或溢出袋</span>';
     html += '<button onclick="unlockArrangement()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer">解鎖</button>';
     html += '</div>';
-    html += '</div>';
-  }
-
-  // Merged slots list (slots with 2+ item types)
-  const mergedSlots = {};
-  items.forEach(i => {
-    if ((i.slotType||'small') !== 'small' || !i.slot) return;
-    if (!mergedSlots[i.slot]) mergedSlots[i.slot] = [];
-    mergedSlots[i.slot].push(i);
-  });
-  const fusedSlots = Object.entries(mergedSlots).filter(([s,arr]) => arr.length >= 2).sort((a,b) => {
-    const na = parseInt(a[0]) || 999; const nb = parseInt(b[0]) || 999; return na - nb;
-  });
-
-  if (fusedSlots.length > 0) {
-    html += '<div style="margin-top:20px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
-    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
-    html += '<div style="font-size:13px;font-weight:700">🔗 融合格子（' + fusedSlots.length + ' 格）</div>';
-    html += '<div style="display:flex;gap:6px">';
-    html += '<button onclick="document.querySelectorAll(\'.unmerge-cb\').forEach(c=>c.checked=true)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;border-radius:4px;font-size:10px;cursor:pointer">全選</button>';
-    html += '<button onclick="document.querySelectorAll(\'.unmerge-cb\').forEach(c=>c.checked=false)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;border-radius:4px;font-size:10px;cursor:pointer">全不選</button>';
-    html += '<button onclick="unmergeSelected()" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:4px 12px;border-radius:4px;font-size:11px;cursor:pointer">拆分勾選 → 重新編排</button>';
-    html += '</div>';
-    html += '</div>';
-    fusedSlots.forEach(([slot, arr]) => {
-      const vol = arr.reduce((s,i) => s + (i.estimateVolumeMl||2)*(i.quantity||1), 0);
-      const pct = Math.min(100, Math.round(vol / SMALL_SLOT_ML * 100));
-      const barColor = pct > 80 ? '#e24b4a' : pct > 50 ? '#F5A623' : '#4CAF50';
-      const thumbs = arr.slice(0,3).map(i => i.thumbnailUrl || i.imageData || '').filter(Boolean);
-      const thumbsHtml = thumbs.map(u => '<img src="'+u+'" style="width:22px;height:22px;object-fit:contain;border-radius:3px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">').join('');
-
-      html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:4px;background:var(--surface);border-radius:6px">';
-      html += '<input type="checkbox" class="unmerge-cb" value="'+slot+'" style="accent-color:var(--accent)" onclick="event.stopPropagation()">';
-      html += '<div style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer" onclick="showMergedDetail(\''+slot+'\')">'; 
-      html += '<span class="slot-badge slot-small" style="font-size:11px;padding:2px 8px;min-width:32px;text-align:center">'+slot+'</span>';
-      html += '<div style="display:flex;gap:2px">'+thumbsHtml+'</div>';
-      html += '<div style="flex:1;display:flex;flex-direction:column;gap:2px">';
-      html += '<div style="font-size:10px;color:var(--muted)">'+arr.map(i=>(i.nameCN||i.name||'').substring(0,12)).join(' · ')+'</div>';
-      html += '<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+barColor+';border-radius:2px"></div></div><span style="font-size:9px;color:var(--muted)">'+pct+'%</span></div>';
-      html += '</div>';
-      html += '<span style="font-size:10px;color:var(--dim)">'+arr.length+'種</span>';
-      html += '</div></div>';
-    });
     html += '</div>';
   }
 
@@ -1647,6 +1605,10 @@ async function openDrawerMap(zoneFilter) {
   html += '<div style="font-size:11px;color:var(--dim);margin-top:6px">輸入已建檔零件的 Design ID，將其移動到指定大抽屜</div>';
   html += '</div>';
 
+  } // end showSmall reorder panel
+
+  const titleMap = { small: '小抽屜地圖', large: '大抽屜地圖', bag: '收納袋' };
+  document.querySelector('#s-drawers .header-title').textContent = titleMap[zoneFilter] || '抽屜地圖';
   document.getElementById('drawers-content').innerHTML = html;
   showScreen('s-drawers');
 }
