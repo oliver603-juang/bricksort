@@ -285,7 +285,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   <div id="modal-rows"></div>
   <div style="display:flex;gap:8px;margin-top:16px">
     <button class="btn-sm" onclick="closeModalPanel()">關閉</button>
-    <div id="modal-capacity" style="padding:0 20px 12px"></div>
+    <div id="modal-irreg-warn" style="padding:0 20px 4px;display:none"></div>
+  <div id="modal-capacity" style="padding:0 20px 12px"></div>
   <button class="btn-sm" id="modal-full-btn" onclick="toggleFull()">標記已滿</button>
     <button class="btn-danger" id="modal-delete-btn">刪除</button>
   </div>
@@ -560,6 +561,21 @@ function fitsInSlot(name, item) {
   return dims[1] <= SLOT_WIDTH && dims[2] <= SLOT_HEIGHT;
 }
 
+
+// Gemini System Instruction for LEGO dimension estimation
+const GEMINI_LEGO_SYSTEM = `你是一位專業的樂高零件資料庫工程師與 LDraw 3D 建模專家。
+請根據使用者提供的「樂高零件名稱與 Design ID」，精確推算或估算該零件的「實體外框極限尺寸 (Bounding Box)」與「佔位體積」。
+
+【運算核心規則】：
+1. 基礎單位：1 顆粒 (Stud) = 8mm，標準磚高 (Brick) = 9.6mm，標準板高 (Plate) = 3.2mm，Stud突起 = 1.7mm。
+2. 方正零件處理：若為標準 Brick, Plate, Tile 等，請直接從名稱萃取數字進行嚴格數學相乘。高度必須包含Stud突起。
+3. 不規則零件處理 (Modified, Handle, Slope, Animal, Minifig, Weapon 等)：
+   - 名稱中的顆粒數僅代表「主體佔地」。
+   - 你必須結合內部樂高實體知識，評估額外突出物（如把手、卡扣、夾子、底部結構）對外框 X/Y/Z 軸的影響。
+   - 參考 BrickLink 的 Pack. Dim. 數據逼近真實包裝尺寸。
+   - 「底部帶把手」類零件的高度通常遠大於標準板高，至少 8-12mm。
+4. 體積計算：直接用 dim_mm 的三邊相乘除以 1000 得到 ml，不要用填充率。`;
+
 // 抽屜系統
 const SMALL_DRAWERS = 450;       // A區 360 + B區 90      // 1~396, 各有 a/b 兩格
 const SMALL_SLOT_ML = 102;       // 45×65×35mm per a/b slot      // 每格 150cc
@@ -578,14 +594,14 @@ let cfg = {}, db = null, pendingPart = null, currentImageData = null, currentMod
 // ══════════════════════════════════════════════
 // GEMINI API (with fallback + timing)
 // ══════════════════════════════════════════════
-async function callGeminiAPI(prompt, base64Image = null, _retryIdx = 0) {
+async function callGeminiAPI(prompt, base64Image = null, _retryIdx = 0, systemInstruction = null) {
   let model = (_retryIdx === 0 && _lastWorkingModel) ? _lastWorkingModel : (GEMINI_MODELS[_retryIdx] || GEMINI_MODELS[0]);
   const parts = [{ text: prompt }];
   if (base64Image) parts.push({ inlineData: { mimeType:'image/jpeg', data:base64Image } });
   const _t = performance.now();
   const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cfg.apiKey}`, {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ contents:[{parts}], generationConfig:{ responseMimeType:"application/json" } })
+    body: JSON.stringify({ contents:[{parts}], generationConfig:{ responseMimeType:"application/json" }, ...(systemInstruction ? { system_instruction: { parts: [{ text: systemInstruction }] } } : {}) })
   });
   if (resp.status === 503) {
     _lastWorkingModel = null;
@@ -595,7 +611,7 @@ async function callGeminiAPI(prompt, base64Image = null, _retryIdx = 0) {
       const next = GEMINI_MODELS[nextIdx];
       console.log('[FALLBACK] ' + model + ' → ' + next);
       setProcessingMsg(model + ' 過載，切換 ' + next + '...');
-      return callGeminiAPI(prompt, base64Image, nextIdx);
+      return callGeminiAPI(prompt, base64Image, nextIdx, systemInstruction);
     }
   }
   if (!resp.ok) { const e = await resp.json().catch(()=>({})); throw new Error(`Gemini ${resp.status}: ${e?.error?.message||''}`); }
@@ -738,7 +754,7 @@ async function parseLensScreenshot(dataUrl) {
 回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"dim_mm_w":寬mm數(=BrickLink Pack.Dim.外框極限,如2x4 Brick=16mm),"dim_mm_l":長mm數(如2x4 Brick=32mm),"dim_mm_h":高mm數(如Brick=9.6mm/Plate=3.2mm,含所有突起),"is_oversize":bool,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
 
     setProcessingMsg('AI 辨識中...');
-    const textResp = await callGeminiAPI(prompt, base64);
+    const textResp = await callGeminiAPI(prompt, base64, 0, GEMINI_LEGO_SYSTEM);
     const item = safeParseJSON(textResp);
 
     console.log('[TIMING] Lens total: ' + Math.round(performance.now()-_t0) + 'ms');
@@ -809,7 +825,7 @@ async function handlePartIdBatch() {
       }
       const rbHint = rbResult ? '此零件已確認為「' + rbResult.name + '」Design ID=' + rbResult.designId + '。' : '';
       const prompt = `你是LEGO零件專家。${rbHint}零件編號「${partId}」。回應純JSON：{"design_id":"${partId}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"dim_mm_w":寬mm數(=BrickLink Pack.Dim.外框極限,如2x4 Brick=16mm),"dim_mm_l":長mm數(如2x4 Brick=32mm),"dim_mm_h":高mm數(如Brick=9.6mm/Plate=3.2mm,含所有突起),"is_oversize":bool,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
-      const textResp = await callGeminiAPI(prompt);
+      const textResp = await callGeminiAPI(prompt, null, 0, GEMINI_LEGO_SYSTEM);
       const parsed = safeParseJSON(textResp);
       const designId = parsed.design_id || partId;
       const baseId = getBaseDesignId(designId) || designId || '';
@@ -868,7 +884,7 @@ async function handleSinglePartId(id) {
     const existingList = await buildExistingList();
     const rbHint = rbResult ? '此零件已確認為「' + rbResult.name + '」Design ID=' + rbResult.designId + '。' : '';
     const prompt = `你是LEGO零件專家。${rbHint}零件編號「${id}」。回應純JSON：{"design_id":"${id}","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"dim_mm_w":寬mm數(=BrickLink Pack.Dim.外框極限,如2x4 Brick=16mm),"dim_mm_l":長mm數(如2x4 Brick=32mm),"dim_mm_h":高mm數(如Brick=9.6mm/Plate=3.2mm,含所有突起),"is_oversize":bool,"matched_existing_id":"同外型零件id或null。已有:${existingList}"}`;
-    const textResp = await callGeminiAPI(prompt);
+    const textResp = await callGeminiAPI(prompt, null, 0, GEMINI_LEGO_SYSTEM);
     const item = safeParseJSON(textResp);
     await processResult(item);
   } catch(err) { showScreen('s-main'); showToast('查詢失敗：'+err.message,'error'); }
@@ -941,6 +957,7 @@ async function processResult(item) {
     dimW: item._dimW || parseFloat(((parseInt(item.dim_mm_w)||0)/10).toFixed(1)) || 0,
     dimL: item._dimL || parseFloat(((parseInt(item.dim_mm_l)||0)/10).toFixed(1)) || 0,
     dimH: item._dimH || parseFloat(((parseInt(item.dim_mm_h)||0)/10).toFixed(1)) || 0,
+    isIrregular: item.is_irregular || false,
     featureTags: item.feature_tags || [],
     bricklinkCategory: item.bricklink_category || '',
     estimateVolumeMl: vol,
@@ -1513,6 +1530,14 @@ async function openPartDetail(id) {
   ].map(([k,v])=>`<div class="modal-row"><span class="modal-key">${k}</span><span class="modal-val">${v||'-'}</span></div>`).join('');
   document.getElementById('modal-delete-btn').onclick = () => confirmDeletePart(item.id, item.nameCN||item.name);
   // Capacity bar in modal
+    // Irregular part warning
+    const irregWarn = document.getElementById('modal-irreg-warn');
+    if (irregWarn) {
+      if (item.isIrregular) {
+        irregWarn.style.display = '';
+        irregWarn.innerHTML = '<span style="color:var(--accent);font-size:11px">⚠ 外型不規則，尺寸為 AI 估算值。如需精準數據請查 <a href="https://www.bricklink.com/v2/catalog/catalogitem.page?P='+(item.designId||'')+'" target="_blank" style="color:var(--accent);text-decoration:underline">BrickLink</a></span>';
+      } else { irregWarn.style.display = 'none'; }
+    }
     const capBar = document.getElementById('modal-capacity');
     if (capBar && item.slotType !== 'bag') {
       capBar.style.display = '';
@@ -1629,7 +1654,7 @@ async function startBatch(files) {
       const thumb = await cropLensThumb(item.dataUrl);
       const existingList = await buildExistingList();
       const prompt = `讀取截圖中積木零件(LEGO或相容品牌),若能辨識LEGO等效編號填design_id否則留空,純JSON:{"design_id":"編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字","feature_tags":["1~3個BrickLink分類,限選:${LEGO_TAGS}"],"dim_mm_w":寬mm數(=BrickLink Pack.Dim.外框極限,如2x4 Brick=16mm),"dim_mm_l":長mm數(如2x4 Brick=32mm),"dim_mm_h":高mm數(如Brick=9.6mm/Plate=3.2mm,含所有突起),"is_oversize":bool,"matched_existing_id":"同外型id或null。已有:${existingList}"}`;
-      const textResp = await callGeminiAPI(prompt, base64);
+      const textResp = await callGeminiAPI(prompt, base64, 0, GEMINI_LEGO_SYSTEM);
       const parsed = safeParseJSON(textResp);
       const designId = parsed.design_id || '';
       const thumbnailUrl = (pendingPart?._rbImgUrl) || (designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '');
@@ -2034,7 +2059,7 @@ async function importSet() {
 
       try {
         const prompt = 'LEGO零件「' + p.name + '」Design ID=' + p.designId + '。回應純JSON：{"bricklink_category":"BrickLink分類","feature_tags":["1~3個,限選:' + LEGO_TAGS + '"],"dim_mm_w":寬mm數(=BrickLink Pack.Dim.外框極限,如2x4 Brick=16mm),"dim_mm_l":長mm數(如2x4 Brick=32mm),"dim_mm_h":高mm數(如Brick=9.6mm/Plate=3.2mm,含所有突起),"is_oversize":bool,"name_cn":"中文名","description":"15字描述"}';
-        const textResp = await callGeminiAPI(prompt);
+        const textResp = await callGeminiAPI(prompt, null, 0, GEMINI_LEGO_SYSTEM);
         const parsed = safeParseJSON(textResp);
 
         const baseId = getBaseDesignId(p.designId) || p.designId;
@@ -2506,7 +2531,7 @@ async function smartRecognize(base64Image, hint) {
     setProcessingMsg('AI 分類中...');
     const prompt = 'LEGO零件「' + partName + '」Design ID=' + designId + '。回應純JSON：{"design_id":"' + designId + '","name":"' + partName + '","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"15字描述","feature_tags":["1~3個,限選:' + LEGO_TAGS + '"],"dim_mm_w":寬mm數(=BrickLink Pack.Dim.外框極限,如2x4 Brick=16mm),"dim_mm_l":長mm數(如2x4 Brick=32mm),"dim_mm_h":高mm數(如Brick=9.6mm/Plate=3.2mm,含所有突起),"is_oversize":bool,"matched_existing_id":"同外型零件id或null。已有:' + existingList + '"}';
 
-    const textResp = await callGeminiAPI(prompt);
+    const textResp = await callGeminiAPI(prompt, null, 0, GEMINI_LEGO_SYSTEM);
     const parsed = safeParseJSON(textResp);
 
     // Override with Brickognize/Rebrickable data (more accurate)
@@ -2526,7 +2551,7 @@ async function smartRecognize(base64Image, hint) {
 
   const prompt = '辨識圖中的積木零件（LEGO或相容品牌）。' + hintText + bkHint + '若能辨識LEGO等效編號則填入design_id，否則留空。若背景有方格紙（5mm格），請數格子估算零件實際尺寸。回應純JSON：{"design_id":"零件編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類(如Slope,Plate Modified,Technic Pin)","description":"30字描述","feature_tags":["1~3個BrickLink分類,限選:' + LEGO_TAGS + '"],"dim_mm_w":寬mm數(=BrickLink Pack.Dim.外框極限,如2x4 Brick=16mm),"dim_mm_l":長mm數(如2x4 Brick=32mm),"dim_mm_h":高mm數(如Brick=9.6mm/Plate=3.2mm,含所有突起),"is_oversize":bool,"matched_existing_id":"同外型零件id或null。已有:' + existingList + '"}';
 
-  const textResp = await callGeminiAPI(prompt, base64Image);
+  const textResp = await callGeminiAPI(prompt, base64Image, 0, GEMINI_LEGO_SYSTEM);
   const parsed = safeParseJSON(textResp);
   if (bkResult && bkResult.score >= 30) parsed._brickognize = { score: bkResult.score, id: bkResult.id };
   return parsed;
