@@ -1316,13 +1316,19 @@ async function openAllParts() {
   for (const [slot, data] of sorted) {
     const typeLabel = data.type==='large'?'大抽屜':data.type==='bag'?'收納袋':'小抽屜';
     const slotClass = data.type==='large'?'slot-large':data.type==='bag'?'slot-bag':'slot-small';
-    html += `<div style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <span class="slot-badge ${slotClass}" style="font-size:14px;padding:4px 12px">${slot}</span>
-        <span style="font-size:12px;color:var(--muted)">${typeLabel} · ${data.items.length} 件</span>
-      </div>
-      ${data.items.map(partRowHTML).join('')}
-    </div>`;
+    const slotVol = data.items.reduce((s,i) => s + (i.estimateVolumeMl||2)*(i.quantity||1), 0);
+    const slotCap = data.type==='small' ? SMALL_SLOT_ML : (data.type==='large' ? LARGE_DRAWER_ML : 9999);
+    const slotPct = slotCap < 9999 ? Math.min(100, Math.round(slotVol / slotCap * 100)) : 0;
+    const barColor = slotPct > 80 ? '#e24b4a' : slotPct > 50 ? '#F5A623' : '#4CAF50';
+    const capText = slotCap < 9999 ? ' · '+Math.round(slotVol)+'ml/'+slotCap+'ml' : '';
+    const capBar = slotCap < 9999 ? '<div style="margin-bottom:6px"><div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden"><div style="width:'+slotPct+'%;height:100%;background:'+barColor+';border-radius:2px"></div></div></div>' : '';
+    html += '<div style="margin-bottom:16px">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
+        '<span class="slot-badge '+slotClass+'" style="font-size:14px;padding:4px 12px">'+slot+'</span>' +
+        '<span style="font-size:12px;color:var(--muted)">'+typeLabel+' · '+data.items.length+' 種'+capText+'</span>' +
+      '</div>' + capBar +
+      data.items.map(partRowHTML).join('') +
+    '</div>';
   }
   document.getElementById('allparts-content').innerHTML = html;
   showScreen('s-allparts');
@@ -1758,7 +1764,7 @@ async function searchDrawer(num) {
     const isFull = sideItems.some(i => i.isFull);
 
     html += '<div style="margin-bottom:14px">';
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span class="slot-badge slot-small" style="font-size:13px;padding:4px 10px">' + num + side + '</span><span style="font-size:12px;color:var(--muted)">' + sideItems.length + ' 件</span>';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span class="slot-badge slot-small" style="font-size:13px;padding:4px 10px">' + num + side + '</span><span style="font-size:12px;color:var(--muted)">' + sideItems.length + ' 種</span>';
     if (isFull) html += '<span style="font-size:10px;color:var(--red,#e24b4a);font-weight:700">已滿</span>';
     html += '</div>';
     // Capacity bar
