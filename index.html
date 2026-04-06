@@ -141,6 +141,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     <button onclick="showScreen('s-setup')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:4px 8px">⚙ 設定</button>
   </div>
   <div style="display:flex;gap:4px;width:100%;overflow-x:auto" class="nav-bar">
+    <button onclick="openSlotManager()" class="nav-btn">格子</button>
+    <button onclick="openMergedManager()" class="nav-btn">已融合</button>
     <button onclick="openDrawerMap('small')" class="nav-btn">小抽屜</button>
     <button onclick="openDrawerMap('large')" class="nav-btn">大抽屜</button>
     <button onclick="openDrawerMap('bag')" class="nav-btn">收納袋</button>
@@ -1374,6 +1376,8 @@ async function doSearch(value) {
 // ALL PARTS VIEW
 // ══════════════════════════════════════════════
 async function openAllParts(sortMode) {
+  document.querySelector('#s-allparts .header-title').textContent = '全部零件';
+  if (document.getElementById('allparts-sort')) document.getElementById('allparts-sort').style.display = '';
   const items = await loadItems();
   if (!items.length) { document.getElementById('allparts-content').innerHTML='<div style="text-align:center;padding:48px;color:var(--muted)">尚無建檔零件</div>'; showScreen('s-allparts'); return; }
 
@@ -3041,6 +3045,182 @@ async function showMergedDetail(slot) {
   }
   overlay.innerHTML = html;
   overlay.style.display = 'block';
+}
+
+// ══════════════════════════════════════════════
+// SLOT MANAGER (格子管理)
+// ══════════════════════════════════════════════
+async function openSlotManager(sortMode) {
+  const items = await loadItems();
+  const smallItems = items.filter(i => (i.slotType||'small') === 'small' && i.slot);
+
+  sortMode = sortMode || 'usage-desc';
+
+  // Build slot data
+  const slotData = {};
+  smallItems.forEach(i => {
+    if (!slotData[i.slot]) slotData[i.slot] = { items: [], vol: 0, tags: new Set() };
+    slotData[i.slot].items.push(i);
+    slotData[i.slot].vol += (i.estimateVolumeMl||2) * (i.quantity||1);
+    (i.featureTags||[]).forEach(t => slotData[i.slot].tags.add(t));
+  });
+
+  const entries = Object.entries(slotData).map(([slot, d]) => ({
+    slot, ...d, pct: Math.round(d.vol / SMALL_SLOT_ML * 100), isMerged: d.items.length > 1
+  }));
+
+  // Sort
+  if (sortMode === 'usage-desc') entries.sort((a,b) => b.pct - a.pct);
+  else if (sortMode === 'usage-asc') entries.sort((a,b) => a.pct - b.pct);
+  else if (sortMode === 'slot') entries.sort((a,b) => a.slot.localeCompare(b.slot, undefined, {numeric:true}));
+  else if (sortMode === 'items-desc') entries.sort((a,b) => b.items.length - a.items.length);
+  else if (sortMode === 'no-dim') {
+    const filtered = entries.filter(e => e.items.some(i => !i.dimW || !i.dimL || !i.dimH));
+    entries.length = 0; entries.push(...filtered);
+  }
+
+  // Stats
+  const total = Object.keys(slotData).length;
+  const merged = entries.filter(e => e.isMerged).length;
+  const noDim = items.filter(i => !i.dimW || !i.dimL || !i.dimH).length;
+
+  let html = '<div style="padding:12px 16px">';
+  // Sort controls
+  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
+  html += '<select onchange="openSlotManager(this.value)" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px">';
+  const opts = [['usage-desc','容量大→小'],['usage-asc','容量小→大'],['slot','按格子號'],['items-desc','種類多→少'],['no-dim','⚠ 尺寸缺失']];
+  opts.forEach(([v,t]) => { html += '<option value="'+v+'"'+(v===sortMode?' selected':'')+'>'+t+'</option>'; });
+  html += '</select>';
+  html += '<span style="font-size:11px;color:var(--muted)">'+entries.length+' 格已用 / '+SMALL_DRAWERS+'×2 格'+(noDim?' · ⚠'+noDim+'缺尺寸':'')+'</span>';
+  html += '</div>';
+
+  // Slot list
+  entries.forEach(e => {
+    const barColor = e.pct > 80 ? '#e24b4a' : e.pct > 50 ? '#F5A623' : '#4CAF50';
+    const mergedBadge = e.isMerged ? '<span style="font-size:9px;padding:1px 4px;background:rgba(245,166,35,0.15);border:1px solid var(--accent);color:var(--accent);border-radius:3px">融合'+e.items.length+'種</span>' : '';
+    const thumbs = e.items.slice(0,3).map(i => i.thumbnailUrl||i.imageData||'').filter(Boolean);
+    const thumbHtml = thumbs.map(u => '<img src="'+u+'" style="width:20px;height:20px;object-fit:contain;border-radius:2px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">').join('');
+    const names = e.items.map(i => (i.nameCN||i.name||'').substring(0,15)).join(' · ');
+    const hasDimIssue = e.items.some(i => !i.dimW || !i.dimL || !i.dimH);
+
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:3px;background:var(--surface);border-radius:6px;cursor:pointer" onclick="'+(e.isMerged ? 'showMergedDetail(\''+e.slot+'\')' : 'searchDrawer('+parseInt(e.slot)+')')+'">';
+    html += '<span class="slot-badge slot-small" style="font-size:11px;padding:2px 6px;min-width:32px;text-align:center">'+e.slot+'</span>';
+    html += '<div style="display:flex;gap:2px">'+thumbHtml+'</div>';
+    html += '<div style="flex:1;min-width:0">';
+    html += '<div style="font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+names+'</div>';
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-top:2px"><div style="flex:1;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden"><div style="width:'+Math.min(100,e.pct)+'%;height:100%;background:'+barColor+';border-radius:2px"></div></div><span style="font-size:9px;color:var(--muted)">'+e.pct+'%</span></div>';
+    html += '</div>';
+    html += mergedBadge;
+    if (hasDimIssue) html += '<span style="font-size:9px;color:var(--accent)">⚠</span>';
+    html += '</div>';
+  });
+
+  html += '</div>';
+  document.getElementById('allparts-content').innerHTML = html;
+  document.getElementById('allparts-sort').style.display = 'none';
+  document.getElementById('allparts-stats').textContent = '';
+  document.querySelector('#s-allparts .header-title').textContent = '格子管理';
+  showScreen('s-allparts');
+}
+
+// ══════════════════════════════════════════════
+// MERGED MANAGER (已融合格子管理)
+// ══════════════════════════════════════════════
+async function openMergedManager() {
+  const items = await loadItems();
+  const smallItems = items.filter(i => (i.slotType||'small') === 'small' && i.slot);
+
+  const slotData = {};
+  smallItems.forEach(i => {
+    if (!slotData[i.slot]) slotData[i.slot] = { items: [], vol: 0, tags: new Set() };
+    slotData[i.slot].items.push(i);
+    slotData[i.slot].vol += (i.estimateVolumeMl||2) * (i.quantity||1);
+    (i.featureTags||[]).forEach(t => slotData[i.slot].tags.add(t.toLowerCase()));
+  });
+
+  const merged = Object.entries(slotData)
+    .filter(([s,d]) => d.items.length >= 2)
+    .map(([slot, d]) => ({ slot, ...d, pct: Math.round(d.vol / SMALL_SLOT_ML * 100) }))
+    .sort((a,b) => b.pct - a.pct);
+
+  const singles = Object.entries(slotData)
+    .filter(([s,d]) => d.items.length === 1)
+    .map(([slot, d]) => ({ slot, ...d, pct: Math.round(d.vol / SMALL_SLOT_ML * 100) }));
+
+  const mergeable = singles.filter(e => e.pct < 20).length;
+
+  let html = '<div style="padding:12px 16px">';
+
+  // Actions bar
+  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
+  html += '<span style="font-size:12px;font-weight:700;color:var(--accent)">🔗 已融合 ' + merged.length + ' 格</span>';
+  html += '<span style="font-size:11px;color:var(--muted)">可融合候選 ' + mergeable + ' 格（使用量<20%）</span>';
+  html += '<div style="flex:1"></div>';
+  html += '<button onclick="mergeConfirm();setTimeout(()=>openMergedManager(),1000)" style="background:var(--accent);color:#0a0a0a;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🔗 執行融合</button>';
+  html += '</div>';
+
+  if (merged.length === 0) {
+    html += '<div style="text-align:center;padding:48px;color:var(--muted)">尚無融合格子</div>';
+  } else {
+    // Select all / deselect all
+    html += '<div style="display:flex;gap:6px;margin-bottom:8px">';
+    html += '<button onclick="document.querySelectorAll(\'.mg-cb\').forEach(c=>c.checked=true)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">全選</button>';
+    html += '<button onclick="document.querySelectorAll(\'.mg-cb\').forEach(c=>c.checked=false)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">全不選</button>';
+    html += '<button onclick="unmergeFromManager()" style="background:none;border:1px solid #e24b4a;color:#e24b4a;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">拆分勾選</button>';
+    html += '</div>';
+
+    // Merged list
+    merged.forEach(e => {
+      const barColor = e.pct > 80 ? '#e24b4a' : e.pct > 50 ? '#F5A623' : '#4CAF50';
+      const thumbs = e.items.slice(0,3).map(i => i.thumbnailUrl||i.imageData||'').filter(Boolean);
+      const thumbHtml = thumbs.map(u => '<img src="'+u+'" style="width:22px;height:22px;object-fit:contain;border-radius:3px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">').join('');
+      const names = e.items.map(i => (i.nameCN||i.name||'').substring(0,12)).join(' · ');
+      const commonTags = [...e.items[0]?.featureTags||[]].filter(t => e.items.every(i => (i.featureTags||[]).some(ft => ft.toLowerCase()===t.toLowerCase())));
+
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:4px;background:var(--surface);border-radius:6px">';
+      html += '<input type="checkbox" class="mg-cb" value="'+e.slot+'" style="accent-color:var(--accent)" onclick="event.stopPropagation()">';
+      html += '<div style="flex:1;cursor:pointer" onclick="showMergedDetail(\''+e.slot+'\')">'; 
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">';
+      html += '<span class="slot-badge slot-small" style="font-size:11px;padding:2px 6px">'+e.slot+'</span>';
+      html += '<div style="display:flex;gap:2px">'+thumbHtml+'</div>';
+      html += '<span style="font-size:10px;color:var(--dim)">'+e.items.length+'種</span>';
+      if (commonTags.length) html += '<span style="font-size:9px;color:var(--green)">'+commonTags[0]+'</span>';
+      html += '</div>';
+      html += '<div style="display:flex;align-items:center;gap:6px">';
+      html += '<div style="font-size:10px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+names+'</div>';
+      html += '</div>';
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-top:2px"><div style="flex:1;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden"><div style="width:'+Math.min(100,e.pct)+'%;height:100%;background:'+barColor+';border-radius:2px"></div></div><span style="font-size:9px;color:var(--muted)">'+Math.round(e.vol)+'ml '+e.pct+'%</span></div>';
+      html += '</div></div>';
+    });
+  }
+
+  html += '</div>';
+  document.getElementById('allparts-content').innerHTML = html;
+  document.getElementById('allparts-sort').style.display = 'none';
+  document.getElementById('allparts-stats').textContent = '';
+  document.querySelector('#s-allparts .header-title').textContent = '已融合格子';
+  showScreen('s-allparts');
+}
+
+async function unmergeFromManager() {
+  const cbs = document.querySelectorAll('.mg-cb:checked');
+  if (!cbs.length) { showToast('請先勾選要拆分的格子', 'error'); return; }
+  const slots = [...cbs].map(c => c.value);
+  if (!confirm('拆分 ' + slots.length + ' 個融合格子？\n（' + slots.join(', ') + '）\n\n每種零件恢復獨立格子。')) return;
+
+  const items = await loadItems();
+  let tempNum = SMALL_DRAWERS + 100;
+  for (const slot of slots) {
+    const slotItems = items.filter(i => i.slot === slot);
+    if (slotItems.length <= 1) continue;
+    for (let k = 1; k < slotItems.length; k++) {
+      slotItems[k].slot = (++tempNum) + 'a';
+      slotItems[k].updatedAt = Date.now();
+      await updateItem(slotItems[k]);
+    }
+  }
+  showToast('已拆分 ' + slots.length + ' 個融合格子');
+  openMergedManager();
 }
 
 // START
