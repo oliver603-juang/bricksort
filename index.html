@@ -2171,43 +2171,59 @@ async function mergeSlots() {
     slotMap[i.slot].vol += (i.estimateVolumeMl||2) * (i.quantity||1);
   });
 
-  // Only consider slots with 1 item AND part fits in slot dimensions
+  // Only consider slots with usage < 20% AND fits in dimensions
+  const MAX_USAGE = 0.20;
   const singles = Object.entries(slotMap)
-    .filter(([s, d]) => d.items.length === 1 && fitsInSlot(d.items[0].name || ''))
-    .map(([s, d]) => ({ slot: s, ...d }));
+    .filter(([s, d]) => {
+      if (!fitsInSlot(d.items[0]?.name || '', d.items[0])) return false;
+      const usage = d.vol / SMALL_SLOT_ML;
+      return usage < MAX_USAGE;
+    })
+    .map(([s, d]) => ({
+      slot: s, ...d,
+      tags: new Set(d.items.flatMap(i => (i.featureTags||[]).map(t => t.toLowerCase())))
+    }));
 
-  if (singles.length < 2) { showToast('沒有可融合的格子', 'error'); return; }
+  if (singles.length < 2) { showToast('沒有可融合的格子（需使用量<20%且有共同標籤）', 'error'); return; }
 
   const MAX_VOL = SMALL_SLOT_ML * 0.85;
 
-  // Find best triple (or pair) with same category group
+  // Find best triple (or pair) with tag intersection
   let bestCombo = null, bestScore = -1;
 
   for (let i = 0; i < singles.length; i++) {
     for (let j = i + 1; j < singles.length; j++) {
-      if (singles[i].group !== singles[j].group) continue;
+      // Check tag intersection
+      let overlap2 = 0;
+      singles[i].tags.forEach(t => { if (singles[j].tags.has(t)) overlap2++; });
+      if (overlap2 === 0) continue;
+
       const vol2 = singles[i].vol + singles[j].vol;
       if (vol2 > MAX_VOL) continue;
 
-      // Try to find a 3rd slot in same group
+      // Try to find a 3rd slot with tag intersection
       for (let k = j + 1; k < singles.length; k++) {
-        if (singles[k].group !== singles[i].group) continue;
+        let overlap3 = 0;
+        const combinedTags = new Set([...singles[i].tags, ...singles[j].tags]);
+        singles[k].tags.forEach(t => { if (combinedTags.has(t)) overlap3++; });
+        if (overlap3 === 0) continue;
+
         const vol3 = vol2 + singles[k].vol;
         if (vol3 > MAX_VOL) continue;
 
-        const score = (3 * 100) / (vol3 + 1); // 3 items merged
+        const score = (overlap2 + overlap3) * 100 / (vol3 + 1);
         if (score > bestScore) {
           bestScore = score;
-          bestCombo = { target: singles[i], sources: [singles[j], singles[k]], combinedVol: vol3, count: 3 };
+          bestCombo = { target: singles[i], sources: [singles[j], singles[k]], combinedVol: vol3, count: 3, overlap: overlap2 + overlap3 };
         }
       }
 
-      // Also consider just pair (if no triple found yet or pair is better)
-      if (!bestCombo) {
-        const score = (2 * 100) / (vol2 + 1);
+      // Also consider pair
+      if (!bestCombo || (2 * 100) / (vol2 + 1) > bestScore * 0.8) {
+        const score = overlap2 * 100 / (vol2 + 1);
         if (score > bestScore) {
           bestScore = score;
-          bestCombo = { target: singles[i], sources: [singles[j]], combinedVol: vol2, count: 2 };
+          bestCombo = { target: singles[i], sources: [singles[j]], combinedVol: vol2, count: 2, overlap: overlap2 };
         }
       }
     }
@@ -2219,10 +2235,11 @@ async function mergeSlots() {
   const pctUsed = Math.round(combinedVol / SMALL_SLOT_ML * 100);
   const freedSlots = sources.map(s => s.slot).join('、');
 
+  const commonTags = [...target.tags].filter(t => sources.some(s => s.tags.has(t)));
   const msg = '找到最佳融合組合（' + count + ' 格 → 1 格）：\n\n'
     + '▸ ' + target.slot + '：' + (target.items[0].nameCN || target.items[0].name) + '（' + target.vol + 'ml）\n'
     + sources.map(s => '▸ ' + s.slot + '：' + (s.items[0].nameCN || s.items[0].name) + '（' + s.vol + 'ml）').join('\n') + '\n\n'
-    + '分類：' + target.group + '\n'
+    + '共同標籤：' + commonTags.join(', ') + '\n'
     + '合併後體積：' + combinedVol + 'ml（佔格子 ' + pctUsed + '%）\n\n'
     + '→ 全部移到 ' + target.slot + '，釋放 ' + freedSlots + '\n\n確定融合？';
 
@@ -2256,51 +2273,54 @@ async function mergeAll() {
 
   const occupiedBefore = Object.keys(slotData).length;
 
-  // Group slots by category group
-  const byGroup = {};
+  // Filter: only slots with usage < 20% AND fits in slot dimensions
+  const MAX_USAGE = 0.20; // 每格使用量 < 20% 才參與融合
+  const MAX_PER_SLOT = 3;
+  const candidates = [];
+
   Object.entries(slotData).forEach(([slot, data]) => {
-    // Skip slots with parts too large for merging (won't fit 45×35mm opening)
-    const hasLargePart = data.items.some(i => !fitsInSlot(i.name || ''));
+    const hasLargePart = data.items.some(i => !fitsInSlot(i.name || '', i));
     if (hasLargePart) return;
-    const g = data.group;
-    if (!byGroup[g]) byGroup[g] = [];
-    byGroup[g].push({ slot, ...data });
+    const usage = data.vol / SMALL_SLOT_ML;
+    if (usage >= MAX_USAGE) return; // Skip slots with usage >= 20%
+    const tags = new Set(data.items.flatMap(i => (i.featureTags||[]).map(t => t.toLowerCase())));
+    candidates.push({ slot, ...data, tags });
   });
 
-  // For each category group, pack bins greedily (max 3 items, 85% capacity)
-  const MAX_PER_SLOT = 3;
-  const MAX_VOL = SMALL_SLOT_ML * 0.85;
+  // Greedy merge: find groups with tag intersection
+  const merged = new Set();
   let totalMoves = 0;
 
-  for (const [group, slots] of Object.entries(byGroup)) {
-    if (slots.length < 2) continue;
+  // Sort by volume (smallest first = easier to merge)
+  candidates.sort((a, b) => a.vol - b.vol);
 
-    // Sort by volume descending (largest first = better packing)
-    slots.sort((a, b) => b.vol - a.vol);
+  for (let i = 0; i < candidates.length; i++) {
+    if (merged.has(i)) continue;
+    const bin = { slot: candidates[i].slot, vol: candidates[i].vol, count: candidates[i].items.length, tags: new Set(candidates[i].tags), mergedItems: [] };
 
-    const bins = []; // each bin: { slot, vol, count, mergedItems[] }
+    // Find compatible slots to merge into this bin
+    for (let j = i + 1; j < candidates.length; j++) {
+      if (merged.has(j)) continue;
+      if (bin.count + candidates[j].items.length > MAX_PER_SLOT) continue;
+      if (bin.vol + candidates[j].vol > SMALL_SLOT_ML * 0.85) continue;
 
-    for (const s of slots) {
-      // Try to fit into existing bin
-      let placed = false;
-      for (const bin of bins) {
-        if (bin.vol + s.vol <= MAX_VOL && bin.count + s.items.length <= MAX_PER_SLOT) {
-          bin.vol += s.vol;
-          bin.count += s.items.length;
-          bin.mergedItems.push(...s.items);
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) {
-        bins.push({ slot: s.slot, vol: s.vol, count: s.items.length, mergedItems: [] });
-      }
+      // Check tag intersection
+      let overlap = 0;
+      candidates[j].tags.forEach(t => { if (bin.tags.has(t)) overlap++; });
+      if (overlap === 0) continue; // No common tags → don't merge
+
+      // Merge!
+      bin.vol += candidates[j].vol;
+      bin.count += candidates[j].items.length;
+      candidates[j].tags.forEach(t => bin.tags.add(t));
+      bin.mergedItems.push(...candidates[j].items);
+      merged.add(j);
     }
 
     // Execute merges
-    for (const bin of bins) {
-      if (bin.mergedItems.length === 0) continue;
-      setProcessingMsg('融合 ' + group + '：移動 ' + bin.mergedItems.length + ' 種零件...');
+    if (bin.mergedItems.length > 0) {
+      const names = bin.mergedItems.map(i => (i.nameCN||i.name||'').substring(0,10)).join('+');
+      setProcessingMsg('融合：' + names + ' → ' + bin.slot);
       for (const item of bin.mergedItems) {
         item.slot = bin.slot;
         item.updatedAt = Date.now();
