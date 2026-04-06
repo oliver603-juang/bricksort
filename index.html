@@ -944,6 +944,9 @@ async function processResult(item) {
   if (match) {
     // Same shape → same slot
     slotInfo = { slot: match.slot, slotType: match.slotType || 'small' };
+  } else if (item.is_minifig) {
+    // Minifig → series-based bag
+    slotInfo = assignMinifigBag(item, allItems);
   } else if (isOversize) {
     // Oversize → bag
     slotInfo = assignBag(item.feature_tags || [], allItems);
@@ -959,6 +962,8 @@ async function processResult(item) {
     dimL: item._dimL || parseFloat(((parseInt(item.dim_mm_l)||0)/10).toFixed(1)) || 0,
     dimH: item._dimH || parseFloat(((parseInt(item.dim_mm_h)||0)/10).toFixed(1)) || 0,
     isIrregular: item.is_irregular || false,
+    is_minifig: item.is_minifig || false,
+    _minifigSeries: item._minifigSeries || '',
     featureTags: item.feature_tags || [],
     bricklinkCategory: item.bricklink_category || '',
     estimateVolumeMl: vol,
@@ -984,7 +989,8 @@ async function processResult(item) {
   tagsEl.innerHTML = (item.feature_tags||[]).map(t => `<span class="tag">${t}</span>`).join('');
 
   document.getElementById('result-slot').textContent = slotInfo.slot;
-  const typeLabel = slotInfo.slotType==='large' ? '大抽屜' : slotInfo.slotType==='bag' ? '收納袋' : '小抽屜分格';
+  const isMinifig = item.is_minifig;
+  const typeLabel = isMinifig ? '🧑 人偶收納袋' + (item._minifigSeries ? '（' + item._minifigSeries + '系列）' : '') : slotInfo.slotType==='large' ? '大抽屜' : slotInfo.slotType==='bag' ? '收納袋' : '小抽屜分格';
   document.getElementById('result-slot-type').textContent = typeLabel;
 
   // Show size select for oversize parts
@@ -1119,6 +1125,51 @@ function findNearestFreeSlot(nearDrawerNum, slotTags, slotFull) {
   return 'FULL';
 }
 
+
+// Assign minifig to series-based bag
+function assignMinifigBag(item, allItems) {
+  const bagItems = allItems.filter(i => i.slotType === 'bag' || (i.slot||'').startsWith('B'));
+  const name = (item.name || item.name_cn || '').toLowerCase();
+
+  // Detect series from name
+  const seriesMap = {
+    'ninjago': ['ninjago', 'ninja', 'lloyd', 'jay', 'kai', 'cole', 'zane', 'nya', 'wu', 'garmadon', 'pythor', 'overlord'],
+    'minecraft': ['minecraft', 'steve', 'alex', 'creeper', 'zombie', 'skeleton', 'enderman', 'piglin', 'villager', 'warden'],
+    'star wars': ['star wars', 'jedi', 'sith', 'clone', 'stormtrooper', 'mandalorian', 'yoda', 'luke', 'vader', 'obiwan', 'ahsoka', 'grogu'],
+    'city': ['city', 'police', 'fire', 'coast guard', 'construction', 'mining', 'space'],
+    'harry potter': ['harry potter', 'hogwarts', 'dumbledore', 'hermione', 'voldemort', 'snape', 'hagrid'],
+    'marvel': ['marvel', 'spider-man', 'iron man', 'avengers', 'captain america', 'thor', 'hulk', 'thanos'],
+    'dc': ['batman', 'superman', 'wonder woman', 'joker', 'gotham'],
+    'technic': ['technic figure'],
+    'friends': ['friends', 'heartlake'],
+  };
+
+  let matchedSeries = '人偶'; // default
+  for (const [series, keywords] of Object.entries(seriesMap)) {
+    if (keywords.some(kw => name.includes(kw))) {
+      matchedSeries = series;
+      break;
+    }
+  }
+
+  // Store series info
+  item._minifigSeries = matchedSeries;
+
+  // Find existing bag for this series
+  const sameSeries = bagItems.find(i => i.minifigSeries === matchedSeries);
+  if (sameSeries) return { slot: sameSeries.slot, slotType: 'bag' };
+
+  // Find any existing minifig bag for same series by name matching
+  const sameSeriesByName = bagItems.find(i => i.is_minifig && i._minifigSeries === matchedSeries);
+  if (sameSeriesByName) return { slot: sameSeriesByName.slot, slotType: 'bag' };
+
+  // New bag
+  const existingNums = bagItems.map(i => parseInt((i.slot||'').replace('B','')) || 0);
+  const overflowNums = allItems.map(i => parseInt((i.overflowBag||'').replace('B','')) || 0);
+  const maxBag = Math.max(0, ...existingNums, ...overflowNums);
+  return { slot: 'B' + (maxBag + 1), slotType: 'bag' };
+}
+
 function assignBag(tags, allItems, setSource) {
   // 規則 C+B：同套組大型零件共用袋 → 同分類共用袋 → 新袋
   const bagItems = allItems.filter(i => i.slotType === 'bag' || (i.slot||'').startsWith('B'));
@@ -1180,6 +1231,8 @@ async function confirmPart() {
       bricklinkCategory: pendingPart.bricklinkCategory || '', estimateVolumeMl: pendingPart.estimateVolumeMl || 2,
       slot: pendingPart.slot, slotType: pendingPart.slotType || 'small',
       dimW: pendingPart.dimW || 0, dimL: pendingPart.dimL || 0, dimH: pendingPart.dimH || 0,
+      is_minifig: pendingPart.is_minifig || false,
+      minifigSeries: pendingPart._minifigSeries || '',
       thumbnailUrl: pendingPart.thumbnailUrl || '', imageData: pendingPart.thumbnailUrl ? '' : (pendingPart.imageData || ''),  // Only store image if no URL
       isFull: false, quantity: 1, updatedAt: now,
     };
@@ -2559,6 +2612,24 @@ async function smartRecognize(base64Image, hint) {
   // Step 1: Brickognize (fast LEGO-specific recognition)
   setProcessingMsg('🔍 Brickognize 辨識中...');
   bkResult = await brickognizePredict(base64Image);
+
+  // Minifig detection: Brickognize type === 'minifig'
+  if (bkResult && bkResult.score >= 50 && bkResult.type === 'minifig' && bkResult.id) {
+    setProcessingMsg('🧑 人偶辨識：' + bkResult.name + ' (' + bkResult.score + '%)');
+    // Return minifig-specific data
+    return {
+      design_id: bkResult.id,
+      name: bkResult.name,
+      name_cn: bkResult.name,
+      is_minifig: true,
+      is_oversize: true, // Force to bag
+      bricklink_category: 'Minifigure',
+      feature_tags: ['Minifigure'],
+      dim_mm_w: 32, dim_mm_l: 16, dim_mm_h: 40, // ~3.2×1.6×4cm standard minifig
+      description: '完整人偶',
+      _brickognize: { score: bkResult.score, id: bkResult.id, type: 'minifig' }
+    };
+  }
 
   if (bkResult && bkResult.score >= 70 && bkResult.type === 'part' && bkResult.id) {
     // Step 2: Rebrickable lookup for full details
