@@ -20,6 +20,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .header-title{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--accent);letter-spacing:.05em}
 .back-btn{background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:4px 0;font-family:var(--sans)}
 .icon-btn{background:none;border:1px solid var(--border);color:var(--muted);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.nav-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex:1;text-align:center;transition:.15s}
+.nav-btn:hover,.nav-btn:active{border-color:var(--accent);color:var(--accent);background:rgba(245,166,35,0.08)}
 .icon-btn:hover{border-color:var(--accent);color:var(--accent)}
 .btn-primary{width:100%;background:var(--accent);color:#0a0a0a;border:none;padding:14px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--sans);margin-top:8px}
 .btn-ghost{width:100%;background:none;border:1px solid var(--border);color:var(--muted);padding:12px;border-radius:10px;font-size:14px;cursor:pointer;font-family:var(--sans);margin-top:8px}
@@ -133,12 +135,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 
 <!-- MAIN SCREEN -->
 <div id="s-main" class="screen">
-<div class="header">
-  <span class="header-title">🧱 BrickSort</span>
-  <div style="display:flex;gap:8px">
-    <button class="icon-btn" onclick="openDrawerMap()" title="抽屜地圖">⊞</button>
-    <button class="icon-btn" onclick="openAllParts()" title="全部零件">☰</button>
-    <button class="icon-btn" onclick="showScreen('s-setup')" title="設定">⚙</button>
+<div class="header" style="flex-direction:column;gap:4px;padding-bottom:6px">
+  <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
+    <span class="header-title">🧱 BrickSort</span>
+    <button onclick="showScreen('s-setup')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:4px 8px">⚙ 設定</button>
+  </div>
+  <div style="display:flex;gap:4px;width:100%;overflow-x:auto" class="nav-bar">
+    <button onclick="openDrawerMap('small')" class="nav-btn">小抽屜</button>
+    <button onclick="openDrawerMap('large')" class="nav-btn">大抽屜</button>
+    <button onclick="openDrawerMap('bag')" class="nav-btn">收納袋</button>
+    <button onclick="openAllParts()" class="nav-btn">全部零件</button>
   </div>
 </div>
 <div class="main-content">
@@ -1435,7 +1441,7 @@ async function openAllParts(sortMode) {
 // ══════════════════════════════════════════════
 // DRAWER MAP
 // ══════════════════════════════════════════════
-async function openDrawerMap() {
+async function openDrawerMap(zoneFilter) {
   const items = await loadItems();
   const slotCounts = {};
   items.forEach(i => { const s=i.slot||'?'; slotCounts[s]=(slotCounts[s]||0)+1; });
@@ -1481,12 +1487,20 @@ async function openDrawerMap() {
     return h;
   }
 
-  let html = '<div style="font-size:13px;color:var(--muted);margin-bottom:8px">A區（底層）小抽屜 1~360（18×20，各有 a/b 分格，蛇形排列）</div>';
+  const showSmall = !zoneFilter || zoneFilter === 'small';
+  const showLarge = !zoneFilter || zoneFilter === 'large';
+  const showBag = !zoneFilter || zoneFilter === 'bag';
+
+  let html = '';
+  if (showSmall) {
+  html += '<div style="font-size:13px;color:var(--muted);margin-bottom:8px">A區（底層）小抽屜 1~360（18×20，各有 a/b 分格，蛇形排列）</div>';
   html += renderZone(ZONE_A, 0);
 
   html += '<div style="font-size:13px;color:var(--muted);margin:16px 0 8px">B區（頂層）小抽屜 361~450（18×5，各有 a/b 分格）</div>';
   html += renderZone(ZONE_B, 360);
+  }
 
+  if (showLarge) {
   html += '<div style="font-size:13px;color:var(--muted);margin:16px 0 8px">C區（中層）大抽屜 L1~L27（9×3）</div>';
   html += '<div class="drawer-grid" style="grid-template-columns:repeat(9,1fr)">';
   for (let row = 0; row < ZONE_C.rows; row++) {
@@ -1503,7 +1517,9 @@ async function openDrawerMap() {
   }
   html += '</div>';
 
-  // Bags (always show)
+  } // end showLarge
+
+  if (showBag) {
   const bags = Object.keys(slotCounts).filter(k=>k.startsWith('B')).sort();
   html += '<div style="font-size:13px;color:var(--muted);margin:16px 0 12px">收納袋 B1~Bn</div>';
   if (bags.length) {
@@ -1519,7 +1535,8 @@ async function openDrawerMap() {
     html += '<div style="color:var(--dim);font-size:12px;padding:8px 0">尚無收納袋（大型零件自動分配）</div>';
   }
 
-  // Manual assign to large drawer
+  } // end showBag
+
   // Reorder & Lock panel
   const isLocked = localStorage.getItem('bricksort_locked') === 'true';
   const totalItems = items.length;
