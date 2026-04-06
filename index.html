@@ -99,7 +99,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .sync-btn{background:var(--accent-bg);border:1px solid var(--accent);color:var(--accent);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-family:var(--sans);white-space:nowrap}
 
 /* MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;display:flex;align-items:flex-end}.modal-overlay.hidden{display:none}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:300;display:flex;align-items:flex-end}.modal-overlay.hidden{display:none}
 .modal-sheet{background:var(--card);border-radius:20px 20px 0 0;padding:24px 20px;width:100%;max-height:80vh;overflow-y:auto}
 .modal-drag{width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px}
 .modal-name{font-size:18px;font-weight:700;margin-bottom:4px}
@@ -1700,7 +1700,12 @@ async function openPartDetail(id) {
   document.getElementById('modal-overlay').classList.remove('hidden');
 }
 function closeModal(e) { if(e.target===document.getElementById('modal-overlay')) closeModalPanel(); }
-function closeModalPanel() { document.getElementById('modal-overlay').classList.add('hidden'); }
+function closeModalPanel() {
+  document.getElementById('modal-overlay').classList.add('hidden');
+  // Re-show merged detail if it was open
+  const md = document.getElementById('merged-detail-overlay');
+  if (md && !md.classList.contains('hidden')) md.style.zIndex = '200';
+}
 async function confirmDeletePart(id, name) {
   if (!confirm('確定要刪除「'+name+'」？')) return;
   closeModalPanel(); await deleteItem(id); showToast(name+' 已刪除'); refreshMain();
