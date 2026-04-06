@@ -1704,7 +1704,7 @@ function closeModalPanel() {
   document.getElementById('modal-overlay').classList.add('hidden');
   // Re-show merged detail if it was open
   const md = document.getElementById('merged-detail-overlay');
-  if (md && !md.classList.contains('hidden')) md.style.zIndex = '200';
+  if (md && md.style.display !== 'none') md.style.zIndex = '200';
 }
 async function confirmDeletePart(id, name) {
   if (!confirm('確定要刪除「'+name+'」？')) return;
@@ -2988,7 +2988,7 @@ async function showMergedDetail(slot) {
   let html = '<div style="padding:16px">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
   html += '<div style="font-size:15px;font-weight:700">🔗 融合格子 ' + slot + '（' + slotItems.length + ' 種）</div>';
-  html += '<button onclick="document.getElementById(\'merged-detail-overlay\').classList.add(\'hidden\')" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>';
+  html += '<button onclick="document.getElementById(\'merged-detail-overlay\').style.display=\'none\'" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>';
   html += '</div>';
 
   // Capacity bar
@@ -3007,7 +3007,7 @@ async function showMergedDetail(slot) {
     const tags = (item.featureTags||[]).join(', ');
     const irregular = item.isIrregular ? '<span style="color:var(--accent);font-size:10px"> ⚠不規則</span>' : '';
 
-    html += '<div style="display:flex;gap:12px;padding:12px;margin-bottom:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;cursor:pointer" onclick="openPartDetail(\''+item.id+'\');document.getElementById(\'merged-detail-overlay\').classList.add(\'hidden\')">';
+    html += '<div style="display:flex;gap:12px;padding:12px;margin-bottom:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;cursor:pointer" onclick="openPartDetail(\''+item.id+'\');document.getElementById(\'merged-detail-overlay\').style.display=\'none\'">';
     html += thumbHtml;
     html += '<div style="flex:1;min-width:0">';
     html += '<div style="font-size:13px;font-weight:600;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(item.nameCN||item.name||'')+'</div>';
@@ -3040,7 +3040,7 @@ async function showMergedDetail(slot) {
     document.body.appendChild(overlay);
   }
   overlay.innerHTML = html;
-  overlay.classList.remove('hidden');
+  overlay.style.display = 'block';
 }
 
 // START
