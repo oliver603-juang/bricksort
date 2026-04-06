@@ -1492,6 +1492,7 @@ async function openDrawerMap() {
   html += '<button onclick="refreshAllThumbnails()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🖼 更新縮圖</button>';
   html += '<button onclick="runRepairBags()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🔧 修復收納袋</button>';
   html += '<button onclick="recalcVolumes()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">📐 重算體積</button>';
+  html += '<button onclick="recalcDimensionsAI()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🤖 AI補填尺寸</button>';
   html += '</div>';
   html += '<div style="margin-top:20px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
   html += '<div style="font-size:13px;font-weight:700;margin-bottom:8px">手動指派到大抽屜</div>';
@@ -2440,7 +2441,16 @@ async function recalcVolumes() {
     if (item.dimW > 0 && item.dimL > 0 && item.dimH > 0) {
       newVol = Math.max(0.3, Math.round(item.dimW * item.dimL * item.dimH * 10) / 10);
     } else {
-      newVol = calculateLegoVolume(item.name || '', oldVol);
+      // Try to fill dimensions from part name
+      const dims = calcPartDimensions(item.name || '');
+      if (dims && dims[0] > 0) {
+        item.dimW = Math.round(dims[0]) / 10; // mm → cm
+        item.dimL = Math.round(dims[1]) / 10;
+        item.dimH = Math.round(dims[2]) / 10;
+        newVol = Math.max(0.3, Math.round(dims[0] * dims[1] * dims[2] / 1000 * 10) / 10);
+      } else {
+        newVol = calculateLegoVolume(item.name || '', oldVol);
+      }
     }
     if (newVol !== oldVol) {
       item.estimateVolumeMl = newVol;
@@ -2584,6 +2594,60 @@ function parsePastedDim(id, text) {
   updateDimensions(id);
   document.getElementById('modal-dim-paste').value = '';
   showToast('尺寸已更新：' + Math.round(w) + '×' + Math.round(l) + '×' + Math.round(h) + 'mm');
+}
+
+async function recalcDimensionsAI() {
+  const items = await loadItems();
+  const needDim = items.filter(i => i.designId && (!i.dimW || !i.dimL || !i.dimH || i.dimW === 0 || i.dimL === 0 || i.dimH === 0));
+
+  if (!needDim.length) { showToast('所有零件都有尺寸 ✓'); return; }
+  if (!confirm('用 AI 補填 ' + needDim.length + ' 個零件的外框尺寸？\n（每個零件呼叫一次 Gemini，預估 ' + Math.ceil(needDim.length * 3 / 60) + ' 分鐘）')) return;
+
+  showScreen('s-processing');
+  let fixed = 0, failed = 0;
+
+  // Batch: send 5 parts per Gemini call to save time
+  for (let i = 0; i < needDim.length; i += 5) {
+    const batch = needDim.slice(i, i + 5);
+    setProcessingMsg('AI 估算尺寸 ' + (i+1) + '~' + Math.min(i+5, needDim.length) + ' / ' + needDim.length + '...');
+
+    try {
+      const batchPrompt = batch.map(it => it.designId + ': ' + (it.name || it.nameCN || '')).join('\n');
+      const prompt = '請為以下LEGO零件計算外框極限尺寸(含所有突起把手)。每行一個JSON，不要markdown：\n' + batchPrompt + '\n\n每行格式：{"id":"Design ID","dim_mm":[寬mm,長mm,高mm]}';
+
+      const textResp = await callGeminiAPI(prompt, null, 0, GEMINI_LEGO_SYSTEM);
+      // Parse multiple JSON lines
+      const lines = textResp.split('\n').filter(l => l.trim().startsWith('{'));
+
+      for (const line of lines) {
+        try {
+          const parsed = JSON.parse(line);
+          if (!parsed.id || !parsed.dim_mm || parsed.dim_mm.length < 3) continue;
+
+          const item = batch.find(it => it.designId === parsed.id);
+          if (!item) continue;
+
+          const [w, l, h] = parsed.dim_mm;
+          if (w > 0 && l > 0 && h > 0) {
+            item.dimW = Math.round(w * 10) / 100; // mm → cm with 1 decimal
+            item.dimL = Math.round(l * 10) / 100;
+            item.dimH = Math.round(h * 10) / 100;
+            item.estimateVolumeMl = Math.max(0.3, Math.round(w * l * h / 100) / 10);
+            item.isIrregular = parsed.is_irregular || false;
+            item.updatedAt = Date.now();
+            await updateItem(item);
+            fixed++;
+          }
+        } catch(e) {}
+      }
+    } catch(e) { failed += batch.length; }
+
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  showToast('已補填 ' + fixed + ' 個零件的尺寸' + (failed ? '，' + failed + ' 個失敗' : ''));
+  showScreen('s-main'); refreshMain();
+  setTimeout(() => openDrawerMap(), 500);
 }
 
 // START
