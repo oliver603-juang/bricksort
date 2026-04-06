@@ -2692,7 +2692,51 @@ async function updateDimensions(id) {
   item.estimateVolumeMl = vol;
   item.updatedAt = Date.now();
   await updateItem(item);
-  showToast((item.nameCN||item.name) + ' 尺寸更新：' + w + '×' + l + '×' + h + 'cm = ' + vol + 'ml');
+
+  // Check if new dimensions violate slot placement
+  const dims = [wMM, lMM, hMM].sort((a,b) => b-a);
+  const fitsSlot = dims[1] <= 45 && dims[2] <= 35;
+  const isSmall = (item.slotType||'small') === 'small';
+
+  // Check if this slot has multiple items (merged)
+  const sameSlotItems = items.filter(i => i.slot === item.slot);
+  const isMerged = sameSlotItems.length > 1;
+
+  if (isSmall && (!fitsSlot || vol > OVERSIZE_ML)) {
+    const reason = !fitsSlot
+      ? '尺寸 ' + Math.round(dims[1]) + '×' + Math.round(dims[2]) + 'mm 超過格子開口 45×35mm'
+      : '體積 ' + vol + 'ml > ' + OVERSIZE_ML + 'ml';
+
+    if (isMerged) {
+      // Merged slot violation → offer to unmerge + move to bag
+      if (confirm('⚠ ' + reason + '！\n\n此零件在融合格子 ' + item.slot + ' 中（共 ' + sameSlotItems.length + ' 種）。\n\n要自動執行以下操作嗎？\n1. 將此零件移到收納袋\n2. 保留其餘零件在原格子')) {
+        const bagInfo = assignBag(item.featureTags || [], items);
+        item.slot = bagInfo.slot;
+        item.slotType = 'bag';
+        item.updatedAt = Date.now();
+        await updateItem(item);
+        closeModalPanel();
+        showToast('已將 ' + (item.nameCN||item.name) + ' 移到 ' + bagInfo.slot);
+        refreshMain();
+        return;
+      }
+    } else {
+      // Single slot violation → offer to move to bag
+      if (confirm('⚠ ' + reason + '！\n\n要將此零件移到收納袋嗎？')) {
+        const bagInfo = assignBag(item.featureTags || [], items);
+        item.slot = bagInfo.slot;
+        item.slotType = 'bag';
+        item.updatedAt = Date.now();
+        await updateItem(item);
+        closeModalPanel();
+        showToast('已將 ' + (item.nameCN||item.name) + ' 移到 ' + bagInfo.slot);
+        refreshMain();
+        return;
+      }
+    }
+  } else {
+    showToast((item.nameCN||item.name) + ' 尺寸更新：' + Math.round(wMM) + '×' + Math.round(lMM) + '×' + Math.round(hMM) + 'mm = ' + vol + 'ml');
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -2958,7 +3002,7 @@ async function showMergedDetail(slot) {
     const tags = (item.featureTags||[]).join(', ');
     const irregular = item.isIrregular ? '<span style="color:var(--accent);font-size:10px"> ⚠不規則</span>' : '';
 
-    html += '<div style="display:flex;gap:12px;padding:12px;margin-bottom:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;cursor:pointer" onclick="openModal(\''+item.id+'\')">';
+    html += '<div style="display:flex;gap:12px;padding:12px;margin-bottom:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;cursor:pointer" onclick="openPartDetail(\''+item.id+'\');document.getElementById(\'merged-detail-overlay\').classList.add(\'hidden\')">';
     html += thumbHtml;
     html += '<div style="flex:1;min-width:0">';
     html += '<div style="font-size:13px;font-weight:600;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(item.nameCN||item.name||'')+'</div>';
