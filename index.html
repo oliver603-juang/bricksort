@@ -832,7 +832,8 @@ async function handlePartIdBatch() {
       const thumbnailUrl = (rbResult?.imgUrl) || (baseId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${baseId}.png` : '');
       const vol = calcVolFromAI(parsed.name || '', parsed);
       const categoryBag = isCategoryAlwaysBag(parsed.feature_tags);
-      const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML;
+      const dimTooLarge = !fitsInSlot(parsed.name || partId, parsed);
+      const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML || dimTooLarge;
       const allItems = await loadItems();
 
       let match = null;
@@ -1671,7 +1672,8 @@ async function startBatch(files) {
       const thumbnailUrl = (pendingPart?._rbImgUrl) || (designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '');
       const vol = calcVolFromAI(parsed.name || '', parsed);
       const categoryBag = isCategoryAlwaysBag(parsed.feature_tags);
-      const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML;
+      const dimTooLarge = !fitsInSlot(parsed.name || '', parsed);
+      const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML || dimTooLarge;
       const allItems = await loadItems();
       let match = null;
       if (parsed.matched_existing_id && parsed.matched_existing_id !== 'null') match = allItems.find(i => i.id === parsed.matched_existing_id);
@@ -2078,7 +2080,7 @@ async function importSet() {
         const vol = calcVolFromAI(p.name, parsed);
         const tags = parsed.feature_tags || [];
         const categoryBag = isCategoryAlwaysBag(tags);
-        const dimTooLarge = !fitsInSlot(p.name || '');
+        const dimTooLarge = !fitsInSlot(p.name || '', parsed);
         const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML || dimTooLarge;
 
         const currentItems = await loadItems();
