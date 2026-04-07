@@ -3415,17 +3415,54 @@ async function autoUnmergeViolations() {
 
 // 一鍵重置：清除所有編排，從零開始重新分配
 async function fullReset() {
-  if (!confirm('⚠ 一鍵重置所有編排？\n\n1. 取消所有融合\n2. 按分類+體積重新編號\n3. 自動融合（<20%規則）\n\n大抽屜和收納袋不受影響。\n確定執行？')) return;
+  if (!confirm('⚠ 一鍵重置所有編排？\n\n1. 從 Firebase 讀取最新資料\n2. 去除重複零件\n3. 按分類+體積重新編號\n4. 自動融合（<20%規則）\n\n確定執行？')) return;
 
   showScreen('s-processing');
 
-  // === Step 1: 從 Firebase 讀取一次 ===
+  // === Step 1: Read from Firebase (single source of truth) ===
   setProcessingMsg('Step 1/5：從 Firebase 讀取...');
-  const items = await loadItems();
-  const smallItems = items.filter(i => (i.slotType||'small') === 'small' && i.slot);
+  let items;
+  if (db) {
+    try {
+      const snap = await db.collection(cfg.fbCol||'lego_parts').orderBy('createdAt','desc').get();
+      items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch(e) { items = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]'); }
+  } else {
+    items = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
+  }
 
-  // === Step 2: 排序（純記憶體） ===
-  setProcessingMsg('Step 2/5：排序 ' + smallItems.length + ' 種零件...');
+  // === Step 2: Deduplicate by designId (keep newest, merge quantities) ===
+  setProcessingMsg('Step 2/5：去重 ' + items.length + ' 個零件...');
+  const deduped = {};
+  items.forEach(item => {
+    const key = item.designId || item.id; // Use designId as dedup key
+    if (!deduped[key]) {
+      deduped[key] = item;
+    } else {
+      // Keep the one with more data, merge quantity
+      const existing = deduped[key];
+      existing.quantity = Math.max(existing.quantity||1, item.quantity||1);
+      // Keep newer updatedAt
+      if ((item.updatedAt||0) > (existing.updatedAt||0)) {
+        const oldQty = existing.quantity;
+        Object.assign(existing, item);
+        existing.quantity = oldQty;
+      }
+      // Keep dimensions if existing is missing them
+      if (!existing.dimW && item.dimW) { existing.dimW = item.dimW; existing.dimL = item.dimL; existing.dimH = item.dimH; }
+    }
+  });
+
+  const cleanItems = Object.values(deduped);
+  const removed = items.length - cleanItems.length;
+  setProcessingMsg('去重完成：' + items.length + ' → ' + cleanItems.length + '（移除 ' + removed + ' 個重複）');
+
+  // Split by type
+  const smallItems = cleanItems.filter(i => (i.slotType||'small') === 'small');
+  const otherItems = cleanItems.filter(i => (i.slotType||'small') !== 'small');
+
+  // === Step 3: Sort small items ===
+  setProcessingMsg('Step 3/5：排序 ' + smallItems.length + ' 種零件...');
   smallItems.sort((a, b) => {
     const gA = getCategoryGroup(a.featureTags) || 'zzz';
     const gB = getCategoryGroup(b.featureTags) || 'zzz';
@@ -3436,20 +3473,19 @@ async function fullReset() {
     return (a.estimateVolumeMl||0) - (b.estimateVolumeMl||0);
   });
 
-  // === Step 3: 重新編號（純記憶體） ===
-  setProcessingMsg('Step 3/5：重新編號...');
+  // === Step 4: Assign slots sequentially (no gaps) ===
+  setProcessingMsg('Step 4/5：編號 + 融合...');
   const allSlots = [];
   for (let d = 1; d <= SMALL_DRAWERS; d++) { allSlots.push(d+'a'); allSlots.push(d+'b'); }
 
   smallItems.forEach((item, idx) => {
     item.slot = idx < allSlots.length ? allSlots[idx] : 'OVERFLOW';
+    item.slotType = 'small';
     item.updatedAt = Date.now();
   });
 
-  // === Step 4: 自動融合（純記憶體） ===
-  setProcessingMsg('Step 4/5：計算融合方案...');
-  const MAX_USAGE = 0.20;
-  const MAX_PER_SLOT = 3;
+  // Auto merge in memory
+  const MAX_USAGE = 0.20, MAX_PER_SLOT = 3;
   const slotData = {};
   smallItems.forEach(i => {
     if (!slotData[i.slot]) slotData[i.slot] = { items: [], vol: 0 };
@@ -3465,15 +3501,13 @@ async function fullReset() {
     const tags = new Set(data.items.flatMap(i => (i.featureTags||[]).map(t => t.toLowerCase())));
     candidates.push({ slot, ...data, tags });
   });
-
   candidates.sort((a, b) => a.vol - b.vol);
+
   const merged = new Set();
   let mergeCount = 0;
-
   for (let i = 0; i < candidates.length; i++) {
     if (merged.has(i)) continue;
     const bin = { slot: candidates[i].slot, vol: candidates[i].vol, count: candidates[i].items.length, tags: new Set(candidates[i].tags) };
-
     for (let j = i + 1; j < candidates.length; j++) {
       if (merged.has(j)) continue;
       if (bin.count + candidates[j].items.length > MAX_PER_SLOT) continue;
@@ -3481,8 +3515,6 @@ async function fullReset() {
       let overlap = 0;
       candidates[j].tags.forEach(t => { if (bin.tags.has(t)) overlap++; });
       if (overlap === 0) continue;
-
-      // Merge in memory: move items to bin's slot
       candidates[j].items.forEach(item => { item.slot = bin.slot; item.updatedAt = Date.now(); });
       bin.vol += candidates[j].vol;
       bin.count += candidates[j].items.length;
@@ -3492,12 +3524,59 @@ async function fullReset() {
     }
   }
 
-  // === Step 5: 一次寫入 Firebase ===
-  setProcessingMsg('Step 5/5：寫入 Firebase（' + smallItems.length + ' 個）...');
-  await batchUpdateItems(smallItems);
+  // Move OVERFLOW items to bags
+  const overflowItems = smallItems.filter(i => i.slot === 'OVERFLOW');
+  if (overflowItems.length) {
+    let maxBag = 0;
+    otherItems.forEach(i => { const n = parseInt((i.slot||'').replace('B',''))||0; if(n>maxBag) maxBag=n; });
+    overflowItems.forEach(i => {
+      maxBag++;
+      i.slot = 'B' + maxBag;
+      i.slotType = 'bag';
+      i.updatedAt = Date.now();
+    });
+  }
 
-  const occupiedAfter = new Set(smallItems.map(i => i.slot)).size;
-  showToast('重置完成！' + smallItems.length + ' 種零件 → ' + occupiedAfter + ' 格（融合 ' + mergeCount + ' 組）');
+  // === Step 5: Write everything to localStorage + Firebase ===
+  const allFinal = [...smallItems, ...otherItems];
+  setProcessingMsg('Step 5/5：寫入 ' + allFinal.length + ' 個零件...');
+
+  // localStorage (instant)
+  localStorage.setItem(ITEMS_KEY, JSON.stringify(allFinal));
+  localStorage.setItem('bricksort_pending_sync', 'true');
+
+  // Delete duplicates from Firebase
+  if (db && removed > 0) {
+    setProcessingMsg('清理 Firebase 重複資料...');
+    const cleanIds = new Set(allFinal.map(i => i.id));
+    const snap = await db.collection(cfg.fbCol||'lego_parts').get();
+    const toDelete = snap.docs.filter(d => !cleanIds.has(d.id));
+    if (toDelete.length > 0) {
+      for (let i = 0; i < toDelete.length; i += 400) {
+        const batch = db.batch();
+        toDelete.slice(i, i+400).forEach(d => batch.delete(d.ref));
+        try { await batch.commit(); } catch(e) { console.warn('delete batch err:', e); }
+      }
+    }
+  }
+
+  // Write clean data to Firebase
+  setProcessingMsg('上傳到 Firebase...');
+  try {
+    for (let i = 0; i < allFinal.length; i += 400) {
+      const chunk = allFinal.slice(i, i+400);
+      const batch = db.batch();
+      chunk.forEach(item => batch.set(db.collection(cfg.fbCol||'lego_parts').doc(item.id), item));
+      await batch.commit();
+      setProcessingMsg('上傳 ' + Math.min(i+400, allFinal.length) + '/' + allFinal.length + '...');
+    }
+    localStorage.removeItem('bricksort_pending_sync');
+  } catch(e) {
+    console.warn('Firebase write failed, data is in localStorage', e);
+  }
+
+  const occupiedAfter = new Set(smallItems.filter(i=>i.slot!=='OVERFLOW').map(i => i.slot)).size;
+  showToast('重置完成！去重 ' + removed + ' · 零件 ' + cleanItems.length + ' · 格子 ' + occupiedAfter + ' · 融合 ' + mergeCount);
   showScreen('s-main'); refreshMain();
   setTimeout(() => openDrawerMap('small'), 500);
 }
