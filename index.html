@@ -1520,7 +1520,11 @@ async function openDrawerMap(zoneFilter) {
       const lItem = items.find(i => i.slot === 'L'+d);
       const lThumb = lItem ? (lItem.thumbnailUrl || lItem.imageData || '') : '';
       const lThumbHtml = lThumb ? '<img src="'+lThumb+'" style="width:24px;height:24px;object-fit:contain;border-radius:2px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">' : '';
-      html += '<div class="drawer-cell '+cls+'" style="min-height:56px" onclick="doSearch(\'L'+d+'\')"><div style="font-size:11px">L'+d+'</div>'+lThumbHtml+'<div style="font-size:7px">'+c+'件</div></div>';
+      const lFull = items.some(i => i.slot === 'L'+d && i.isFull);
+      const lOverflow = lFull ? (items.find(i => i.slot === 'L'+d && i.overflowBag) || {}).overflowBag || '' : '';
+      const lFullStyle = lFull ? 'border:2px solid #e24b4a;box-shadow:0 0 8px rgba(226,75,74,0.4);' : '';
+      const lOverflowHtml = lOverflow ? '<div style="font-size:7px;color:#e24b4a;font-weight:700">→'+lOverflow+'</div>' : '';
+      html += '<div class="drawer-cell '+cls+'" style="min-height:56px;'+lFullStyle+'" onclick="doSearch(\'L'+d+'\')"><div style="font-size:11px">L'+d+'</div>'+lThumbHtml+'<div style="font-size:7px">'+c+'件</div>'+lOverflowHtml+'</div>';
     }
   }
   html += '</div>';
@@ -1538,19 +1542,65 @@ async function openDrawerMap(zoneFilter) {
   } // end showSmall main+ext
 
   if (showBag) {
-  const bags = Object.keys(slotCounts).filter(k=>k.startsWith('B')).sort();
-  html += '<div style="font-size:13px;color:var(--muted);margin:16px 0 12px">收納袋 B1~Bn</div>';
-  if (bags.length) {
-    html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
-    bags.forEach(b => {
-      const bagItem = items.find(i => i.slot === b);
-      const bagThumb = bagItem ? (bagItem.thumbnailUrl || bagItem.imageData || '') : '';
-      const bagThumbHtml = bagThumb ? '<img src="'+bagThumb+'" style="width:20px;height:20px;object-fit:contain;border-radius:2px;vertical-align:middle;margin-right:4px;background:rgba(255,255,255,0.1)" onerror="this.style.display=\'none\'">' : '';
-      html += '<div class="slot-badge slot-bag" style="cursor:pointer;padding:6px 14px;display:inline-flex;align-items:center" onclick="doSearch(\''+b+'\')">' + bagThumbHtml + b + ' (' + slotCounts[b] + ')</div>';
-    });
+  // Categorize all bag items
+  const bagItemsAll = items.filter(i => i.slotType === 'bag' || (i.slot||'').startsWith('B'));
+  const bagsBySlot = {};
+  bagItemsAll.forEach(i => {
+    if (!bagsBySlot[i.slot]) bagsBySlot[i.slot] = [];
+    bagsBySlot[i.slot].push(i);
+  });
+
+  // Classify each bag
+  const categories = {
+    minifig: { label: '🧑 公仔收納袋', bags: [], color: '#9C27B0' },
+    set: { label: '📦 套組收納袋', bags: [], color: '#2196F3' },
+    overflow: { label: '⚠ 滿溢收納袋', bags: [], color: '#e24b4a' },
+    oversize: { label: '📐 大體積收納袋', bags: [], color: '#FF9800' },
+  };
+
+  Object.entries(bagsBySlot).forEach(([bag, bagItems]) => {
+    const hasMinifig = bagItems.some(i => i.is_minifig);
+    const hasSet = bagItems.some(i => i.setSource);
+    const isOverflow = items.some(i => i.overflowBag === bag);
+    
+    if (hasMinifig) categories.minifig.bags.push({ bag, items: bagItems });
+    else if (isOverflow) categories.overflow.bags.push({ bag, items: bagItems });
+    else if (hasSet) categories.set.bags.push({ bag, items: bagItems });
+    else categories.oversize.bags.push({ bag, items: bagItems });
+  });
+
+  function renderBagCard(bag, bagItems, accentColor) {
+    const thumbs = bagItems.slice(0,3).map(i => i.thumbnailUrl || i.imageData || '').filter(Boolean);
+    const thumbHtml = thumbs.map(u => '<img src="'+u+'" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">').join('');
+    const names = bagItems.slice(0,3).map(i => (i.nameCN||i.name||'').substring(0,12)).join(' · ');
+    const extra = bagItems.length > 3 ? ' +' + (bagItems.length-3) : '';
+    const series = bagItems[0]?.minifigSeries ? '<span style="font-size:9px;color:'+accentColor+'">'+bagItems[0].minifigSeries+'</span> ' : '';
+    const setInfo = bagItems[0]?.setSource ? '<span style="font-size:9px;color:'+accentColor+'">套組#'+bagItems[0].setSource+'</span> ' : '';
+
+    return '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;margin-bottom:4px;background:var(--surface);border-radius:8px;border-left:3px solid '+accentColor+';cursor:pointer" onclick="doSearch(\''+bag+'\')">'+
+      '<span class="slot-badge slot-bag" style="font-size:12px;padding:3px 8px;min-width:32px;text-align:center">'+bag+'</span>'+
+      '<div style="display:flex;gap:3px">'+thumbHtml+'</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+series+setInfo+names+extra+'</div>'+
+      '</div>'+
+      '<span style="font-size:10px;color:var(--dim)">'+bagItems.length+'種</span>'+
+    '</div>';
+  }
+
+  let hasBags = false;
+  for (const [key, cat] of Object.entries(categories)) {
+    if (cat.bags.length === 0) continue;
+    hasBags = true;
+    html += '<div style="margin:16px 0 8px;display:flex;align-items:center;gap:8px">';
+    html += '<span style="font-size:13px;font-weight:700;color:'+cat.color+'">'+cat.label+'</span>';
+    html += '<span style="font-size:11px;color:var(--muted)">'+cat.bags.length+'袋</span>';
     html += '</div>';
-  } else {
-    html += '<div style="color:var(--dim);font-size:12px;padding:8px 0">尚無收納袋（大型零件自動分配）</div>';
+    cat.bags.sort((a,b) => a.bag.localeCompare(b.bag, undefined, {numeric:true}));
+    cat.bags.forEach(({bag, items: bagItems}) => { html += renderBagCard(bag, bagItems, cat.color); });
+  }
+
+  if (!hasBags) {
+    html += '<div style="color:var(--dim);font-size:12px;padding:48px 0;text-align:center">尚無收納袋</div>';
   }
 
   } // end showBag
