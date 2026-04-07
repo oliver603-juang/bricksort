@@ -273,7 +273,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 <div style="padding:8px 20px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
   <select id="allparts-sort" onchange="openAllParts(this.value)" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px">
     <option value="slot">按格子排列</option>
-    <option value="no-dim">⚠ 尺寸缺失</option>
     <option value="vol-desc">體積大→小</option>
     <option value="vol-asc">體積小→大</option>
     <option value="name">按名稱</option>
@@ -1391,15 +1390,7 @@ async function openAllParts(sortMode) {
 
   let html = '';
 
-  if (sortMode === 'no-dim') {
-    // Show items missing dimensions
-    const missing = items.filter(i => !i.dimW || !i.dimL || !i.dimH);
-    if (!missing.length) { html = '<div style="text-align:center;padding:48px;color:var(--green)">✓ 所有零件都有尺寸資料</div>'; }
-    else {
-      html += '<div style="margin-bottom:8px;padding:8px 12px;background:rgba(242,163,35,0.1);border:1px solid var(--accent);border-radius:6px;font-size:12px;color:var(--accent)">⚠ ' + missing.length + ' 個零件缺少尺寸，請用「🤖 AI補填尺寸」或手動輸入</div>';
-      missing.forEach(i => { html += partRowHTML(i); });
-    }
-  } else if (sortMode === 'vol-desc' || sortMode === 'vol-asc') {
+  if (sortMode === 'vol-desc' || sortMode === 'vol-asc') {
     // Sort all items by volume
     const sortedItems = [...items].sort((a,b) => {
       const va = (a.estimateVolumeMl||0) * (a.quantity||1);
@@ -1616,7 +1607,7 @@ async function openDrawerMap(zoneFilter) {
     html += '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">目前 ' + totalItems + ' 件零件。建議建檔 200~300 件後，按「重新編排」整理分類順序，確認後「固定編排」。</div>';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
     html += '<button onclick="reorderAllSlots()" style="flex:1;background:var(--accent);color:#0a0a0a;border:none;padding:10px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">🔄 重新編排</button>';
-    html += '<button onclick="mergeConfirm()" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">🔗 融合格子</button>';
+
     html += '<button onclick="lockArrangement()" style="flex:1;background:var(--green-bg);border:1px solid var(--green);color:var(--green);padding:10px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">🔒 固定編排</button>';
     html += '</div>';
     html += '</div>';
@@ -1630,11 +1621,14 @@ async function openDrawerMap(zoneFilter) {
     html += '</div>';
   }
 
-  html += '<div style="margin-top:12px;text-align:center;display:flex;gap:8px;justify-content:center">';
-  html += '<button onclick="refreshAllThumbnails()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🖼 更新縮圖</button>';
-  html += '<button onclick="runRepairBags()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🔧 修復收納袋</button>';
-  html += '<button onclick="recalcVolumes()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">📐 重算體積</button>';
-  html += '<button onclick="recalcDimensionsAI()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">🤖 AI補填尺寸</button>';
+  html += '<div style="margin-top:12px;text-align:center;display:flex;gap:8px;justify-content:center;align-items:center">';
+  html += '<select onchange="if(this.value){window[this.value]();this.value=\'\'}" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:6px 10px;border-radius:6px;font-size:11px">';
+  html += '<option value="">🛠 工具...</option>';
+  html += '<option value="refreshAllThumbnails">🖼 更新所有縮圖</option>';
+  html += '<option value="runRepairBags">🔧 修復收納袋</option>';
+  html += '<option value="recalcVolumes">📐 重算體積</option>';
+  html += '<option value="recalcDimensionsAI">🤖 AI補填尺寸</option>';
+  html += '</select>';
 
   // Check for FULL items
   const fullCount = items.filter(i => i.slot === 'FULL').length;
