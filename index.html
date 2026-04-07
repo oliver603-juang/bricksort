@@ -1525,6 +1525,7 @@ async function openDrawerMap(zoneFilter) {
   }
   html += '</div>';
 
+  html += '<div style="margin-top:12px;text-align:center"><button onclick="autoAssignLargeDrawers()" style="background:var(--accent);color:#0a0a0a;border:none;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📦 自動指派大抽屜（件數>99 總佔位 Top 27）</button></div>';
   } // end showLarge
 
   if (showSmall) {
@@ -3227,6 +3228,69 @@ async function moveItemTo(id, target) {
   closeModalPanel();
   showToast((item.nameCN||item.name) + '：' + oldSlot + ' → ' + item.slot);
   refreshMain();
+}
+
+async function autoAssignLargeDrawers() {
+  const items = await loadItems();
+  const smallItems = items.filter(i => (i.slotType||'small') === 'small' && i.slot);
+
+  // Find top 27 by (quantity × volume), only items with qty > 99
+  const ranked = smallItems
+    .filter(i => (i.quantity||1) > 99)
+    .map(i => ({ ...i, totalVol: (i.quantity||1) * (i.estimateVolumeMl||2) }))
+    .sort((a,b) => b.totalVol - a.totalVol);
+
+  const top27 = ranked.slice(0, 27);
+  if (!top27.length) { showToast('沒有數量 > 99 的零件可指派', 'error'); return; }
+
+  let msg = '自動指派大抽屜：總佔位 Top ' + Math.min(27, top27.length) + '（件數>99）\n\n';
+  top27.forEach((item, idx) => {
+    msg += 'L' + (idx+1) + '：' + (item.nameCN||item.name||'').substring(0,18) + '（' + (item.quantity||1) + '件 × ' + (item.estimateVolumeMl||2) + 'ml = ' + Math.round(item.totalVol) + 'ml）\n';
+  });
+  msg += '\n⚠ 會先清空所有大抽屜，再重新指派。\n確定執行？';
+
+  if (!confirm(msg)) return;
+
+  showScreen('s-processing'); setProcessingMsg('指派大抽屜...');
+
+  // Step 1: Release all current large drawer items back to small
+  const currentLarge = items.filter(i => i.slotType === 'large');
+  for (const item of currentLarge) {
+    item.slotType = 'small';
+    item.slot = ''; // Will be reassigned
+    item.updatedAt = Date.now();
+    await updateItem(item);
+  }
+
+  // Step 2: Assign top 27 to L1~L27
+  for (let idx = 0; idx < top27.length; idx++) {
+    const item = top27[idx];
+    const oldSlot = item.slot;
+    item.slot = 'L' + (idx + 1);
+    item.slotType = 'large';
+    item.updatedAt = Date.now();
+    await updateItem(item);
+    setProcessingMsg('L' + (idx+1) + '：' + (item.nameCN||item.name||'').substring(0,15));
+  }
+
+  // Step 3: Reassign released large items to free small slots
+  const updatedItems = await loadItems();
+  const needSlot = updatedItems.filter(i => i.slotType === 'small' && !i.slot);
+  if (needSlot.length > 0) {
+    setProcessingMsg('重新分配 ' + needSlot.length + ' 個釋放的零件...');
+    for (const item of needSlot) {
+      const allCurrent = await loadItems();
+      const slotInfo = assignSmallSlot(item.featureTags || [], allCurrent);
+      item.slot = slotInfo.slot;
+      item.slotType = slotInfo.slotType;
+      item.updatedAt = Date.now();
+      await updateItem(item);
+    }
+  }
+
+  showToast('已指派 ' + top27.length + ' 種零件到大抽屜');
+  showScreen('s-main'); refreshMain();
+  setTimeout(() => openDrawerMap('large'), 500);
 }
 
 // START
