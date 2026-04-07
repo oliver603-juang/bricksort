@@ -2084,7 +2084,24 @@ async function updateQuantity(id, val) {
   const slotCap = isSmall ? SMALL_SLOT_ML : isLarge ? LARGE_DRAWER_ML : 9999;
   const capLabel = isSmall ? '格子' : isLarge ? '大抽屜' : '';
 
-  if ((isSmall || isLarge) && totalVol > slotCap && !item.isFull) {
+  const DRAWER_ML = SMALL_SLOT_ML * 2; // 204ml
+  if (isSmall && totalVol > DRAWER_ML && !item.isFull) {
+    // >204ml: overflow bag
+    let maxBag = 0;
+    items.forEach(i => {
+      const ob = parseInt((i.overflowBag||'').replace('B',''))||0;
+      const sb = (i.slotType==='bag') ? (parseInt((i.slot||'').replace('B',''))||0) : 0;
+      if (ob>maxBag) maxBag=ob; if (sb>maxBag) maxBag=sb;
+    });
+    item.isFull = true;
+    item.overflowBag = 'B' + (maxBag + 1);
+    await updateItem(item);
+    showToast('⚠ ' + (item.nameCN||item.name) + ' ' + qty + '件（' + Math.round(totalVol) + 'ml）>204ml，已加編溢出袋 ' + item.overflowBag, 'error');
+  } else if (isSmall && totalVol > SMALL_SLOT_ML && totalVol <= DRAWER_ML) {
+    // 102-204ml: needs 2 slots (full drawer)
+    await updateItem(item);
+    showToast('⚠ ' + (item.nameCN||item.name) + ' ' + qty + '件（' + Math.round(totalVol) + 'ml）需要整個抽屜（2格）。下次重置時自動處理。');
+  } else if (isLarge && totalVol > slotCap && !item.isFull) {
     // Overflow! Add overflow bag
     let maxBag = 0;
     items.forEach(i => {
@@ -3513,15 +3530,13 @@ async function autoUnmergeViolations() {
 
 // 一鍵重置：清除所有編排，從零開始重新分配
 async function fullReset() {
-  if (!confirm('⚠ 一鍵全部重來？\n\n1. 去重\n2. 超體積/超尺寸/人偶 → 收納袋\n3. 件數>99 Top27 → 大抽屜\n4. 格子容量破百 → 標記已滿+溢出袋\n5. 排序+編號到小抽屜\n6. 自動融合\n7. 超過450抽屜 → 自動擴充\n8. 收納袋分組編號\n9. 一次寫入\n\n確定？')) return;
+  if (!confirm('⚠ 一鍵全部重來？\n\n1. 去重\n2. 超體積/超尺寸/人偶 → 收納袋\n3. 件數>99 Top27 → 大抽屜\n4. ≤102ml→1格 / 102-204ml→2格 / >204ml→溢出袋\n5. 排序+編號\n6. 自動融合（<30%）\n7. 超過450→自動擴充\n8. 收納袋分組編號\n9. 一次寫入\n\n確定？')) return;
 
   showScreen('s-processing');
   const t0 = Date.now();
 
-  // ═══════════════════════════════════════
-  // Step 1: Read + Dedup
-  // ═══════════════════════════════════════
-  setProcessingMsg('Step 1/10：讀取+去重...');
+  // ═══ Step 1: Read + Dedup ═══
+  setProcessingMsg('Step 1/9：讀取+去重...');
   let items;
   const pendingSync = localStorage.getItem('bricksort_pending_sync') === 'true';
   if (db && !pendingSync) {
@@ -3544,182 +3559,162 @@ async function fullReset() {
   });
   const all = Object.values(deduped);
   const removedDups = items.length - all.length;
-
-  // Clear all old assignments
   all.forEach(i => { i.isFull = false; i.overflowBag = ''; i.updatedAt = Date.now(); });
 
-  // ═══════════════════════════════════════
-  // Step 2: Classify → bag vs small pool
-  // ═══════════════════════════════════════
-  setProcessingMsg('Step 2/10：分類...');
-  const toBag = [];
-  const smallPool = [];
-
+  // ═══ Step 2: Classify → bag vs small ═══
+  setProcessingMsg('Step 2/9：分類...');
+  const toBag = [], smallPool = [];
   all.forEach(item => {
     const isMinifig = item.is_minifig;
     const isOversize = (item.estimateVolumeMl||0) > OVERSIZE_ML;
     const dimTooLarge = !fitsInSlot(item.name || '', item);
-
-    if (isMinifig || isOversize || dimTooLarge) {
-      item.slotType = 'bag';
-      toBag.push(item);
-    } else {
-      smallPool.push(item);
-    }
+    if (isMinifig || isOversize || dimTooLarge) { item.slotType = 'bag'; toBag.push(item); }
+    else smallPool.push(item);
   });
 
-  // ═══════════════════════════════════════
-  // Step 3: Large drawers Top 27 (qty>99, by qty×vol)
-  // ═══════════════════════════════════════
-  setProcessingMsg('Step 3/10：大抽屜 Top27...');
+  // ═══ Step 3: Large drawers Top 27 ═══
+  setProcessingMsg('Step 3/9：大抽屜 Top27...');
   const toLarge = smallPool
     .filter(i => (i.quantity||1) > 99)
-    .map(i => ({ item: i, totalVol: (i.quantity||1) * (i.estimateVolumeMl||2) }))
-    .sort((a,b) => b.totalVol - a.totalVol)
-    .slice(0, LARGE_DRAWERS)
-    .map(x => x.item);
+    .map(i => ({ item:i, tv:(i.quantity||1)*(i.estimateVolumeMl||2) }))
+    .sort((a,b) => b.tv - a.tv).slice(0, LARGE_DRAWERS).map(x => x.item);
+  const largeSet = new Set(toLarge.map(i => i.id));
+  toLarge.forEach((item, idx) => { item.slot = 'L'+(idx+1); item.slotType = 'large'; });
+  const remaining = smallPool.filter(i => !largeSet.has(i.id));
 
-  const toLargeSet = new Set(toLarge.map(i => i.id));
-  toLarge.forEach((item, idx) => {
-    item.slot = 'L' + (idx + 1);
-    item.slotType = 'large';
-  });
+  // ═══ Step 4: Classify by volume → 1格/2格/溢出 ═══
+  setProcessingMsg('Step 4/9：容量分類...');
+  const DRAWER_ML = SMALL_SLOT_ML * 2; // 204ml = 2 slots
+  const oneSlotItems = [];  // qty×vol ≤ 102ml → 1 slot
+  const twoSlotItems = [];  // 102 < qty×vol ≤ 204ml → 2 slots (full drawer)
+  const overflowItems = []; // qty×vol > 204ml → 1 slot + overflow bag
 
-  // Remove large items from small pool
-  const remaining = smallPool.filter(i => !toLargeSet.has(i.id));
-
-  // ═══════════════════════════════════════
-  // Step 4: Check capacity overflow (qty×vol > 102ml)
-  // ═══════════════════════════════════════
-  setProcessingMsg('Step 4/10：格子容量檢查...');
-  let overflowBagNum = 0;
   remaining.forEach(item => {
-    const totalVol = (item.estimateVolumeMl||2) * (item.quantity||1);
-    if (totalVol > SMALL_SLOT_ML) {
-      item.isFull = true;
-      overflowBagNum++;
-      item.overflowBag = 'OB' + overflowBagNum; // Temp name, will be renumbered
-    }
+    const tv = (item.estimateVolumeMl||2) * (item.quantity||1);
+    if (tv <= SMALL_SLOT_ML) oneSlotItems.push(item);
+    else if (tv <= DRAWER_ML) { item._twoSlot = true; twoSlotItems.push(item); }
+    else { item.isFull = true; overflowItems.push(item); }
   });
 
-  // ═══════════════════════════════════════
-  // Step 5: Sort + assign to small drawers
-  // ═══════════════════════════════════════
-  setProcessingMsg('Step 5/10：排序+編號 ' + remaining.length + ' 個...');
-  remaining.sort((a, b) => {
+  // ═══ Step 5: Sort + Assign slots ═══
+  setProcessingMsg('Step 5/9：排序+編號 ' + remaining.length + ' 個...');
+  const sortFn = (a, b) => {
     const gA = getCategoryGroup(a.featureTags)||'zzz', gB = getCategoryGroup(b.featureTags)||'zzz';
     if (gA !== gB) return gA.localeCompare(gB);
     const tA = (a.featureTags||[])[0]||'zzz', tB = (b.featureTags||[])[0]||'zzz';
     if (tA !== tB) return tA.localeCompare(tB);
     return (a.estimateVolumeMl||0) - (b.estimateVolumeMl||0);
-  });
+  };
+  oneSlotItems.sort(sortFn);
+  twoSlotItems.sort(sortFn);
+  overflowItems.sort(sortFn);
 
-  // First assign to 450 drawers (900 slots)
+  // Build drawer allocation
+  // Strategy: interleave 1-slot and 2-slot items by category
+  // 2-slot items take both a+b of a drawer
+  // 1-slot and overflow items share drawers (2 per drawer)
+
   const DRAWERS_MAIN = 450;
-  const allSlots = [];
-  for (let d = 1; d <= DRAWERS_MAIN; d++) { allSlots.push(d+'a'); allSlots.push(d+'b'); }
-
+  let drawerNum = 1;
   let needExpansion = false;
-  remaining.forEach((item, idx) => {
-    if (idx < allSlots.length) {
-      item.slot = allSlots[idx];
+  const pendingOverflow = []; // items that couldn't get a slot
+
+  // First: assign 2-slot items (each gets a full drawer)
+  twoSlotItems.forEach(item => {
+    if (drawerNum <= DRAWERS_MAIN + 180) { // up to 630
+      item.slot = drawerNum + 'a';
       item.slotType = 'small';
+      // Mark both a and b as used by this item
+      item._occupies = [drawerNum + 'a', drawerNum + 'b'];
+      drawerNum++;
     } else {
-      needExpansion = true; // Will handle after merge
-      item.slot = '_pending_' + idx; // Temp
-      item.slotType = 'small';
+      item.slotType = 'bag';
+      toBag.push(item);
     }
   });
 
-  // ═══════════════════════════════════════
-  // Step 6: Auto merge (strict <20% rule)
-  // ═══════════════════════════════════════
-  setProcessingMsg('Step 6/10：自動融合...');
+  // Then: assign 1-slot items (pair up in drawers)
+  const singleItems = [...oneSlotItems, ...overflowItems];
+  singleItems.sort(sortFn);
+  let slotQueue = [];
+  // Generate remaining slots
+  for (let d = drawerNum; d <= DRAWERS_MAIN + 180; d++) {
+    slotQueue.push(d + 'a');
+    slotQueue.push(d + 'b');
+  }
+
+  let slotIdx = 0;
+  singleItems.forEach(item => {
+    if (slotIdx < slotQueue.length) {
+      item.slot = slotQueue[slotIdx++];
+      item.slotType = 'small';
+    } else {
+      // Even 630 drawers not enough → bag
+      item.slotType = 'bag';
+      item.isFull = false;
+      toBag.push(item);
+    }
+  });
+
+  // Check if expansion needed
+  const maxUsedDrawer = Math.max(
+    ...twoSlotItems.filter(i=>i.slotType==='small').map(i=>parseInt(i.slot)||0),
+    ...singleItems.filter(i=>i.slotType==='small').map(i=>parseInt(i.slot)||0)
+  );
+  needExpansion = maxUsedDrawer > DRAWERS_MAIN;
+  if (maxUsedDrawer > SMALL_DRAWERS) {
+    SMALL_DRAWERS = Math.ceil(maxUsedDrawer / 180) * 180 + 450 - 450; // round up to block
+    SMALL_DRAWERS = Math.max(SMALL_DRAWERS, maxUsedDrawer);
+    localStorage.setItem('bricksort_max_drawers', SMALL_DRAWERS);
+  }
+
+  // ═══ Step 6: Auto merge (strict, only 1-slot items) ═══
+  setProcessingMsg('Step 6/9：自動融合...');
   const MAX_USAGE = 0.30, MAX_PER_SLOT = 3;
 
-  // Only merge items already assigned to real slots (not _pending_)
-  const assignedItems = remaining.filter(i => !i.slot.startsWith('_pending_'));
+  // Only 1-slot items can be merged (not 2-slot, not overflow)
+  const assignedSmall = [...oneSlotItems, ...overflowItems].filter(i => i.slotType === 'small');
   const slotMap = {};
-  assignedItems.forEach(i => {
+  assignedSmall.forEach(i => {
     const tv = (i.estimateVolumeMl||2) * (i.quantity||1);
-    slotMap[i.slot] = { item: i, totalVol: tv, usage: tv/SMALL_SLOT_ML, tags: new Set((i.featureTags||[]).map(t=>t.toLowerCase())), fits: fitsInSlot(i.name||'',i) };
+    slotMap[i.slot] = { item:i, tv, usage:tv/SMALL_SLOT_ML, tags:new Set((i.featureTags||[]).map(t=>t.toLowerCase())), canMerge: tv/SMALL_SLOT_ML < MAX_USAGE && !i.isFull };
   });
 
   const cands = Object.entries(slotMap)
-    .filter(([s,d]) => d.usage < MAX_USAGE && d.fits && d.tags.size > 0)
-    .map(([s,d])=>({slot:s,...d}))
-    .sort((a,b)=>a.totalVol-b.totalVol);
+    .filter(([s,d]) => d.canMerge && d.tags.size > 0)
+    .map(([s,d]) => ({slot:s,...d}))
+    .sort((a,b) => a.tv - b.tv);
 
   const mSet = new Set();
   let mergeCount = 0;
   for (let i = 0; i < cands.length; i++) {
     if (mSet.has(i)) continue;
-    const bin = { slot:cands[i].slot, vol:cands[i].totalVol, count:1, tags:new Set(cands[i].tags) };
-    for (let j = i+1; j < cands.length; j++) {
+    const bin = { slot:cands[i].slot, vol:cands[i].tv, count:1, tags:new Set(cands[i].tags) };
+    for (let j = i+1; j < cands.length && bin.count < MAX_PER_SLOT; j++) {
       if (mSet.has(j)) continue;
-      if (bin.count >= MAX_PER_SLOT) break;
-      // 20.4*3=61.2 < 102, so no combined check needed
       let ov = 0; cands[j].tags.forEach(t => { if(bin.tags.has(t)) ov++; }); if(!ov) continue;
       cands[j].item.slot = bin.slot; cands[j].item.updatedAt = Date.now();
-      bin.vol += cands[j].totalVol; bin.count++; cands[j].tags.forEach(t=>bin.tags.add(t)); mSet.add(j); mergeCount++;
+      bin.vol += cands[j].tv; bin.count++;
+      cands[j].tags.forEach(t => bin.tags.add(t));
+      mSet.add(j); mergeCount++;
     }
   }
 
-  // Step 7: Skipped (20.4×3=61.2 < 102, merged slots won't overflow)
+  // After merge, try to fill freed slots with pending overflow items
+  // (items that got pushed to bag because 630 wasn't enough)
+  // Usually won't happen with current data, but future-proof
 
-  // ═══════════════════════════════════════
-  // Step 8: Expansion — fill freed merge slots, then expand dynamically
-  // ═══════════════════════════════════════
-  setProcessingMsg('Step 8/10：檢查擴充需求...');
-  const usedSlots = new Set(assignedItems.map(i => i.slot));
+  // ═══ Step 7: Overflow bags for isFull items ═══
+  setProcessingMsg('Step 7/9：溢出袋編號...');
+  let overflowBagNum = 0;
+  const allSmallFinal = [...twoSlotItems, ...oneSlotItems, ...overflowItems].filter(i => i.slotType === 'small');
+  allSmallFinal.filter(i => i.isFull).forEach(item => {
+    overflowBagNum++;
+    item.overflowBag = 'OB' + overflowBagNum;
+  });
 
-  const pendingItems = remaining.filter(i => i.slot.startsWith('_pending_'));
-  if (pendingItems.length > 0) {
-    // First: fill freed slots from merge (within 1~450)
-    const freedSlots = [];
-    for (let d = 1; d <= DRAWERS_MAIN; d++) {
-      if (!usedSlots.has(d+'a')) freedSlots.push(d+'a');
-      if (!usedSlots.has(d+'b')) freedSlots.push(d+'b');
-    }
-
-    // Then: dynamically expand as needed (451+, in blocks of 180)
-    let expMax = DRAWERS_MAIN;
-    let allExpSlots = [...freedSlots];
-    while (allExpSlots.length < pendingItems.length) {
-      // Add another 180 drawers (1 expansion block)
-      const blockStart = expMax + 1;
-      expMax += 180;
-      for (let d = blockStart; d <= expMax; d++) {
-        allExpSlots.push(d+'a'); allExpSlots.push(d+'b');
-      }
-    }
-
-    pendingItems.forEach((item, idx) => {
-      item.slot = allExpSlots[idx];
-    });
-
-    needExpansion = pendingItems.some(i => {
-      const m = (i.slot||'').match(/^(\d+)/);
-      return m && parseInt(m[1]) > DRAWERS_MAIN;
-    });
-
-    if (needExpansion) {
-      const maxDrawer = Math.max(...pendingItems.map(i => parseInt((i.slot||'0').match(/^(\d+)/)?.[1]||'0')));
-      SMALL_DRAWERS = Math.max(SMALL_DRAWERS, maxDrawer);
-      localStorage.setItem('bricksort_max_drawers', SMALL_DRAWERS);
-      setProcessingMsg('已擴充到 ' + maxDrawer + ' 號抽屜');
-    }
-  }
-
-  // ═══════════════════════════════════════
-  // Step 9: Bag grouping + numbering
-  // ═══════════════════════════════════════
-  setProcessingMsg('Step 9/10：收納袋分組...');
-  // Collect all overflow bags
-  const overflowItems = remaining.filter(i => i.isFull && i.overflowBag);
-  overflowItems.forEach(i => { if (i.slotType !== 'bag') { /* keep in small, just has overflowBag */ } });
-
-  // Group bag items
+  // ═══ Step 8: Bag grouping + numbering ═══
+  setProcessingMsg('Step 8/9：收納袋分組...');
   const bagGroups = {};
   toBag.forEach(item => {
     const key = item.is_minifig ? ('minifig_'+(item.minifigSeries||'other'))
@@ -3730,38 +3725,33 @@ async function fullReset() {
   });
 
   let bagNum = 1;
-  Object.entries(bagGroups).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([group, groupItems]) => {
+  Object.entries(bagGroups).sort((a,b) => a[0].localeCompare(b[0])).forEach(([group, groupItems]) => {
     const bag = 'B' + bagNum;
     groupItems.forEach(item => { item.slot = bag; item.slotType = 'bag'; });
     bagNum++;
   });
 
-  // Renumber overflow bags (OB1,OB2 → real B numbers)
+  // Renumber overflow bags
   const obMap = {};
-  remaining.filter(i => i.overflowBag && i.overflowBag.startsWith('OB')).forEach(i => {
+  allSmallFinal.filter(i => i.overflowBag && i.overflowBag.startsWith('OB')).forEach(i => {
     if (!obMap[i.overflowBag]) { obMap[i.overflowBag] = 'B' + bagNum; bagNum++; }
     i.overflowBag = obMap[i.overflowBag];
   });
 
-  // ═══════════════════════════════════════
-  // Step 10: Write (localStorage + Firebase)
-  // ═══════════════════════════════════════
-  setProcessingMsg('Step 10/10：寫入...');
-  const smallFinal = remaining.filter(i => i.slotType === 'small');
-  const allFinal = [...smallFinal, ...toLarge, ...toBag];
+  // ═══ Step 9: Write ═══
+  const allFinal = [...allSmallFinal, ...toLarge, ...toBag];
+  setProcessingMsg('Step 9/9：寫入 ' + allFinal.length + ' 個...');
   localStorage.setItem(ITEMS_KEY, JSON.stringify(allFinal));
   localStorage.setItem('bricksort_pending_sync', 'true');
 
   // Try Firebase
   if (db) {
     try {
-      // Delete old docs not in clean set
       const snap = await db.collection(cfg.fbCol||'lego_parts').get();
       const cleanIds = new Set(allFinal.map(i=>i.id));
-      const toDelete = snap.docs.filter(d=>!cleanIds.has(d.id));
-      for (let i=0;i<toDelete.length;i+=400) { const b=db.batch(); toDelete.slice(i,i+400).forEach(d=>b.delete(d.ref)); await b.commit(); }
-      // Write
-      for (let i=0;i<allFinal.length;i+=400) {
+      const toDelete = snap.docs.filter(d => !cleanIds.has(d.id));
+      for (let i=0; i<toDelete.length; i+=400) { const b=db.batch(); toDelete.slice(i,i+400).forEach(d=>b.delete(d.ref)); await b.commit(); }
+      for (let i=0; i<allFinal.length; i+=400) {
         setProcessingMsg('上傳 '+Math.min(i+400,allFinal.length)+'/'+allFinal.length);
         const b=db.batch(); allFinal.slice(i,i+400).forEach(item=>b.set(db.collection(cfg.fbCol||'lego_parts').doc(item.id),item)); await b.commit();
       }
@@ -3770,15 +3760,18 @@ async function fullReset() {
   }
 
   const elapsed = Math.round((Date.now()-t0)/1000);
-  const usedSlotsCount = new Set(smallFinal.map(i=>i.slot)).size;
-  const overflowCount = remaining.filter(i=>i.isFull).length;
+  const usedSlots = new Set(allSmallFinal.map(i=>i.slot)).size;
+  const usedDrawers = new Set(allSmallFinal.map(i=>parseInt(i.slot)||0)).size;
+  const twoSlotCount = twoSlotItems.filter(i=>i.slotType==='small').length;
+  const overflowBagCount = allSmallFinal.filter(i=>i.isFull).length;
+
   showToast(
     '完成（'+elapsed+'秒）！去重-'+removedDups+
-    ' · 小抽屜'+smallFinal.length+'種/'+usedSlotsCount+'格'+
-    ' · 大抽屜'+toLarge.length+'種'+
+    ' · 小抽屜'+allSmallFinal.length+'種/'+usedDrawers+'抽屜'+
+    '（1格'+(allSmallFinal.length-twoSlotCount-overflowBagCount)+'+2格'+twoSlotCount+'+溢出'+overflowBagCount+'）'+
+    ' · 大抽屜'+toLarge.length+
     ' · 收納袋'+toBag.length+'種/'+(bagNum-1)+'袋'+
     ' · 融合'+mergeCount+
-    ' · 溢出'+overflowCount+
     (needExpansion ? ' · 已啟用擴充區' : '')
   );
   showScreen('s-main'); refreshMain();
