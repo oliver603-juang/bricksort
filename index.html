@@ -714,6 +714,33 @@ async function updateItem(item) {
   let items=JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]'); const idx=items.findIndex(i=>i.id===item.id);
   if(idx>=0) items[idx]=item; else items.unshift(item); localStorage.setItem(ITEMS_KEY,JSON.stringify(items));
 }
+
+// Batch update: write all to localStorage first, then Firebase in parallel batches
+async function batchUpdateItems(itemsToUpdate) {
+  if (!itemsToUpdate.length) return;
+
+  // Step 1: Bulk update localStorage (instant)
+  let allItems = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
+  const idMap = {};
+  allItems.forEach((item, idx) => { idMap[item.id] = idx; });
+  itemsToUpdate.forEach(item => {
+    const idx = idMap[item.id];
+    if (idx !== undefined) allItems[idx] = item;
+    else allItems.unshift(item);
+  });
+  localStorage.setItem(ITEMS_KEY, JSON.stringify(allItems));
+
+  // Step 2: Firebase batch writes (parallel, 10 at a time)
+  if (!db) return;
+  const col = cfg.fbCol || 'lego_parts';
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < itemsToUpdate.length; i += BATCH_SIZE) {
+    const batch = itemsToUpdate.slice(i, i + BATCH_SIZE);
+    await Promise.all(batch.map(item =>
+      db.collection(col).doc(item.id).set(item, {merge:true}).catch(e => console.warn('batch write err:', e))
+    ));
+  }
+}
 async function deleteItem(id) {
   if (db) await db.collection(cfg.fbCol||'lego_parts').doc(id).delete();
   let items=JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]'); items=items.filter(i=>i.id!==id); localStorage.setItem(ITEMS_KEY,JSON.stringify(items));
@@ -2039,6 +2066,7 @@ async function reorderAllSlots() {
   const allSlots = [];
   for (let d = 1; d <= SMALL_DRAWERS; d++) { allSlots.push(d+'a'); allSlots.push(d+'b'); }
   
+  const changedItems = [];
   let slotIdx = 0;
   for (const unit of units) {
     if (slotIdx >= allSlots.length) break;
@@ -2048,19 +2076,20 @@ async function reorderAllSlots() {
       if (unit.data.slot !== newSlot) {
         unit.data.slot = newSlot;
         unit.data.updatedAt = Date.now();
-        await updateItem(unit.data);
+        changedItems.push(unit.data);
       }
     } else {
-      // Merged group: all items get same slot
       for (const item of unit.data.items) {
         if (item.slot !== newSlot) {
           item.slot = newSlot;
           item.updatedAt = Date.now();
-          await updateItem(item);
+          changedItems.push(item);
         }
       }
     }
   }
+  setProcessingMsg('寫入 ' + changedItems.length + ' 個變更...');
+  await batchUpdateItems(changedItems);
 
   // === Phase 2: Reorder bags by category/series ===
   setProcessingMsg('重新分組收納袋...');
@@ -2081,31 +2110,38 @@ async function reorderAllSlots() {
     const sortedGroups = Object.entries(bagGroups).sort((a,b) => a[0].localeCompare(b[0]));
     let bagMoves = 0;
 
+    const bagChanges = [];
     for (const [group, groupItems] of sortedGroups) {
       const newBag = 'B' + bagNum;
       for (const item of groupItems) {
         if (item.slot !== newBag) {
           item.slot = newBag;
           item.updatedAt = Date.now();
-          await updateItem(item);
+          bagChanges.push(item);
           bagMoves++;
         }
       }
       bagNum++;
     }
 
-    // Also update overflowBag references for small items pointing to old bag numbers
+    if (bagChanges.length) {
+      setProcessingMsg('寫入 ' + bagChanges.length + ' 個收納袋變更...');
+      await batchUpdateItems(bagChanges);
+    }
+
+    // Clear stale overflowBag references
     if (bagMoves > 0) {
       const allItems2 = await loadItems();
-      // Build old→new bag mapping is complex, so just clear stale overflowBag refs
+      const overflowFixes = [];
       for (const item of allItems2) {
         if (item.overflowBag && !allItems2.some(b => b.slot === item.overflowBag && b.slotType === 'bag')) {
           item.overflowBag = '';
           item.isFull = false;
           item.updatedAt = Date.now();
-          await updateItem(item);
+          overflowFixes.push(item);
         }
       }
+      if (overflowFixes.length) await batchUpdateItems(overflowFixes);
     }
 
     showToast('已重新編排（' + singles.length + ' 獨立 + ' + mergedGroups.length + ' 融合 + ' + sortedGroups.length + ' 收納袋組）');
@@ -2480,6 +2516,7 @@ async function mergeAll() {
   // Greedy merge: find groups with tag intersection
   const merged = new Set();
   let totalMoves = 0;
+  const allMergeChanges = [];
 
   // Sort by volume (smallest first = easier to merge)
   candidates.sort((a, b) => a.vol - b.vol);
@@ -2507,17 +2544,21 @@ async function mergeAll() {
       merged.add(j);
     }
 
-    // Execute merges
+    // Collect merges
     if (bin.mergedItems.length > 0) {
-      const names = bin.mergedItems.map(i => (i.nameCN||i.name||'').substring(0,10)).join('+');
-      setProcessingMsg('融合：' + names + ' → ' + bin.slot);
       for (const item of bin.mergedItems) {
         item.slot = bin.slot;
         item.updatedAt = Date.now();
-        await updateItem(item);
+        allMergeChanges.push(item);
         totalMoves++;
       }
     }
+  }
+
+  // Batch write all merges
+  if (allMergeChanges.length) {
+    setProcessingMsg('寫入 ' + allMergeChanges.length + ' 個融合變更...');
+    await batchUpdateItems(allMergeChanges);
   }
 
   const allAfter = await loadItems();
@@ -3148,9 +3189,12 @@ async function openMergedManager() {
 
   // Actions bar
   html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
+  const violations = merged.filter(e => e.pct >= 20);
   html += '<span style="font-size:12px;font-weight:700;color:var(--accent)">🔗 已融合 ' + merged.length + ' 格</span>';
-  html += '<span style="font-size:11px;color:var(--muted)">可融合候選 ' + mergeable + ' 格（使用量<20%）</span>';
+  html += '<span style="font-size:11px;color:var(--muted)">可融合候選 ' + mergeable + ' 格</span>';
+  if (violations.length > 0) html += '<span style="font-size:11px;color:#e24b4a">⚠ ' + violations.length + ' 格超標</span>';
   html += '<div style="flex:1"></div>';
+  if (violations.length > 0) html += '<button onclick="autoUnmergeViolations()" style="background:#e24b4a;color:white;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">拆分超標</button>';
   html += '<button onclick="mergeConfirm();setTimeout(()=>openMergedManager(),1000)" style="background:var(--accent);color:#0a0a0a;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🔗 執行融合</button>';
   html += '</div>';
 
@@ -3180,6 +3224,7 @@ async function openMergedManager() {
       html += '<div style="display:flex;gap:2px">'+thumbHtml+'</div>';
       html += '<span style="font-size:10px;color:var(--dim)">'+e.items.length+'種</span>';
       if (commonTags.length) html += '<span style="font-size:9px;color:var(--green)">'+commonTags[0]+'</span>';
+      if (e.pct >= 20) html += '<span style="font-size:9px;padding:1px 4px;background:rgba(226,75,74,0.15);border:1px solid #e24b4a;color:#e24b4a;border-radius:3px">超標'+e.pct+'%</span>';
       html += '</div>';
       html += '<div style="display:flex;align-items:center;gap:6px">';
       html += '<div style="font-size:10px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+names+'</div>';
@@ -3243,42 +3288,82 @@ async function autoAssignLargeDrawers() {
 
   // Step 1: Release all current large drawer items back to small
   const currentLarge = items.filter(i => i.slotType === 'large');
+  const releaseChanges = [];
   for (const item of currentLarge) {
     item.slotType = 'small';
-    item.slot = ''; // Will be reassigned
+    item.slot = '';
     item.updatedAt = Date.now();
-    await updateItem(item);
+    releaseChanges.push(item);
   }
 
   // Step 2: Assign top 27 to L1~L27
+  const assignChanges = [];
   for (let idx = 0; idx < top27.length; idx++) {
     const item = top27[idx];
-    const oldSlot = item.slot;
     item.slot = 'L' + (idx + 1);
     item.slotType = 'large';
     item.updatedAt = Date.now();
-    await updateItem(item);
-    setProcessingMsg('L' + (idx+1) + '：' + (item.nameCN||item.name||'').substring(0,15));
+    assignChanges.push(item);
   }
+
+  setProcessingMsg('寫入變更...');
+  await batchUpdateItems([...releaseChanges, ...assignChanges]);
 
   // Step 3: Reassign released large items to free small slots
   const updatedItems = await loadItems();
   const needSlot = updatedItems.filter(i => i.slotType === 'small' && !i.slot);
   if (needSlot.length > 0) {
     setProcessingMsg('重新分配 ' + needSlot.length + ' 個釋放的零件...');
+    const slotChanges = [];
     for (const item of needSlot) {
       const allCurrent = await loadItems();
       const slotInfo = assignSmallSlot(item.featureTags || [], allCurrent);
       item.slot = slotInfo.slot;
       item.slotType = slotInfo.slotType;
       item.updatedAt = Date.now();
-      await updateItem(item);
+      slotChanges.push(item);
     }
+    await batchUpdateItems(slotChanges);
   }
 
   showToast('已指派 ' + top27.length + ' 種零件到大抽屜');
   showScreen('s-main'); refreshMain();
   setTimeout(() => openDrawerMap('large'), 500);
+}
+
+async function autoUnmergeViolations() {
+  const items = await loadItems();
+  const smallItems = items.filter(i => (i.slotType||'small') === 'small' && i.slot);
+
+  const slotData = {};
+  smallItems.forEach(i => {
+    if (!slotData[i.slot]) slotData[i.slot] = { items: [], vol: 0 };
+    slotData[i.slot].items.push(i);
+    slotData[i.slot].vol += (i.estimateVolumeMl||2) * (i.quantity||1);
+  });
+
+  const violations = Object.entries(slotData)
+    .filter(([s,d]) => d.items.length >= 2 && d.vol / SMALL_SLOT_ML >= 0.20);
+
+  if (!violations.length) { showToast('沒有超標的融合格子 ✓'); return; }
+  if (!confirm('拆分 ' + violations.length + ' 個超標融合格子？\n（使用量 ≥ 20% 的融合格子）')) return;
+
+  showScreen('s-processing'); setProcessingMsg('拆分超標融合...');
+  const changedItems = [];
+  let tempNum = SMALL_DRAWERS + 100;
+
+  for (const [slot, data] of violations) {
+    for (let k = 1; k < data.items.length; k++) {
+      data.items[k].slot = (++tempNum) + 'a';
+      data.items[k].updatedAt = Date.now();
+      changedItems.push(data.items[k]);
+    }
+  }
+
+  await batchUpdateItems(changedItems);
+  showToast('已拆分 ' + violations.length + ' 個超標融合格子（' + changedItems.length + ' 種零件移出）');
+  showScreen('s-main'); refreshMain();
+  setTimeout(() => openMergedManager(), 500);
 }
 
 // START
