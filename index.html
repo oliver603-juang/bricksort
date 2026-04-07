@@ -304,7 +304,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     <button class="btn-sm" onclick="closeModalPanel()">關閉</button>
     <div id="modal-irreg-warn" style="padding:0 20px 4px;display:none"></div>
   <div id="modal-capacity" style="padding:0 20px 12px"></div>
-  <div id="modal-move" style="padding:0 20px 8px"></div>
+
   <button class="btn-sm" id="modal-full-btn" onclick="toggleFull()">標記已滿</button>
     <button class="btn-danger" id="modal-delete-btn">刪除</button>
   </div>
@@ -1655,17 +1655,7 @@ async function openDrawerMap(zoneFilter) {
     html += '</div>';
   }
   html += '</div>';
-  html += '<div style="margin-top:20px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
-  html += '<div style="font-size:13px;font-weight:700;margin-bottom:8px">手動指派到大抽屜</div>';
-  html += '<div style="display:flex;gap:8px;align-items:center">';
-  html += '<input type="text" id="manual-partid" placeholder="零件編號（如 3001）" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;font-family:var(--mono);outline:none">';
-  html += '<select id="manual-drawer" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;font-family:var(--mono);outline:none">';
-  for (let d = 1; d <= LARGE_DRAWERS; d++) { html += `<option value="L${d}">L${d}</option>`; }
-  html += '</select>';
-  html += '<button onclick="manualAssignLarge()" style="background:var(--accent);color:#0a0a0a;border:none;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">指派</button>';
-  html += '</div>';
-  html += '<div style="font-size:11px;color:var(--dim);margin-top:6px">輸入已建檔零件的 Design ID，將其移動到指定大抽屜</div>';
-  html += '</div>';
+
 
   } // end showSmall reorder panel
 
@@ -1714,22 +1704,6 @@ async function openPartDetail(id) {
         irregWarn.innerHTML = '<span style="color:var(--accent);font-size:11px">⚠ 外型不規則，尺寸為 AI 估算值。如需精準數據請查 <a href="https://www.bricklink.com/v2/catalog/catalogitem.page?P='+(item.designId||'')+'" target="_blank" style="color:var(--accent);text-decoration:underline">BrickLink</a></span>';
       } else { irregWarn.style.display = 'none'; }
     }
-    // Move to... button
-    const moveDiv = document.getElementById('modal-move');
-    if (moveDiv) {
-      let moveHtml = '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
-      moveHtml += '<span style="font-size:11px;color:var(--muted)">移動到</span>';
-      moveHtml += '<select id="modal-move-target" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:11px">';
-      // Large drawers
-      for (let d = 1; d <= 27; d++) moveHtml += '<option value="L'+d+'">L'+d+' 大抽屜</option>';
-      // Bags
-      moveHtml += '<option value="NEW_BAG">新收納袋</option>';
-      moveHtml += '</select>';
-      moveHtml += '<button onclick="moveItemTo(\''+item.id+'\',document.getElementById(\'modal-move-target\').value)" style="background:var(--accent);color:#0a0a0a;border:none;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">移動</button>';
-      moveHtml += '</div>';
-      moveDiv.innerHTML = moveHtml;
-    }
-
     const capBar = document.getElementById('modal-capacity');
     if (capBar && item.slotType !== 'bag') {
       capBar.style.display = '';
@@ -1907,34 +1881,7 @@ function renderBatchList() {
 // ══════════════════════════════════════════════
 // MANUAL ASSIGN TO LARGE DRAWER
 // ══════════════════════════════════════════════
-async function manualAssignLarge() {
-  const partId = document.getElementById('manual-partid').value.trim();
-  const drawer = document.getElementById('manual-drawer').value;
-  if (!partId) { showToast('請輸入零件編號', 'error'); return; }
 
-  const items = await loadItems();
-  // Find by exact designId, or by base designId
-  let item = items.find(i => (i.designId||'').toLowerCase() === partId.toLowerCase());
-  if (!item) {
-    const baseInput = getBaseDesignId(partId);
-    if (baseInput) item = items.find(i => getBaseDesignId(i.designId) === baseInput);
-  }
-  // Also search by name
-  if (!item) item = items.find(i => (i.nameCN||'').includes(partId) || (i.name||'').toLowerCase().includes(partId.toLowerCase()));
-
-  if (!item) {
-    showToast('找不到零件「' + partId + '」，請先建檔', 'error');
-    return;
-  }
-
-  const oldSlot = item.slot;
-  item.slot = drawer;
-  item.slotType = 'large';
-  await updateItem(item);
-  document.getElementById('manual-partid').value = '';
-  showToast((item.nameCN||item.name) + '：' + oldSlot + ' → ' + drawer);
-  openDrawerMap(); // refresh
-}
 
 async function searchDrawer(num) {
   const items = await loadItems();
@@ -3261,33 +3208,6 @@ async function unmergeFromManager() {
   }
   showToast('已拆分 ' + slots.length + ' 個融合格子');
   openMergedManager();
-}
-
-async function moveItemTo(id, target) {
-  const items = await loadItems();
-  const item = items.find(i => i.id === id);
-  if (!item) return;
-
-  const oldSlot = item.slot;
-  const oldType = item.slotType;
-
-  if (target === 'NEW_BAG') {
-    const bagInfo = assignBag(item.featureTags || [], items);
-    item.slot = bagInfo.slot;
-    item.slotType = 'bag';
-  } else if (target.startsWith('L')) {
-    item.slot = target;
-    item.slotType = 'large';
-  } else {
-    item.slot = target;
-    item.slotType = 'small';
-  }
-
-  item.updatedAt = Date.now();
-  await updateItem(item);
-  closeModalPanel();
-  showToast((item.nameCN||item.name) + '：' + oldSlot + ' → ' + item.slot);
-  refreshMain();
 }
 
 async function autoAssignLargeDrawers() {
