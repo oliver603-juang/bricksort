@@ -1634,8 +1634,15 @@ async function openDrawerMap(zoneFilter) {
   } // end showSmall main+ext
 
   if (showBag) {
-  // Categorize all bag items
+  // Categorize all bag items + overflow bag references
   const bagItemsAll = items.filter(i => i.slotType === 'bag' || (i.slot||'').startsWith('B'));
+
+  // Collect overflow bags (small drawer items marked isFull with overflowBag)
+  const overflowRefs = {};
+  items.filter(i => i.isFull && i.overflowBag).forEach(i => {
+    if (!overflowRefs[i.overflowBag]) overflowRefs[i.overflowBag] = [];
+    overflowRefs[i.overflowBag].push(i);
+  });
   const bagsBySlot = {};
   bagItemsAll.forEach(i => {
     if (!bagsBySlot[i.slot]) bagsBySlot[i.slot] = [];
@@ -1689,6 +1696,33 @@ async function openDrawerMap(zoneFilter) {
     html += '</div>';
     cat.bags.sort((a,b) => a.bag.localeCompare(b.bag, undefined, {numeric:true}));
     cat.bags.forEach(({bag, items: bagItems}) => { html += renderBagCard(bag, bagItems, cat.color); });
+  }
+
+  // Show overflow bags (items in small drawers that are marked full)
+  const overflowEntries = Object.entries(overflowRefs);
+  if (overflowEntries.length > 0) {
+    hasBags = true;
+    html += '<div style="margin:16px 0 8px;display:flex;align-items:center;gap:8px">';
+    html += '<span style="font-size:13px;font-weight:700;color:#e24b4a">⚠ 滿溢收納袋</span>';
+    html += '<span style="font-size:11px;color:var(--muted)">' + overflowEntries.length + '袋</span>';
+    html += '</div>';
+
+    overflowEntries.sort((a,b) => a[0].localeCompare(b[0], undefined, {numeric:true})).forEach(([bag, refItems]) => {
+      const thumbs = refItems.slice(0,3).map(i => i.thumbnailUrl || i.imageData || '').filter(Boolean);
+      const thumbHtml = thumbs.map(u => '<img src="'+u+'" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">').join('');
+      const names = refItems.slice(0,3).map(i => (i.nameCN||i.name||'').substring(0,12)).join(' · ');
+      const totalVol = refItems.reduce((s,i) => s + Math.round((i.estimateVolumeMl||2)*(i.quantity||1)), 0);
+
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;margin-bottom:4px;background:var(--surface);border-radius:8px;border-left:3px solid #e24b4a;cursor:pointer" onclick="doSearch(\''+refItems[0].slot+'\')">'+
+        '<span class="slot-badge slot-bag" style="font-size:12px;padding:3px 8px;min-width:32px;text-align:center">'+bag+'</span>'+
+        '<div style="display:flex;gap:3px">'+thumbHtml+'</div>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+names+'</div>'+
+          '<div style="font-size:9px;color:#e24b4a">溢出 '+totalVol+'ml（來自格子 '+refItems.map(i=>i.slot).join(', ')+'）</div>'+
+        '</div>'+
+        '<span style="font-size:10px;color:var(--dim)">'+refItems.length+'種</span>'+
+      '</div>';
+    });
   }
 
   if (!hasBags) {
@@ -2029,8 +2063,11 @@ async function updateQuantity(id, val) {
   // Capacity check: qty × vol > slot capacity?
   const totalVol = (item.estimateVolumeMl||2) * qty;
   const isSmall = (item.slotType||'small') === 'small';
+  const isLarge = item.slotType === 'large';
+  const slotCap = isSmall ? SMALL_SLOT_ML : isLarge ? LARGE_DRAWER_ML : 9999;
+  const capLabel = isSmall ? '格子' : isLarge ? '大抽屜' : '';
 
-  if (isSmall && totalVol > SMALL_SLOT_ML && !item.isFull) {
+  if ((isSmall || isLarge) && totalVol > slotCap && !item.isFull) {
     // Overflow! Add overflow bag
     let maxBag = 0;
     items.forEach(i => {
@@ -2041,13 +2078,13 @@ async function updateQuantity(id, val) {
     item.isFull = true;
     item.overflowBag = 'B' + (maxBag + 1);
     await updateItem(item);
-    showToast('⚠ ' + (item.nameCN||item.name) + ' 數量 ' + qty + ' 件（' + Math.round(totalVol) + 'ml）超過格子容量，已加編溢出袋 ' + item.overflowBag, 'error');
-  } else if (isSmall && totalVol <= SMALL_SLOT_ML && item.isFull) {
+    showToast('⚠ ' + (item.nameCN||item.name) + ' ' + qty + '件（' + Math.round(totalVol) + 'ml）超過' + capLabel + '容量（' + slotCap + 'ml），已加編溢出袋 ' + item.overflowBag, 'error');
+  } else if ((isSmall || isLarge) && totalVol <= slotCap && item.isFull) {
     // Was full but now fits → clear overflow
     item.isFull = false;
     item.overflowBag = '';
     await updateItem(item);
-    showToast((item.nameCN||item.name) + ' 數量 ' + qty + ' 件（' + Math.round(totalVol) + 'ml）已恢復正常');
+    showToast((item.nameCN||item.name) + ' ' + qty + '件（' + Math.round(totalVol) + 'ml）已恢復正常');
   } else {
     await updateItem(item);
     showToast((item.nameCN||item.name) + ' 數量更新為 ' + qty);
