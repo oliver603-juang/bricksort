@@ -2139,177 +2139,148 @@ async function updateQuantity(id, val) {
 // REORDER & LOCK
 // ══════════════════════════════════════════════
 async function reorderAllSlots() {
-  if (!confirm('重新編排所有零件的抽屜位置？\n（按分類排序，融合格子保持不變）\n\n⚠ 如已放入實體抽屜，需要重新擺放零件！')) return;
-  
+  if (!confirm('重新編排所有小抽屜零件？\n（按分類排序，遵守 1格/2格/溢出袋規則）\n\n⚠ 如已放入實體抽屜，需要重新擺放零件！')) return;
+
   showScreen('s-processing'); setProcessingMsg('重新編排中...');
-  const items = await loadItems();
+  const items = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
   const smallItems = items.filter(i => (i.slotType||'small') === 'small' && i.slot);
+  const otherItems = items.filter(i => (i.slotType||'small') !== 'small' || !i.slot);
 
-  // Identify merged groups (slots with 2+ items)
-  const slotCounts = {};
-  smallItems.forEach(i => { slotCounts[i.slot] = (slotCounts[i.slot]||0) + 1; });
-  const mergedSlots = new Set(Object.keys(slotCounts).filter(s => slotCounts[s] >= 2));
+  if (!smallItems.length) { showToast('沒有小抽屜零件'); showScreen('s-main'); return; }
 
-  // Split into merged groups and singles
-  const mergedGroups = []; // each: { items: [...], vol, group }
-  const singles = [];      // individual items to reorder
+  // Clear old assignments
+  smallItems.forEach(i => { i.isFull = false; i.overflowBag = ''; i._twoSlot = false; });
 
-  // Collect merged groups
-  const processedSlots = new Set();
-  smallItems.forEach(i => {
-    if (mergedSlots.has(i.slot)) {
-      if (!processedSlots.has(i.slot)) {
-        processedSlots.add(i.slot);
-        const groupItems = smallItems.filter(x => x.slot === i.slot);
-        mergedGroups.push({
-          items: groupItems,
-          vol: groupItems.reduce((s,x) => s + (x.estimateVolumeMl||2)*(x.quantity||1), 0),
-          group: getCategoryGroup(groupItems[0]?.featureTags) || 'zzz',
-          tag: (groupItems[0]?.featureTags||[])[0] || 'zzz',
-          minVol: Math.min(...groupItems.map(x => x.estimateVolumeMl||2)),
-        });
-      }
-    } else {
-      singles.push(i);
-    }
+  // Classify by volume: 1格 / 2格 / 溢出
+  const DRAWER_ML = SMALL_SLOT_ML * 2;
+  const oneSlotItems = [], twoSlotItems = [], overflowItems = [];
+  smallItems.forEach(item => {
+    const tv = (item.estimateVolumeMl||2) * (item.quantity||1);
+    if (tv <= SMALL_SLOT_ML) oneSlotItems.push(item);
+    else if (tv <= DRAWER_ML) { item._twoSlot = true; twoSlotItems.push(item); }
+    else { item.isFull = true; overflowItems.push(item); }
   });
 
-  // Sort singles by category → tag → volume → name
-  singles.sort((a, b) => {
-    const gA = getCategoryGroup(a.featureTags) || 'zzz';
-    const gB = getCategoryGroup(b.featureTags) || 'zzz';
+  // Sort all by category → tag → volume
+  const sortFn = (a,b) => {
+    const gA = getCategoryGroup(a.featureTags)||'zzz', gB = getCategoryGroup(b.featureTags)||'zzz';
     if (gA !== gB) return gA.localeCompare(gB);
-    const tA = (a.featureTags||[])[0] || 'zzz';
-    const tB = (b.featureTags||[])[0] || 'zzz';
+    const tA = (a.featureTags||[])[0]||'zzz', tB = (b.featureTags||[])[0]||'zzz';
     if (tA !== tB) return tA.localeCompare(tB);
-    const vA = a.estimateVolumeMl || 0;
-    const vB = b.estimateVolumeMl || 0;
-    if (vA !== vB) return vA - vB;
-    return (a.nameCN||a.name||'').localeCompare(b.nameCN||b.name||'');
+    return (a.estimateVolumeMl||0) - (b.estimateVolumeMl||0);
+  };
+  twoSlotItems.sort(sortFn);
+  oneSlotItems.sort(sortFn);
+  overflowItems.sort(sortFn);
+
+  // Assign drawers: 2-slot first (each gets full drawer)
+  let drawerNum = 1;
+  twoSlotItems.forEach(item => {
+    item.slot = drawerNum + 'a';
+    item.slotType = 'small';
+    drawerNum++;
   });
 
-  // Sort merged groups by same criteria (use first item's data)
-  mergedGroups.sort((a, b) => {
-    if (a.group !== b.group) return a.group.localeCompare(b.group);
-    if (a.tag !== b.tag) return a.tag.localeCompare(b.tag);
-    return a.minVol - b.minVol;
-  });
+  // Then 1-slot + overflow items share remaining drawers
+  const singleItems = [...oneSlotItems, ...overflowItems];
 
-  // Unified sort: merge singles and merged groups into one list, sort together
+  // Merge first (only 1-slot items with <30%)
+  const MAX_USAGE = 0.30, MAX_PER_SLOT = 3;
+  const mergeable = oneSlotItems.filter(i => (i.estimateVolumeMl||2)*(i.quantity||1)/SMALL_SLOT_ML < MAX_USAGE && (i.featureTags||[]).length > 0);
+  const mergeMap = {}; // item.id → target slot item.id
+  const sorted = mergeable.map((item,idx) => ({ item, idx, tv:(item.estimateVolumeMl||2)*(item.quantity||1), tags:new Set((item.featureTags||[]).map(t=>t.toLowerCase())) }));
+  sorted.sort((a,b) => a.tv - b.tv);
+  const mSet = new Set();
+  let mergeCount = 0;
+  const mergeGroups = []; // [{items: [item1, item2, item3]}]
+
+  for (let i = 0; i < sorted.length; i++) {
+    if (mSet.has(i)) continue;
+    const group = [sorted[i].item];
+    const bin = { vol:sorted[i].tv, count:1, tags:new Set(sorted[i].tags) };
+    for (let j = i+1; j < sorted.length && bin.count < MAX_PER_SLOT; j++) {
+      if (mSet.has(j)) continue;
+      let ov=0; sorted[j].tags.forEach(t=>{if(bin.tags.has(t))ov++;}); if(!ov) continue;
+      group.push(sorted[j].item);
+      bin.vol += sorted[j].tv; bin.count++;
+      sorted[j].tags.forEach(t=>bin.tags.add(t));
+      mSet.add(j); mergeCount++;
+    }
+    if (group.length > 1) mergeGroups.push(group);
+  }
+
+  // Build assignment list: merged groups + singles
+  const mergedItemIds = new Set();
+  mergeGroups.forEach(g => g.forEach(i => mergedItemIds.add(i.id)));
+  const unmergedSingles = singleItems.filter(i => !mergedItemIds.has(i.id));
+
+  // Interleave: merged groups and singles sorted together
   const units = [];
-  singles.forEach(item => {
-    units.push({
-      type: 'single', data: item,
-      sortGroup: getCategoryGroup(item.featureTags) || 'zzz',
-      sortTag: (item.featureTags||[])[0] || 'zzz',
-      sortVol: item.estimateVolumeMl || 0
-    });
-  });
-  mergedGroups.forEach(mg => {
-    units.push({
-      type: 'merged', data: mg,
-      sortGroup: mg.group,
-      sortTag: mg.tag,
-      sortVol: mg.minVol
-    });
-  });
-
-  // Sort all units by: group → tag → volume
-  units.sort((a, b) => {
-    if (a.sortGroup !== b.sortGroup) return a.sortGroup.localeCompare(b.sortGroup);
-    if (a.sortTag !== b.sortTag) return a.sortTag.localeCompare(b.sortTag);
-    return a.sortVol - b.sortVol;
+  mergeGroups.forEach(g => units.push({ type:'merged', items:g, sortKey: getCategoryGroup(g[0].featureTags)||'zzz', sortTag:(g[0].featureTags||[])[0]||'zzz' }));
+  unmergedSingles.forEach(i => units.push({ type:'single', items:[i], sortKey: getCategoryGroup(i.featureTags)||'zzz', sortTag:(i.featureTags||[])[0]||'zzz' }));
+  units.sort((a,b) => {
+    if (a.sortKey !== b.sortKey) return a.sortKey.localeCompare(b.sortKey);
+    return a.sortTag.localeCompare(b.sortTag);
   });
 
   // Assign slots sequentially
-  const allSlots = [];
-  for (let d = 1; d <= SMALL_DRAWERS; d++) { allSlots.push(d+'a'); allSlots.push(d+'b'); }
-  
-  const changedItems = [];
+  const slotQueue = [];
+  for (let d = drawerNum; d <= SMALL_DRAWERS; d++) { slotQueue.push(d+'a'); slotQueue.push(d+'b'); }
   let slotIdx = 0;
-  for (const unit of units) {
-    if (slotIdx >= allSlots.length) break;
-    const newSlot = allSlots[slotIdx++];
 
-    if (unit.type === 'single') {
-      if (unit.data.slot !== newSlot) {
-        unit.data.slot = newSlot;
-        unit.data.updatedAt = Date.now();
-        changedItems.push(unit.data);
-      }
-    } else {
-      for (const item of unit.data.items) {
-        if (item.slot !== newSlot) {
-          item.slot = newSlot;
-          item.updatedAt = Date.now();
-          changedItems.push(item);
-        }
-      }
-    }
+  units.forEach(unit => {
+    if (slotIdx >= slotQueue.length) return;
+    const slot = slotQueue[slotIdx++];
+    unit.items.forEach(item => { item.slot = slot; item.updatedAt = Date.now(); });
+  });
+
+  // Overflow bags
+  let overflowBagNum = 0;
+  let maxBag = 0;
+  otherItems.forEach(i => { const n=parseInt((i.slot||'').replace('B',''))||0; if(n>maxBag) maxBag=n; });
+  overflowBagNum = maxBag;
+
+  smallItems.filter(i => i.isFull).forEach(item => {
+    overflowBagNum++;
+    item.overflowBag = 'B' + overflowBagNum;
+  });
+
+  // Update SMALL_DRAWERS if expanded
+  const maxUsed = Math.max(...smallItems.map(i => parseInt((i.slot||'0').match(/^(\d+)/)?.[1]||'0')));
+  if (maxUsed > SMALL_DRAWERS) {
+    SMALL_DRAWERS = maxUsed;
+    localStorage.setItem('bricksort_max_drawers', SMALL_DRAWERS);
   }
-  setProcessingMsg('寫入 ' + changedItems.length + ' 個變更...');
-  await batchUpdateItems(changedItems);
 
-  // === Phase 2: Reorder bags by category/series ===
+  // Phase 2: Reorder bags
   setProcessingMsg('重新分組收納袋...');
-  const allAfter = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
-  const bagItems = allAfter.filter(i => i.slotType === 'bag' && i.slot && i.slot.startsWith('B'));
-
+  const bagItems = items.filter(i => i.slotType === 'bag' && (i.slot||'').startsWith('B'));
   if (bagItems.length > 0) {
-    // Group bag items by category (minifig series or featureTags group)
     const bagGroups = {};
     bagItems.forEach(i => {
       const key = i.minifigSeries || getCategoryGroup(i.featureTags) || 'other';
       if (!bagGroups[key]) bagGroups[key] = [];
       bagGroups[key].push(i);
     });
-
-    // Reassign bag numbers sequentially by group
-    let bagNum = 1;
-    const sortedGroups = Object.entries(bagGroups).sort((a,b) => a[0].localeCompare(b[0]));
-    let bagMoves = 0;
-
-    const bagChanges = [];
+    let bNum = overflowBagNum + 1;
+    const sortedGroups = Object.entries(bagGroups).sort((a,b)=>a[0].localeCompare(b[0]));
     for (const [group, groupItems] of sortedGroups) {
-      const newBag = 'B' + bagNum;
-      for (const item of groupItems) {
-        if (item.slot !== newBag) {
-          item.slot = newBag;
-          item.updatedAt = Date.now();
-          bagChanges.push(item);
-          bagMoves++;
-        }
-      }
-      bagNum++;
+      const newBag = 'B' + bNum;
+      groupItems.forEach(item => { item.slot = newBag; item.updatedAt = Date.now(); });
+      bNum++;
     }
-
-    if (bagChanges.length) {
-      setProcessingMsg('寫入 ' + bagChanges.length + ' 個收納袋變更...');
-      await batchUpdateItems(bagChanges);
-    }
-
-    // Clear stale overflowBag references
-    if (bagMoves > 0) {
-      const allItems2 = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
-      const overflowFixes = [];
-      for (const item of allItems2) {
-        if (item.overflowBag && !allItems2.some(b => b.slot === item.overflowBag && b.slotType === 'bag')) {
-          item.overflowBag = '';
-          item.isFull = false;
-          item.updatedAt = Date.now();
-          overflowFixes.push(item);
-        }
-      }
-      if (overflowFixes.length) await batchUpdateItems(overflowFixes);
-    }
-
-    showToast('已重新編排（' + singles.length + ' 獨立 + ' + mergedGroups.length + ' 融合 + ' + sortedGroups.length + ' 收納袋組）');
-  } else {
-    showToast('已重新編排（' + singles.length + ' 個獨立 + ' + mergedGroups.length + ' 個融合格子）');
   }
 
+  // Write
+  setProcessingMsg('寫入...');
+  const allFinal = [...smallItems, ...otherItems];
+  await batchUpdateItems(allFinal);
+
+  const usedDrawers = new Set(smallItems.map(i=>parseInt((i.slot||'0').match(/^(\d+)/)?.[1]||'0'))).size;
+  const overflowCount = smallItems.filter(i=>i.isFull).length;
+  showToast('重新編排完成！' + usedDrawers + '抽屜（2格'+twoSlotItems.length+'+融合'+mergeCount+'）溢出'+overflowCount);
   showScreen('s-main'); refreshMain();
-  setTimeout(() => openDrawerMap(), 500);
+  setTimeout(() => openDrawerMap('small'), 500);
 }
 
 function lockArrangement() {
