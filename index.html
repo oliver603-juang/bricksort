@@ -129,7 +129,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     <div style="margin-top:16px;padding:10px 14px;background:var(--green-bg);border:1px solid var(--green);border-radius:8px;font-size:12px;color:var(--green)">☁️ Firebase 多裝置同步已預設啟用<br><span style="color:var(--muted);font-size:11px">Project: storesmart-7ae65 · Collection: lego_parts</span></div>
     <button class="btn-primary" onclick="saveSetup()">開始使用</button>
   </div>
-  <div style="text-align:center;margin-top:20px;font-size:11px;color:var(--dim)">396 小抽屜 (a/b分格) · 12 大抽屜 · 收納袋</div>
+  <div style="text-align:center;margin-top:20px;font-size:11px;color:var(--dim)">396 小抽屜 (a/b分格, 48×68×38mm) · 27 大抽屜 (108×136×53mm) · 收納袋</div>
 </div>
 </div>
 
@@ -536,8 +536,8 @@ function calculateLegoVolume(name, aiEstimate) {
 
 
 // 計算零件的外框尺寸（mm），返回 [最長邊, 第2長邊, 最短邊] 排序
-const SLOT_WIDTH = 45;   // 格子寬度 mm
-const SLOT_HEIGHT = 35;  // 格子高度 mm（深度方向可堆疊，不受限）
+const SLOT_WIDTH = 48;   // 格子寬度 mm（已校正）
+const SLOT_HEIGHT = 38;  // 格子高度 mm（已校正）
 
 function calcPartDimensions(name) {
   if (!name) return null;
@@ -596,20 +596,123 @@ const GEMINI_LEGO_SYSTEM = `你是一位專業的樂高零件資料庫工程師�
    - 「底部帶把手」類零件的高度通常遠大於標準板高，至少 8-12mm。
 4. 體積計算：直接用 dim_mm 的三邊相乘除以 1000 得到 ml，不要用填充率。`;
 
-// 抽屜系統
-let SMALL_DRAWERS = 630;         // 頂90 + 主360 + 擴充180, 各有 a/b 兩格（可動態擴充）
-const SMALL_SLOT_ML = 102;       // 45×65×35mm per a/b slot      // 每格 150cc
-const LARGE_DRAWERS = 27;        // C區 大抽屜       // L1~L12
-const LARGE_DRAWER_ML = 780;     // 105×135×55mm    // 每個 600cc
-const BAG_ML = 500;             // 收納袋 500cc
-const OVERSIZE_ML = 50;           // 體積 > 50cc → 收納袋         // 超大零件門檻
-const REORDER_LIMIT = 600;      // 600 件後不再重新編排
+// 抽屜系統（已與 bricksort-assign/editor 對齊）
+const BASE_DRAWERS = 450;
+let SMALL_DRAWERS = 450;         // 動態擴充，每次 +180
+const EXPAND_SIZE = 180;
+const SMALL_SLOT_ML = 124;       // 48×68×38mm per a/b slot = 124ml
+const DRAWER_ML = 248;           // 整個小抽屜 a+b = 248ml
+const LARGE_DRAWERS = 27;        // 大抽屜 L01~L27
+const LARGE_DRAWER_ML = 778;     // 108×136×53mm = 778ml
+const BAG_ML_DEFAULT = 800;      // 收納袋 800ml
+const MERGE_LIMIT = 41;          // Vt ≤ 41ml → 融合候選
+const FB_CONFIG_DOC = '_slot_config';
 
 // Gemini model fallback
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview'];
 let _lastWorkingModel = null;
 
 let cfg = {}, db = null, pendingPart = null, currentImageData = null, currentMode = 'catalog';
+// Slot config 指標系統（從 Firebase _slot_config 載入）
+let slotConfig = { nextSmallSlot:'001a', nextBagSlot:'B01', totalSmallDrawers:450, bagCapacity:800 };
+
+// ══════════════════════════════════════════════
+// SLOT POINTER HELPERS (from bricksort-editor)
+// ══════════════════════════════════════════════
+function parseSlotPtr(s) {
+  const m = (s||'').match(/^(\d+)(a|b)?$/);
+  return m ? { drawer:parseInt(m[1]), sub:m[2]||null } : { drawer:1, sub:'a' };
+}
+function slotPtrStr(drawer, sub) { return String(drawer).padStart(3,'0')+(sub||''); }
+
+function advanceSmallSlot(cur, needFull) {
+  let { drawer, sub } = parseSlotPtr(cur);
+  if (needFull) {
+    if (sub === 'b') drawer++;
+    const assigned = slotPtrStr(drawer, null);
+    const next = slotPtrStr(drawer + 1, 'a');
+    ensureDrawerCap(drawer + 1);
+    return { assigned, next };
+  }
+  if (!sub) sub = 'a';
+  const assigned = slotPtrStr(drawer, sub);
+  let nDrawer, nSub;
+  if (sub === 'a') {
+    const bSlot = slotPtrStr(drawer,'b'), fullSlot = slotPtrStr(drawer,null);
+    const bOccupied = loadItemsSync().some(i => i.slot===bSlot || i.slot===fullSlot);
+    if (bOccupied) { nDrawer=drawer+1; nSub='a'; }
+    else { nDrawer=drawer; nSub='b'; }
+  } else { nDrawer=drawer+1; nSub='a'; }
+  ensureDrawerCap(nDrawer);
+  return { assigned, next: slotPtrStr(nDrawer, nSub) };
+}
+
+function advanceBagSlot(cur) {
+  const m = (cur||'').match(/^B(\d+)$/);
+  const n = m ? parseInt(m[1]) : 1;
+  return 'B' + String(n + 1).padStart(2,'0');
+}
+
+function ensureDrawerCap(n) {
+  while (n > (slotConfig.totalSmallDrawers || BASE_DRAWERS)) {
+    slotConfig.totalSmallDrawers = (slotConfig.totalSmallDrawers || BASE_DRAWERS) + EXPAND_SIZE;
+    SMALL_DRAWERS = slotConfig.totalSmallDrawers;
+    localStorage.setItem('bricksort_max_drawers', SMALL_DRAWERS);
+    console.warn('[EXPAND] 小抽屜擴充至 ' + SMALL_DRAWERS);
+  }
+}
+
+function getSlotCap(slot, slotType) {
+  if (slotType === 'bag') return slotConfig.bagCapacity || BAG_ML_DEFAULT;
+  if (slotType === 'large') return LARGE_DRAWER_ML;
+  if (slotType === 'box') return Infinity;
+  if (!slot) return SMALL_SLOT_ML;
+  if (/\d+[ab]$/.test(slot)) return SMALL_SLOT_ML;
+  if (/^\d+$/.test(slot)) return DRAWER_ML;
+  return SMALL_SLOT_ML;
+}
+
+function getBagTotalVol(bagSlot) {
+  const items = loadItemsSync();
+  return items.reduce((s, i) => {
+    let v = 0;
+    if (i.slot === bagSlot && i.slotType === 'bag') v += (i.estimateVolumeMl||0) * (i.quantity||1);
+    if (i.overflowSlot === bagSlot) v += (i.estimateVolumeMl||0) * (i.overflowQty||0);
+    return s + v;
+  }, 0);
+}
+
+function findBagForOverflow(overflowVol) {
+  const cap = slotConfig.bagCapacity || BAG_ML_DEFAULT;
+  const lastBag = slotConfig.nextBagSlot || 'B01';
+  const lastNum = parseInt((lastBag.match(/\d+/)||['1'])[0]);
+  for (let n = lastNum - 1; n >= 1; n--) {
+    const label = 'B' + String(n).padStart(2,'0');
+    if (getBagTotalVol(label) + overflowVol <= cap) return label;
+  }
+  const newBag = lastBag;
+  slotConfig.nextBagSlot = advanceBagSlot(newBag);
+  return newBag;
+}
+
+// Sync version of loadItems for pointer helpers (uses localStorage cache)
+function loadItemsSync() {
+  return JSON.parse(localStorage.getItem(ITEMS_KEY) || '[]');
+}
+
+async function saveSlotConfig() {
+  if (db) {
+    try {
+      await db.collection(cfg.fbCol||'lego_parts').doc(FB_CONFIG_DOC).set({
+        nextSmallSlot: slotConfig.nextSmallSlot,
+        nextBagSlot: slotConfig.nextBagSlot,
+        totalSmallDrawers: slotConfig.totalSmallDrawers,
+        bagCapacity: slotConfig.bagCapacity || BAG_ML_DEFAULT,
+        lastUpdatedAt: Date.now()
+      }, { merge: true });
+    } catch(e) { console.warn('saveSlotConfig failed:', e); }
+  }
+}
 
 // ══════════════════════════════════════════════
 // GEMINI API (with fallback + timing)
@@ -716,7 +819,16 @@ async function loadItems() {
       const fbPromise = db.collection(cfg.fbCol||'lego_parts').orderBy('createdAt','desc').get();
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
       const snap = await Promise.race([fbPromise, timeoutPromise]);
-      return snap.docs.map(d=>({id:d.id,...d.data()}));
+      const result = [];
+      snap.docs.forEach(d => {
+        if (d.id === FB_CONFIG_DOC) {
+          slotConfig = { ...slotConfig, ...d.data() };
+          if (slotConfig.totalSmallDrawers > SMALL_DRAWERS) SMALL_DRAWERS = slotConfig.totalSmallDrawers;
+        } else {
+          result.push({id:d.id,...d.data()});
+        }
+      });
+      return result;
     } catch(e) {
       console.warn('Firestore read failed/timeout, using localStorage', e.message);
     }
@@ -798,6 +910,7 @@ async function syncToFirebase() {
   }
 
   localStorage.removeItem('bricksort_pending_sync');
+  await saveSlotConfig();
   showToast('Firebase 同步完成：' + written + ' 個' + (errors ? '，' + errors + ' 個失敗' : ''));
   showScreen('s-main'); refreshMain();
 }
@@ -848,7 +961,7 @@ function partRowHTML(item) {
     ${thumb}
     <div class="item-info"><div class="item-name">${item.name||item.nameCN||'未知零件'}</div>
     <div class="item-meta"><span class="item-slot">${item.slot||'?'}</span><span class="item-cat">${(item.featureTags||[]).slice(0,2).join(', ')}</span></div></div>
-    <span class="slot-badge ${slotClass}">${item.slot||'?'}</span>${item.overflowBag ? '<span class="slot-badge slot-bag" style="margin-left:4px">'+item.overflowBag+'</span>' : ''}
+    <span class="slot-badge ${slotClass}">${item.slot||'?'}</span>${item.overflowSlot ? '<span class="slot-badge slot-bag" style="margin-left:4px">+'+item.overflowSlot+'('+(item.overflowQty||'?')+'件)</span>' : ''}
   </div>`;
 }
 
@@ -959,7 +1072,7 @@ async function handlePartIdBatch() {
       const vol = calcVolFromAI(parsed.name || '', parsed);
       const categoryBag = isCategoryAlwaysBag(parsed.feature_tags);
       const dimTooLarge = !fitsInSlot(parsed.name || partId, parsed);
-      const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML || dimTooLarge;
+      const vt = vol * 1; // qty=1 for new part
       const allItems = await loadItems();
 
       let match = null;
@@ -969,8 +1082,9 @@ async function handlePartIdBatch() {
 
       let slotInfo;
       if (match) slotInfo = { slot: match.slot, slotType: match.slotType || 'small' };
-      else if (isOversize) slotInfo = assignBag(parsed.feature_tags || [], allItems);
-      else slotInfo = assignSmallSlot(parsed.feature_tags || [], allItems);
+      else if (categoryBag || dimTooLarge || vt > LARGE_DRAWER_ML) slotInfo = assignBagByPointer();
+      else if (vt > DRAWER_ML) slotInfo = assignBagByPointer(); // 249~778 → 大抽屜已滿，新建進袋
+      else slotInfo = assignSmallSlot(parsed.feature_tags || [], allItems, vol, 1);
 
       const now = Date.now();
       const savedItem = { name: parsed.name||'', nameCN: parsed.name_cn||'', designId, description: parsed.description||'', featureTags: parsed.feature_tags||[], bricklinkCategory: parsed.bricklink_category||'', estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType||'small', thumbnailUrl, imageData: '', isFull: false, quantity: 1, id: match ? match.id : 'lego_'+now+'_'+Math.random().toString(36).slice(2,5), createdAt: match ? match.createdAt : now, updatedAt: now };
@@ -1060,25 +1174,34 @@ async function processResult(item) {
   }
   const thumbnailUrl = designId ? `https://cdn.rebrickable.com/media/parts/ldraw/7/${designId}.png` : '';
 
-  // Determine slot type
+  // Determine slot type — 五級分流（已與 bricksort-assign 對齊）
   const vol = calcVolFromAI(item.name || item.name_cn || '', item);
+  const qty = 1; // new part, qty=1
+  const vt = vol * qty;
   const categoryBag = isCategoryAlwaysBag(item.feature_tags);
   const dimTooLarge = !fitsInSlot(item.name || '');
-  const isOversize = categoryBag || item.is_oversize || vol > OVERSIZE_ML || (item.length_cm && item.length_cm > 7) || dimTooLarge;
+  const isMinifig = item.is_minifig || false;
+  const isOversize = categoryBag || dimTooLarge || vt > LARGE_DRAWER_ML;
 
   let slotInfo;
   if (match) {
     // Same shape → same slot
     slotInfo = { slot: match.slot, slotType: match.slotType || 'small' };
-  } else if (item.is_minifig) {
-    // Minifig → series-based bag
-    slotInfo = assignMinifigBag(item, allItems);
-  } else if (isOversize) {
-    // Oversize → bag
-    slotInfo = assignBag(item.feature_tags || [], allItems);
+  } else if (isMinifig) {
+    // 1-A: Minifigure → 收納袋
+    slotInfo = assignBagByPointer();
+  } else if (dimTooLarge || categoryBag) {
+    // 1-B: 塞不進小格口 / 必定大型分類 → 收納袋
+    slotInfo = assignBagByPointer();
+  } else if (vt > LARGE_DRAWER_ML) {
+    // 1-C: Vt > 778ml → 收納袋
+    slotInfo = assignBagByPointer();
+  } else if (vt > DRAWER_ML) {
+    // 1-D: 249~778ml → 大抽屜候選（但大抽屜已由 assign 工具分配完，新建直接進袋）
+    slotInfo = assignBagByPointer();
   } else {
-    // Normal → small drawer
-    slotInfo = assignSmallSlot(item.feature_tags || [], allItems);
+    // 1-E/F/G: ≤248ml → 小抽屜（指標系統自動判斷佔 a/b 或整個抽屜）
+    slotInfo = assignSmallSlot(item.feature_tags || [], allItems, vol, qty);
   }
 
   pendingPart = {
@@ -1115,7 +1238,6 @@ async function processResult(item) {
   tagsEl.innerHTML = (item.feature_tags||[]).map(t => `<span class="tag">${t}</span>`).join('');
 
   document.getElementById('result-slot').textContent = slotInfo.slot;
-  const isMinifig = item.is_minifig;
   const typeLabel = isMinifig ? '🧑 人偶收納袋' + (item._minifigSeries ? '（' + item._minifigSeries + '系列）' : '') : slotInfo.slotType==='large' ? '大抽屜' : slotInfo.slotType==='bag' ? '收納袋' : '小抽屜分格';
   document.getElementById('result-slot-type').textContent = typeLabel;
 
@@ -1133,11 +1255,11 @@ async function processResult(item) {
   if (currentMode === 'storage') {
     if (match) {
       // Found! Show where to put it
-      const hasOverflow = match.isFull && match.overflowBag;
-      document.getElementById('result-slot').textContent = hasOverflow ? match.overflowBag : match.slot;
+      const hasOverflow = match.isFull && match.overflowSlot;
+      document.getElementById('result-slot').textContent = hasOverflow ? match.overflowSlot : match.slot;
       const typeLabel = match.slotType==='large'?'大抽屜':match.slotType==='bag'?'收納袋':'小抽屜分格';
       document.getElementById('result-slot-type').textContent = hasOverflow
-        ? '⚠ ' + match.slot + '（' + typeLabel + '）已滿 → 放入溢出袋 ' + match.overflowBag
+        ? '⚠ ' + match.slot + '（' + typeLabel + '）已滿 → 放入溢出袋 ' + match.overflowSlot
         : typeLabel;
       document.querySelector('#s-result .btn-primary').textContent = '← 返回';
       document.querySelector('#s-result .btn-primary').onclick = () => { showScreen('s-main'); };
@@ -1169,167 +1291,69 @@ async function processResult(item) {
 // ══════════════════════════════════════════════
 // SLOT ASSIGNMENT
 // ══════════════════════════════════════════════
-function assignSmallSlot(tags, allItems) {
-  // 規則：每個格子只放一種零件（一個 designId）
-  // 同分類的不同零件放在相鄰格子
-
-  // Build slot map: which designId is in each slot
-  const slotDesignId = {};   // slot → designId
-  const slotFull = {};       // slot → isFull
-  const slotGroups = {};     // slot → Set of category groups
-  allItems.forEach(item => {
-    if (!item.slot || item.slotType !== 'small') return;
-    slotDesignId[item.slot] = item.designId || '';
-    if (item.isFull) slotFull[item.slot] = true;
-    const g = getCategoryGroup(item.featureTags);
-    if (g) { if (!slotGroups[item.slot]) slotGroups[item.slot] = new Set(); slotGroups[item.slot].add(g); }
-  });
-
-  const newGroup = getCategoryGroup(tags);
-
-  // Step 1: 找同分組已有的最大抽屜號，從附近找空格（保持相鄰）
-  let nearDrawer = 0;
-  if (newGroup) {
-    for (const [slot, groups] of Object.entries(slotGroups)) {
-      if (groups.has(newGroup)) {
-        const dNum = parseInt(slot.match(/^(\d+)/)?.[1] || '0');
-        if (dNum > nearDrawer) nearDrawer = dNum;
-      }
-    }
-  }
-
-  // Step 2: 從 nearDrawer 附近找空格（蛇形搜尋）
-  if (nearDrawer > 0) {
-    const slot = findNearestFreeSlot(nearDrawer, slotDesignId, slotFull);
-    if (slot !== 'FULL') return { slot, slotType: 'small' };
-  }
-
-  // Step 3: 全局找空格（如果也滿了會自動轉到收納袋）
-  const freeSlot = getNextFreeSlot(slotDesignId, slotFull);
-  if (freeSlot === 'FULL') {
-    // 630 格全滿（含擴充區）→ 溢出到收納袋
-    return assignBag(tags, allItems);
-  }
-  return { slot: freeSlot, slotType: 'small' };
+function assignSmallSlot(tags, allItems, vol, qty) {
+  // 新版：使用指標系統，不再考慮分類（from bricksort-editor）
+  const vt = (vol || 0) * (qty || 1);
+  const needFull = vt > SMALL_SLOT_ML; // >124ml 需要整個抽屜 a+b
+  const result = advanceSmallSlot(slotConfig.nextSmallSlot, needFull);
+  slotConfig.nextSmallSlot = result.next;
+  return { slot: result.assigned, slotType: 'small' };
 }
 
+// 舊版輔助函數保留（reorderAllSlots 等用到）
 function getAdjacentSlot(slot, slotTags, slotFull) {
-  // Parse slot: "15a" → drawer 15, side "a"
   const m = slot.match(/^(\d+)([ab])$/);
   if (!m) return slot;
   const num = parseInt(m[1]), side = m[2];
-
-  // Try same drawer other side
   const otherSide = side === 'a' ? num+'b' : num+'a';
   if (!slotTags[otherSide] && !slotFull[otherSide]) return otherSide;
-
-  // Try next drawer
   for (let d = num; d <= SMALL_DRAWERS; d++) {
-    for (const s of [d+'a', d+'b']) {
-      if (!slotTags[s] && !slotFull[s]) return s;
-    }
+    for (const s of [d+'a', d+'b']) { if (!slotTags[s] && !slotFull[s]) return s; }
   }
-  return (SMALL_DRAWERS + 1) + 'a'; // overflow
+  return (SMALL_DRAWERS + 1) + 'a';
 }
 
 function getNextFreeSlot(slotTags, slotFull) {
-  // Scan all existing slots including expanded ones
   const maxDrawer = Math.max(SMALL_DRAWERS, ...Object.keys(slotTags).map(s => parseInt(s)||0));
   for (let d = 1; d <= maxDrawer; d++) {
-    for (const s of [d+'a', d+'b']) {
-      if (!slotTags[s] && !slotFull[s]) return s;
-    }
+    for (const s of [d+'a', d+'b']) { if (!slotTags[s] && !slotFull[s]) return s; }
   }
   return 'FULL';
 }
 
-// 找離指定抽屜號碼最近的空格（解決 600 件後同類零件被分散的問題）
 function findNearestFreeSlot(nearDrawerNum, slotTags, slotFull) {
-  // 從 nearDrawerNum 開始，交替向前/向後擴展搜尋
   for (let offset = 0; offset <= SMALL_DRAWERS; offset++) {
     for (const delta of [offset, -offset]) {
       const d = nearDrawerNum + delta;
       if (d < 1 || d > SMALL_DRAWERS) continue;
-      for (const s of [d+'a', d+'b']) {
-        if (!slotTags[s] && !slotFull[s]) return s;
-      }
+      for (const s of [d+'a', d+'b']) { if (!slotTags[s] && !slotFull[s]) return s; }
     }
   }
   return 'FULL';
 }
 
-
-// Assign minifig to series-based bag
+// Assign minifig to bag (uses pointer system)
 function assignMinifigBag(item, allItems) {
-  const bagItems = allItems.filter(i => i.slotType === 'bag' || (i.slot||'').startsWith('B'));
-  const name = (item.name || item.name_cn || '').toLowerCase();
-
-  // Detect series from name
-  const seriesMap = {
-    'ninjago': ['ninjago', 'ninja', 'lloyd', 'jay', 'kai', 'cole', 'zane', 'nya', 'wu', 'garmadon', 'pythor', 'overlord'],
-    'minecraft': ['minecraft', 'steve', 'alex', 'creeper', 'zombie', 'skeleton', 'enderman', 'piglin', 'villager', 'warden'],
-    'star wars': ['star wars', 'jedi', 'sith', 'clone', 'stormtrooper', 'mandalorian', 'yoda', 'luke', 'vader', 'obiwan', 'ahsoka', 'grogu'],
-    'city': ['city', 'police', 'fire', 'coast guard', 'construction', 'mining', 'space'],
-    'harry potter': ['harry potter', 'hogwarts', 'dumbledore', 'hermione', 'voldemort', 'snape', 'hagrid'],
-    'marvel': ['marvel', 'spider-man', 'iron man', 'avengers', 'captain america', 'thor', 'hulk', 'thanos'],
-    'dc': ['batman', 'superman', 'wonder woman', 'joker', 'gotham'],
-    'technic': ['technic figure'],
-    'friends': ['friends', 'heartlake'],
-  };
-
-  let matchedSeries = '人偶'; // default
-  for (const [series, keywords] of Object.entries(seriesMap)) {
-    if (keywords.some(kw => name.includes(kw))) {
-      matchedSeries = series;
-      break;
-    }
-  }
-
-  // Store series info
-  item._minifigSeries = matchedSeries;
-
-  // Find existing bag for this series
-  const sameSeries = bagItems.find(i => i.minifigSeries === matchedSeries);
-  if (sameSeries) return { slot: sameSeries.slot, slotType: 'bag' };
-
-  // Find any existing minifig bag for same series by name matching
-  const sameSeriesByName = bagItems.find(i => i.is_minifig && i._minifigSeries === matchedSeries);
-  if (sameSeriesByName) return { slot: sameSeriesByName.slot, slotType: 'bag' };
-
-  // New bag
-  const existingNums = bagItems.map(i => parseInt((i.slot||'').replace('B','')) || 0);
-  const overflowNums = allItems.map(i => parseInt((i.overflowBag||'').replace('B','')) || 0);
-  const maxBag = Math.max(0, ...existingNums, ...overflowNums);
-  return { slot: 'B' + (maxBag + 1), slotType: 'bag' };
+  return assignBagByPointer();
 }
 
 function assignBag(tags, allItems, setSource) {
-  // 規則 C+B：同套組大型零件共用袋 → 同分類共用袋 → 新袋
-  const bagItems = allItems.filter(i => i.slotType === 'bag' || (i.slot||'').startsWith('B'));
-  
-  // Step 1 (C): 找同套組的現有袋子
-  if (setSource) {
-    const sameSrcBag = bagItems.find(i => i.setSource && i.setSource.includes(setSource));
-    if (sameSrcBag) return { slot: sameSrcBag.slot, slotType: 'bag' };
-  }
+  // 新版：使用指標系統（from bricksort-editor）
+  return assignBagByPointer();
+}
 
-  // Step 2 (B): 找同分類的現有袋子
-  const newGroup = getCategoryGroup(tags);
-  if (newGroup) {
-    const sameGroupBag = bagItems.find(i => getCategoryGroup(i.featureTags) === newGroup);
-    if (sameGroupBag) return { slot: sameGroupBag.slot, slotType: 'bag' };
-  }
-
-  // Step 3: 新袋子
-  const existingNums = bagItems.map(i => parseInt((i.slot||'').replace('B','')) || 0);
-  const overflowNums = allItems.map(i => parseInt((i.overflowBag||'').replace('B','')) || 0);
-  const maxBag = Math.max(0, ...existingNums, ...overflowNums);
-  return { slot: 'B' + (maxBag + 1), slotType: 'bag' };
+function assignBagByPointer() {
+  const bag = slotConfig.nextBagSlot || 'B01';
+  const cap = slotConfig.bagCapacity || BAG_ML_DEFAULT;
+  const used = getBagTotalVol(bag);
+  if (used < cap) return { slot: bag, slotType: 'bag' };
+  // Current bag full → advance
+  slotConfig.nextBagSlot = advanceBagSlot(bag);
+  return { slot: slotConfig.nextBagSlot, slotType: 'bag' };
 }
 
 function assignToLargeDrawer() {
   if (!pendingPart) return;
-  // TODO: manual selection UI for L1-L12
   pendingPart.slotType = 'large';
   pendingPart.slot = 'L1';
   document.getElementById('result-slot').textContent = 'L1';
@@ -1339,14 +1363,12 @@ function assignToLargeDrawer() {
 
 function assignToBag() {
   if (!pendingPart) return;
-  loadItems().then(items => {
-    const bagInfo = assignBag(pendingPart.featureTags || [], items);
-    pendingPart.slot = bagInfo.slot;
-    pendingPart.slotType = 'bag';
-    document.getElementById('result-slot').textContent = bagInfo.slot;
-    document.getElementById('result-slot-type').textContent = '收納袋';
-    document.getElementById('result-size-select').style.display = 'none';
-  });
+  const bagInfo = assignBagByPointer();
+  pendingPart.slot = bagInfo.slot;
+  pendingPart.slotType = 'bag';
+  document.getElementById('result-slot').textContent = bagInfo.slot;
+  document.getElementById('result-slot-type').textContent = '收納袋';
+  document.getElementById('result-size-select').style.display = 'none';
 }
 
 // ══════════════════════════════════════════════
@@ -1366,8 +1388,9 @@ async function confirmPart() {
       dimW: pendingPart.dimW || 0, dimL: pendingPart.dimL || 0, dimH: pendingPart.dimH || 0,
       is_minifig: pendingPart.is_minifig || false,
       minifigSeries: pendingPart._minifigSeries || '',
-      thumbnailUrl: pendingPart.thumbnailUrl || '', imageData: pendingPart.thumbnailUrl ? '' : (pendingPart.imageData || ''),  // Only store image if no URL
+      thumbnailUrl: pendingPart.thumbnailUrl || '', imageData: pendingPart.thumbnailUrl ? '' : (pendingPart.imageData || ''),
       isFull: false, quantity: 1, updatedAt: now,
+      overflowSlot: '', overflowQty: 0,
     };
 
     if (pendingPart.isUpdate && pendingPart.matchedId) {
@@ -1375,14 +1398,33 @@ async function confirmPart() {
       const existing = (await loadItems()).find(i=>i.id===item.id);
       item.createdAt = existing?.createdAt || now;
       item.quantity = (existing?.quantity || 1) + 1;
+
+      // 溢出檢查：更新後 Vt 是否超過格子容量？
+      const vol1 = item.estimateVolumeMl || 0;
+      const vt = vol1 * item.quantity;
+      const cap = getSlotCap(item.slot, item.slotType);
+      if (vt > cap && cap < Infinity) {
+        const fitsQty = Math.max(1, Math.floor(cap / (vol1 || 1)));
+        const ovQty = item.quantity - fitsQty;
+        if (ovQty > 0) {
+          item.overflowSlot = findBagForOverflow(vol1 * ovQty);
+          item.overflowQty = ovQty;
+        }
+      }
+
       await updateItem(item);
-      showToast('已更新：' + item.slot + '（數量 +1）');
+      const ovMsg = item.overflowSlot ? '（溢出 '+item.overflowQty+' 件到 '+item.overflowSlot+'）' : '';
+      showToast('已更新：' + item.slot + '（數量 +1）' + ovMsg);
     } else {
       item.id = 'lego_' + now + '_' + Math.random().toString(36).slice(2,5);
       item.createdAt = now;
       await saveItem(item);
       showToast('已儲存到 ' + item.slot);
     }
+
+    // 儲存指標到 Firebase
+    await saveSlotConfig();
+
     pendingPart = null; currentImageData = null;
     showScreen('s-main'); refreshMain();
   } catch(err) { showScreen('s-result'); showToast('儲存失敗：'+err.message,'error'); }
@@ -1630,7 +1672,7 @@ async function openDrawerMap(zoneFilter) {
       const lThumb = lItem ? (lItem.thumbnailUrl || lItem.imageData || '') : '';
       const lThumbHtml = lThumb ? '<img src="'+lThumb+'" style="width:24px;height:24px;object-fit:contain;border-radius:2px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">' : '';
       const lFull = items.some(i => i.slot === 'L'+d && i.isFull);
-      const lOverflow = lFull ? (items.find(i => i.slot === 'L'+d && i.overflowBag) || {}).overflowBag || '' : '';
+      const lOverflow = lFull ? (items.find(i => i.slot === 'L'+d && i.overflowSlot) || {}).overflowSlot || '' : '';
       const lFullStyle = lFull ? 'border:2px solid #e24b4a;box-shadow:0 0 8px rgba(226,75,74,0.4);' : '';
       const lOverflowHtml = lOverflow ? '<div style="font-size:7px;color:#e24b4a;font-weight:700">→'+lOverflow+'</div>' : '';
       html += '<div class="drawer-cell '+cls+'" style="min-height:56px;'+lFullStyle+'" onclick="doSearch(\'L'+d+'\')"><div style="font-size:11px">L'+d+'</div>'+lThumbHtml+'<div style="font-size:7px">'+c+'件</div>'+lOverflowHtml+'</div>';
@@ -1654,11 +1696,11 @@ async function openDrawerMap(zoneFilter) {
   // Categorize all bag items + overflow bag references
   const bagItemsAll = items.filter(i => i.slotType === 'bag' || (i.slot||'').startsWith('B'));
 
-  // Collect overflow bags (small drawer items marked isFull with overflowBag)
+  // Collect overflow bags (small drawer items marked isFull with overflowSlot)
   const overflowRefs = {};
-  items.filter(i => i.isFull && i.overflowBag).forEach(i => {
-    if (!overflowRefs[i.overflowBag]) overflowRefs[i.overflowBag] = [];
-    overflowRefs[i.overflowBag].push(i);
+  items.filter(i => i.isFull && i.overflowSlot).forEach(i => {
+    if (!overflowRefs[i.overflowSlot]) overflowRefs[i.overflowSlot] = [];
+    overflowRefs[i.overflowSlot].push(i);
   });
   const bagsBySlot = {};
   bagItemsAll.forEach(i => {
@@ -1677,7 +1719,7 @@ async function openDrawerMap(zoneFilter) {
   Object.entries(bagsBySlot).forEach(([bag, bagItems]) => {
     const hasMinifig = bagItems.some(i => i.is_minifig);
     const hasSet = bagItems.some(i => i.setSource);
-    const isOverflow = items.some(i => i.overflowBag === bag);
+    const isOverflow = items.some(i => i.overflowSlot === bag);
     
     if (hasMinifig) categories.minifig.bags.push({ bag, items: bagItems });
     else if (isOverflow) categories.overflow.bags.push({ bag, items: bagItems });
@@ -1820,7 +1862,7 @@ async function openPartDetail(id) {
   const slotPct = Math.min(100, Math.round(totalVol / slotCap * 100));
   const capColor = slotPct > 80 ? '#e24b4a' : slotPct > 50 ? '#F5A623' : '#4CAF50';
   document.getElementById('modal-rows').innerHTML = [
-    ['收納位置', item.slot + (item.overflowBag ? ' + ' + item.overflowBag : '')], ['類型', item.slotType==='large'?'大抽屜':item.slotType==='bag'?'收納袋':'小抽屜'],
+    ['收納位置', item.slot + (item.overflowSlot ? ' + ' + item.overflowSlot + '(' + (item.overflowQty||'?') + '件)' : '')], ['類型', item.slotType==='large'?'大抽屜':item.slotType==='bag'?'收納袋':'小抽屜'],
     ['數量', '<input type="number" id="modal-qty" value="'+(item.quantity||1)+'" min="0" style="width:60px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:4px 8px;border-radius:4px;font-family:var(--mono);font-size:14px;text-align:center" onchange="updateQuantity(\''+item.id+'\',this.value)"> 件'], ['佔位體積', '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">' +
       '<input type="number" id="modal-dim-w" value="'+Math.round((item.dimW||0)*10)+'" min="0" step="1" style="width:42px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:2px 4px;border-radius:3px;font-size:12px;text-align:center" onfocus="if(this.value===\'0\')this.value=\'\'" onblur="if(this.value===\'\')this.value=\'0\'" onchange="updateDimensions(\''+item.id+'\')">×' +
       '<input type="number" id="modal-dim-l" value="'+Math.round((item.dimL||0)*10)+'" min="0" step="1" style="width:42px;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:2px 4px;border-radius:3px;font-size:12px;text-align:center" onfocus="if(this.value===\'0\')this.value=\'\'" onblur="if(this.value===\'\')this.value=\'0\'" onchange="updateDimensions(\''+item.id+'\')">×' +
@@ -1871,30 +1913,30 @@ async function toggleFull(id, full) {
   const items = await loadItems();
   const item = items.find(i=>i.id===id); if(!item) return;
   const slot = item.slot;
-
-  // Find ALL items in the same slot
   const slotItems = items.filter(i => i.slot === slot);
 
   if (full) {
-    // Mark all items in this slot as full + assign same overflow bag
-    const allBags = items.map(i => i.overflowBag || '').filter(b => b.startsWith('B')).map(b => parseInt(b.replace('B',''))||0);
-    const existingBags = items.filter(i => i.slotType === 'bag').map(i => parseInt((i.slot||'').replace('B',''))||0);
-    const maxBag = Math.max(0, ...allBags, ...existingBags);
-    const newBag = 'B' + (maxBag + 1);
-
+    const newBag = findBagForOverflow(0); // get next available bag
     for (const si of slotItems) {
       si.isFull = true;
-      if (!si.overflowBag) si.overflowBag = newBag;
+      if (!si.overflowSlot) {
+        si.overflowSlot = newBag;
+        // 計算溢出件數
+        const vol1 = si.estimateVolumeMl || 0;
+        const cap = getSlotCap(si.slot, si.slotType);
+        const fitsQty = vol1 > 0 ? Math.max(1, Math.floor(cap / vol1)) : (si.quantity || 1);
+        si.overflowQty = Math.max(0, (si.quantity || 1) - fitsQty);
+      }
       si.updatedAt = Date.now();
       await updateItem(si);
     }
     closeModalPanel();
     showToast(slot + ' 已滿（' + slotItems.length + ' 種零件）→ 溢出袋 ' + newBag);
   } else {
-    // Unmark all items in this slot
     for (const si of slotItems) {
       si.isFull = false;
-      si.overflowBag = '';
+      si.overflowSlot = '';
+      si.overflowQty = 0;
       si.updatedAt = Date.now();
       await updateItem(si);
     }
@@ -1971,7 +2013,7 @@ async function startBatch(files) {
       const vol = calcVolFromAI(parsed.name || '', parsed);
       const categoryBag = isCategoryAlwaysBag(parsed.feature_tags);
       const dimTooLarge = !fitsInSlot(parsed.name || '', parsed);
-      const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML || dimTooLarge;
+      const vt = vol * 1;
       const allItems = await loadItems();
       let match = null;
       if (parsed.matched_existing_id && parsed.matched_existing_id !== 'null') match = allItems.find(i => i.id === parsed.matched_existing_id);
@@ -1979,8 +2021,8 @@ async function startBatch(files) {
       if (!match && designId) { const baseDid = getBaseDesignId(designId); if (baseDid) match = allItems.find(i => getBaseDesignId(i.designId) === baseDid); }
       let slotInfo;
       if (match) slotInfo = { slot: match.slot, slotType: match.slotType || 'small' };
-      else if (isOversize) slotInfo = assignBag(parsed.feature_tags || [], allItems);
-      else slotInfo = assignSmallSlot(parsed.feature_tags || [], allItems);
+      else if (categoryBag || dimTooLarge || vt > DRAWER_ML) slotInfo = assignBagByPointer();
+      else slotInfo = assignSmallSlot(parsed.feature_tags || [], allItems, vol, 1);
       const now = Date.now();
       const savedItem = { name: parsed.name||'', nameCN: parsed.name_cn||'', designId, description: parsed.description||'', featureTags: parsed.feature_tags||[], estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType||'small', thumbnailUrl, imageData: thumb||'', isFull: false, quantity: 1, id: match ? match.id : 'lego_'+now+'_'+Math.random().toString(36).slice(2,5), createdAt: match ? match.createdAt : now, updatedAt: now };
       if (match) await updateItem(savedItem); else await saveItem(savedItem);
@@ -2077,48 +2119,47 @@ async function updateQuantity(id, val) {
   item.quantity = qty;
   item.updatedAt = Date.now();
 
-  // Capacity check: qty × vol > slot capacity?
-  const totalVol = (item.estimateVolumeMl||2) * qty;
-  const isSmall = (item.slotType||'small') === 'small';
-  const isLarge = item.slotType === 'large';
-  const slotCap = isSmall ? SMALL_SLOT_ML : isLarge ? LARGE_DRAWER_ML : 9999;
-  const capLabel = isSmall ? '格子' : isLarge ? '大抽屜' : '';
+  // 容量檢查：使用 getSlotCap (from bricksort-editor)
+  const vol1 = item.estimateVolumeMl || 2;
+  const totalVol = vol1 * qty;
+  const cap = getSlotCap(item.slot, item.slotType);
 
-  const DRAWER_ML = SMALL_SLOT_ML * 2; // 204ml
-  if (isSmall && totalVol > DRAWER_ML && !item.isFull) {
-    // >204ml: overflow bag
-    let maxBag = 0;
-    items.forEach(i => {
-      const ob = parseInt((i.overflowBag||'').replace('B',''))||0;
-      const sb = (i.slotType==='bag') ? (parseInt((i.slot||'').replace('B',''))||0) : 0;
-      if (ob>maxBag) maxBag=ob; if (sb>maxBag) maxBag=sb;
-    });
-    item.isFull = true;
-    item.overflowBag = 'B' + (maxBag + 1);
-    await updateItem(item);
-    showToast('⚠ ' + (item.nameCN||item.name) + ' ' + qty + '件（' + Math.round(totalVol) + 'ml）>204ml，已加編溢出袋 ' + item.overflowBag, 'error');
-  } else if (isSmall && totalVol > SMALL_SLOT_ML && totalVol <= DRAWER_ML) {
-    // 102-204ml: needs 2 slots (full drawer)
-    await updateItem(item);
-    showToast('⚠ ' + (item.nameCN||item.name) + ' ' + qty + '件（' + Math.round(totalVol) + 'ml）需要整個抽屜（2格）。下次重置時自動處理。');
-  } else if (isLarge && totalVol > slotCap && !item.isFull) {
-    // Overflow! Add overflow bag
-    let maxBag = 0;
-    items.forEach(i => {
-      const ob = parseInt((i.overflowBag||'').replace('B',''))||0;
-      const sb = (i.slotType==='bag') ? (parseInt((i.slot||'').replace('B',''))||0) : 0;
-      if (ob>maxBag) maxBag=ob; if (sb>maxBag) maxBag=sb;
-    });
-    item.isFull = true;
-    item.overflowBag = 'B' + (maxBag + 1);
-    await updateItem(item);
-    showToast('⚠ ' + (item.nameCN||item.name) + ' ' + qty + '件（' + Math.round(totalVol) + 'ml）超過' + capLabel + '容量（' + slotCap + 'ml），已加編溢出袋 ' + item.overflowBag, 'error');
-  } else if ((isSmall || isLarge) && totalVol <= slotCap && item.isFull) {
-    // Was full but now fits → clear overflow
+  if (totalVol > cap && cap < Infinity && !item.overflowSlot) {
+    // 超出容量 → 拆件溢出
+    const fitsQty = Math.max(1, Math.floor(cap / vol1));
+    const ovQty = qty - fitsQty;
+    if (ovQty > 0) {
+      item.overflowSlot = findBagForOverflow(vol1 * ovQty);
+      item.overflowQty = ovQty;
+      item.isFull = true;
+      await updateItem(item);
+      showToast('⚠ ' + (item.nameCN||item.name) + ' 超出容量，留 '+fitsQty+' 件在 '+item.slot+'，溢出 '+ovQty+' 件到 '+item.overflowSlot, 'error');
+    } else {
+      await updateItem(item);
+      showToast((item.nameCN||item.name) + ' 數量更新為 ' + qty);
+    }
+  } else if (totalVol <= cap && item.overflowSlot) {
+    // 容量恢復 → 清除溢出
     item.isFull = false;
-    item.overflowBag = '';
+    item.overflowSlot = '';
+    item.overflowQty = 0;
     await updateItem(item);
     showToast((item.nameCN||item.name) + ' ' + qty + '件（' + Math.round(totalVol) + 'ml）已恢復正常');
+  } else if (item.overflowSlot && totalVol > cap) {
+    // 已有溢出，重新計算溢出數量
+    const fitsQty = Math.max(1, Math.floor(cap / vol1));
+    const ovQty = qty - fitsQty;
+    if (ovQty > 0) {
+      item.overflowQty = ovQty;
+      await updateItem(item);
+      showToast((item.nameCN||item.name) + ' 溢出更新：留 '+fitsQty+' 件，溢出 '+ovQty+' 件');
+    } else {
+      item.overflowSlot = '';
+      item.overflowQty = 0;
+      item.isFull = false;
+      await updateItem(item);
+      showToast((item.nameCN||item.name) + ' 已恢復正常');
+    }
   } else {
     await updateItem(item);
     showToast((item.nameCN||item.name) + ' 數量更新為 ' + qty);
@@ -2129,9 +2170,10 @@ async function updateQuantity(id, val) {
   if (capBar) {
     const slotItems = items.filter(i => i.slot === item.slot);
     const slotVol = slotItems.reduce((s,i) => s + (i.estimateVolumeMl||2)*(i.quantity||1), 0);
-    const pct = Math.min(100, Math.round(slotVol / SMALL_SLOT_ML * 100));
+    const slotCapVal = getSlotCap(item.slot, item.slotType);
+    const pct = slotCapVal < Infinity ? Math.min(100, Math.round(slotVol / slotCapVal * 100)) : 0;
     const color = pct > 80 ? '#e24b4a' : pct > 50 ? '#F5A623' : '#4CAF50';
-    capBar.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:8px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+color+';border-radius:4px"></div></div><span style="font-size:12px;color:var(--muted)">'+Math.round(slotVol)+'ml/'+SMALL_SLOT_ML+'ml '+pct+'%</span></div>';
+    capBar.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:8px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+color+';border-radius:4px"></div></div><span style="font-size:12px;color:var(--muted)">'+Math.round(slotVol)+'ml/'+slotCapVal+'ml '+pct+'%</span></div>';
   }
 }
 
@@ -2149,10 +2191,9 @@ async function reorderAllSlots() {
   if (!smallItems.length) { showToast('沒有小抽屜零件'); showScreen('s-main'); return; }
 
   // Clear old assignments
-  smallItems.forEach(i => { i.isFull = false; i.overflowBag = ''; i._twoSlot = false; });
+  smallItems.forEach(i => { i.isFull = false; i.overflowSlot = ''; i._twoSlot = false; });
 
   // Classify by volume: 1格 / 2格 / 溢出
-  const DRAWER_ML = SMALL_SLOT_ML * 2;
   const oneSlotItems = [], twoSlotItems = [], overflowItems = [];
   smallItems.forEach(item => {
     const tv = (item.estimateVolumeMl||2) * (item.quantity||1);
@@ -2235,14 +2276,14 @@ async function reorderAllSlots() {
   });
 
   // Overflow bags
-  let overflowBagNum = 0;
+  let overflowSlotNum = 0;
   let maxBag = 0;
   otherItems.forEach(i => { const n=parseInt((i.slot||'').replace('B',''))||0; if(n>maxBag) maxBag=n; });
-  overflowBagNum = maxBag;
+  overflowSlotNum = maxBag;
 
   smallItems.filter(i => i.isFull).forEach(item => {
-    overflowBagNum++;
-    item.overflowBag = 'B' + overflowBagNum;
+    overflowSlotNum++;
+    item.overflowSlot = 'B' + overflowSlotNum;
   });
 
   // Update SMALL_DRAWERS if expanded
@@ -2262,7 +2303,7 @@ async function reorderAllSlots() {
       if (!bagGroups[key]) bagGroups[key] = [];
       bagGroups[key].push(i);
     });
-    let bNum = overflowBagNum + 1;
+    let bNum = overflowSlotNum + 1;
     const sortedGroups = Object.entries(bagGroups).sort((a,b)=>a[0].localeCompare(b[0]));
     for (const [group, groupItems] of sortedGroups) {
       const newBag = 'B' + bNum;
@@ -2393,8 +2434,8 @@ async function importSet() {
         const totalVol = (match.estimateVolumeMl || 2) * match.quantity;
         if (totalVol > SMALL_SLOT_ML && !match.isFull && (match.slotType||'small') === 'small') {
           match.isFull = true;
-          const maxBag = Math.max(0, ...existingItems.map(i => parseInt((i.overflowBag||'').replace('B',''))||0), ...existingItems.filter(i=>i.slotType==='bag').map(i=>parseInt((i.slot||'').replace('B',''))||0));
-          match.overflowBag = 'B' + (maxBag + 1);
+          const maxBag = Math.max(0, ...existingItems.map(i => parseInt((i.overflowSlot||'').replace('B',''))||0), ...existingItems.filter(i=>i.slotType==='bag').map(i=>parseInt((i.slot||'').replace('B',''))||0));
+          match.overflowSlot = 'B' + (maxBag + 1);
           autoFullCount++;
         }
         await updateItem(match);
@@ -2437,26 +2478,27 @@ async function importSet() {
         const tags = parsed.feature_tags || [];
         const categoryBag = isCategoryAlwaysBag(tags);
         const dimTooLarge = !fitsInSlot(p.name || '', parsed);
-        const isOversize = categoryBag || parsed.is_oversize || vol > OVERSIZE_ML || dimTooLarge;
+        const vt = vol * p.quantity;
 
         const currentItems = await loadItems();
         let slotInfo;
-        if (isOversize) slotInfo = assignBag(tags, currentItems, setNum);
-        else slotInfo = assignSmallSlot(tags, currentItems);
+        if (categoryBag || dimTooLarge || vt > DRAWER_ML) slotInfo = assignBagByPointer();
+        else slotInfo = assignSmallSlot(tags, currentItems, vol, p.quantity);
 
         const now = Date.now();
-        const totalVol = vol * p.quantity;
-        const autoFull = totalVol > SMALL_SLOT_ML && (slotInfo.slotType||'small') === 'small';
-        let overflowBag = '';
+        // 溢出檢查
+        const cap = getSlotCap(slotInfo.slot, slotInfo.slotType);
+        let overflowSlot = '', overflowQty = 0;
+        const autoFull = vt > cap && cap < Infinity;
         if (autoFull) {
-          const curItems = await loadItems();
-          const maxBag = Math.max(0, ...curItems.map(i=>parseInt((i.overflowBag||'').replace('B',''))||0), ...curItems.filter(i=>i.slotType==='bag').map(i=>parseInt((i.slot||'').replace('B',''))||0));
-          overflowBag = 'B' + (maxBag + 1);
+          const fitsQty = Math.max(1, Math.floor(cap / (vol || 1)));
+          overflowQty = p.quantity - fitsQty;
+          if (overflowQty > 0) overflowSlot = findBagForOverflow(vol * overflowQty);
         }
         const savedItem = { id: 'lego_' + now + '_' + Math.random().toString(36).slice(2,5), name: p.name, nameCN: parsed.name_cn || '', designId: p.designId, fullPartNum: p.fullId || '', description: parsed.description || '',
           dimW: parsed._dimW || parseFloat(((parseInt(parsed.dim_mm_w)||0)/10).toFixed(1)) || 0,
           dimL: parsed._dimL || parseFloat(((parseInt(parsed.dim_mm_l)||0)/10).toFixed(1)) || 0,
-          dimH: parsed._dimH || parseFloat(((parseInt(parsed.dim_mm_h)||0)/10).toFixed(1)) || 0, featureTags: tags, bricklinkCategory: parsed.bricklink_category || '', estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType || 'small', thumbnailUrl, imageData: '', isFull: autoFull, overflowBag, quantity: p.quantity, createdAt: now, updatedAt: now, setSource: setNum };
+          dimH: parsed._dimH || parseFloat(((parseInt(parsed.dim_mm_h)||0)/10).toFixed(1)) || 0, featureTags: tags, bricklinkCategory: parsed.bricklink_category || '', estimateVolumeMl: vol, slot: slotInfo.slot, slotType: slotInfo.slotType || 'small', thumbnailUrl, imageData: '', isFull: autoFull, overflowSlot, overflowQty, quantity: p.quantity, createdAt: now, updatedAt: now, setSource: setNum };
         await saveItem(savedItem);
         item.result = savedItem; item.status = 'done'; done++;
       } catch(err) { item.error = err.message; item.status = 'error'; errors++; }
@@ -2745,13 +2787,13 @@ async function repairOverflowBags() {
   // Step 1: Find max existing bag number
   let maxBag = 0;
   items.forEach(i => {
-    const ob = parseInt((i.overflowBag||'').replace('B','')) || 0;
+    const ob = parseInt((i.overflowSlot||'').replace('B','')) || 0;
     const sb = (i.slotType==='bag') ? (parseInt((i.slot||'').replace('B','')) || 0) : 0;
     if (ob > maxBag) maxBag = ob;
     if (sb > maxBag) maxBag = sb;
   });
 
-  // Step 2: Fix isFull items without overflowBag
+  // Step 2: Fix isFull items without overflowSlot
   // Group by slot so same-slot items share one bag
   const slotGroups = {};
   items.forEach(i => {
@@ -2763,15 +2805,15 @@ async function repairOverflowBags() {
 
   for (const [slot, slotItems] of Object.entries(slotGroups)) {
     const hasFull = slotItems.some(i => i.isFull);
-    const hasNoBag = slotItems.some(i => i.isFull && !i.overflowBag);
+    const hasNoBag = slotItems.some(i => i.isFull && !i.overflowSlot);
 
     // Case 1: marked full but no bag
     if (hasFull && hasNoBag) {
       maxBag++;
       const bag = 'B' + maxBag;
       for (const i of slotItems) {
-        if (i.isFull && !i.overflowBag) {
-          i.overflowBag = bag;
+        if (i.isFull && !i.overflowSlot) {
+          i.overflowSlot = bag;
           i.updatedAt = Date.now();
           await updateItem(i);
           fixed++;
@@ -2786,7 +2828,7 @@ async function repairOverflowBags() {
       const bag = 'B' + maxBag;
       for (const i of slotItems) {
         i.isFull = true;
-        i.overflowBag = bag;
+        i.overflowSlot = bag;
         i.updatedAt = Date.now();
         await updateItem(i);
         autoMarked++;
@@ -2869,22 +2911,21 @@ async function updateDimensions(id) {
 
   // Check if new dimensions violate slot placement
   const dims = [wMM, lMM, hMM].sort((a,b) => b-a);
-  const fitsSlot = dims[1] <= 45 && dims[2] <= 35;
+  const fitsSlot = dims[1] <= SLOT_WIDTH && dims[2] <= SLOT_HEIGHT;
   const isSmall = (item.slotType||'small') === 'small';
 
   // Check if this slot has multiple items (merged)
   const sameSlotItems = items.filter(i => i.slot === item.slot);
   const isMerged = sameSlotItems.length > 1;
 
-  if (isSmall && (!fitsSlot || vol > OVERSIZE_ML)) {
+  if (isSmall && (!fitsSlot || vol > DRAWER_ML)) {
     const reason = !fitsSlot
-      ? '尺寸 ' + Math.round(dims[1]) + '×' + Math.round(dims[2]) + 'mm 超過格子開口 45×35mm'
-      : '體積 ' + vol + 'ml > ' + OVERSIZE_ML + 'ml';
+      ? '尺寸 ' + Math.round(dims[1]) + '×' + Math.round(dims[2]) + 'mm 超過格子開口 ' + SLOT_WIDTH + '×' + SLOT_HEIGHT + 'mm'
+      : '體積 ' + vol + 'ml > ' + DRAWER_ML + 'ml';
 
     if (isMerged) {
-      // Merged slot violation → offer to unmerge + move to bag
       if (confirm('⚠ ' + reason + '！\n\n此零件在融合格子 ' + item.slot + ' 中（共 ' + sameSlotItems.length + ' 種）。\n\n要自動執行以下操作嗎？\n1. 將此零件移到收納袋\n2. 保留其餘零件在原格子')) {
-        const bagInfo = assignBag(item.featureTags || [], items);
+        const bagInfo = assignBagByPointer();
         item.slot = bagInfo.slot;
         item.slotType = 'bag';
         item.updatedAt = Date.now();
@@ -3125,7 +3166,7 @@ async function repairFullSlots() {
 
   let maxBag = 0;
   items.forEach(i => {
-    const ob = parseInt((i.overflowBag||'').replace('B','')) || 0;
+    const ob = parseInt((i.overflowSlot||'').replace('B','')) || 0;
     const sb = (i.slotType==='bag') ? (parseInt((i.slot||'').replace('B','')) || 0) : 0;
     if (ob > maxBag) maxBag = ob;
     if (sb > maxBag) maxBag = sb;
@@ -3530,14 +3571,14 @@ async function fullReset() {
   });
   const all = Object.values(deduped);
   const removedDups = items.length - all.length;
-  all.forEach(i => { i.isFull = false; i.overflowBag = ''; i.updatedAt = Date.now(); });
+  all.forEach(i => { i.isFull = false; i.overflowSlot = ''; i.overflowQty = 0; i.updatedAt = Date.now(); });
 
   // ═══ Step 2: Classify → bag vs small ═══
   setProcessingMsg('Step 2/9：分類...');
   const toBag = [], smallPool = [];
   all.forEach(item => {
     const isMinifig = item.is_minifig;
-    const isOversize = (item.estimateVolumeMl||0) > OVERSIZE_ML;
+    const isOversize = (item.estimateVolumeMl||0) * (item.quantity||1) > LARGE_DRAWER_ML;
     const dimTooLarge = !fitsInSlot(item.name || '', item);
     if (isMinifig || isOversize || dimTooLarge) { item.slotType = 'bag'; toBag.push(item); }
     else smallPool.push(item);
@@ -3555,10 +3596,9 @@ async function fullReset() {
 
   // ═══ Step 4: Classify by volume → 1格/2格/溢出 ═══
   setProcessingMsg('Step 4/9：容量分類...');
-  const DRAWER_ML = SMALL_SLOT_ML * 2; // 204ml = 2 slots
-  const oneSlotItems = [];  // qty×vol ≤ 102ml → 1 slot
-  const twoSlotItems = [];  // 102 < qty×vol ≤ 204ml → 2 slots (full drawer)
-  const overflowItems = []; // qty×vol > 204ml → 1 slot + overflow bag
+  const oneSlotItems = [];  // qty×vol ≤ 124ml → 1 slot (a or b)
+  const twoSlotItems = [];  // 124 < qty×vol ≤ 248ml → 2 slots (full drawer a+b)
+  const overflowItems = []; // qty×vol > 248ml → 1 slot + overflow bag
 
   remaining.forEach(item => {
     const tv = (item.estimateVolumeMl||2) * (item.quantity||1);
@@ -3677,11 +3717,16 @@ async function fullReset() {
 
   // ═══ Step 7: Overflow bags for isFull items ═══
   setProcessingMsg('Step 7/9：溢出袋編號...');
-  let overflowBagNum = 0;
+  let overflowSlotNum = 0;
   const allSmallFinal = [...twoSlotItems, ...oneSlotItems, ...overflowItems].filter(i => i.slotType === 'small');
   allSmallFinal.filter(i => i.isFull).forEach(item => {
-    overflowBagNum++;
-    item.overflowBag = 'OB' + overflowBagNum;
+    overflowSlotNum++;
+    item.overflowSlot = 'OB' + overflowSlotNum;
+    // 計算溢出件數
+    const vol1 = item.estimateVolumeMl || 0;
+    const cap = getSlotCap(item.slot, 'small');
+    const fitsQty = vol1 > 0 ? Math.max(1, Math.floor(cap / vol1)) : (item.quantity || 1);
+    item.overflowQty = Math.max(0, (item.quantity || 1) - fitsQty);
   });
 
   // ═══ Step 8: Bag grouping + numbering ═══
@@ -3704,14 +3749,22 @@ async function fullReset() {
 
   // Renumber overflow bags
   const obMap = {};
-  allSmallFinal.filter(i => i.overflowBag && i.overflowBag.startsWith('OB')).forEach(i => {
-    if (!obMap[i.overflowBag]) { obMap[i.overflowBag] = 'B' + bagNum; bagNum++; }
-    i.overflowBag = obMap[i.overflowBag];
+  allSmallFinal.filter(i => i.overflowSlot && i.overflowSlot.startsWith('OB')).forEach(i => {
+    if (!obMap[i.overflowSlot]) { obMap[i.overflowSlot] = 'B' + bagNum; bagNum++; }
+    i.overflowSlot = obMap[i.overflowSlot];
   });
 
   // ═══ Step 9: Write ═══
   const allFinal = [...allSmallFinal, ...toLarge, ...toBag];
   setProcessingMsg('Step 9/9：寫入 ' + allFinal.length + ' 個...');
+
+  // 更新 slotConfig 指標
+  const maxUsedSlotNum = Math.max(0, ...allSmallFinal.map(i => parseInt((i.slot||'0').match(/^(\d+)/)?.[1]||'0')));
+  slotConfig.nextSmallSlot = slotPtrStr(maxUsedSlotNum + 1, 'a');
+  slotConfig.nextBagSlot = 'B' + bagNum;
+  slotConfig.totalSmallDrawers = Math.max(BASE_DRAWERS, maxUsedSlotNum);
+  SMALL_DRAWERS = slotConfig.totalSmallDrawers;
+
   localStorage.setItem(ITEMS_KEY, JSON.stringify(allFinal));
   localStorage.setItem('bricksort_pending_sync', 'true');
 
@@ -3734,12 +3787,12 @@ async function fullReset() {
   const usedSlots = new Set(allSmallFinal.map(i=>i.slot)).size;
   const usedDrawers = new Set(allSmallFinal.map(i=>parseInt(i.slot)||0)).size;
   const twoSlotCount = twoSlotItems.filter(i=>i.slotType==='small').length;
-  const overflowBagCount = allSmallFinal.filter(i=>i.isFull).length;
+  const overflowSlotCount = allSmallFinal.filter(i=>i.isFull).length;
 
   showToast(
     '完成（'+elapsed+'秒）！去重-'+removedDups+
     ' · 小抽屜'+allSmallFinal.length+'種/'+usedDrawers+'抽屜'+
-    '（1格'+(allSmallFinal.length-twoSlotCount-overflowBagCount)+'+2格'+twoSlotCount+'+溢出'+overflowBagCount+'）'+
+    '（1格'+(allSmallFinal.length-twoSlotCount-overflowSlotCount)+'+2格'+twoSlotCount+'+溢出'+overflowSlotCount+'）'+
     ' · 大抽屜'+toLarge.length+
     ' · 收納袋'+toBag.length+'種/'+(bagNum-1)+'袋'+
     ' · 融合'+mergeCount+
