@@ -715,7 +715,7 @@ async function updateItem(item) {
   if(idx>=0) items[idx]=item; else items.unshift(item); localStorage.setItem(ITEMS_KEY,JSON.stringify(items));
 }
 
-// Batch update: write all to localStorage first, then Firebase in parallel batches
+// Batch update: write all to localStorage first, then Firebase using native batch API
 async function batchUpdateItems(itemsToUpdate) {
   if (!itemsToUpdate.length) return;
 
@@ -730,15 +730,17 @@ async function batchUpdateItems(itemsToUpdate) {
   });
   localStorage.setItem(ITEMS_KEY, JSON.stringify(allItems));
 
-  // Step 2: Firebase batch writes (parallel, 10 at a time)
+  // Step 2: Firebase writeBatch (500 ops per batch, native API)
   if (!db) return;
   const col = cfg.fbCol || 'lego_parts';
-  const BATCH_SIZE = 10;
+  const BATCH_SIZE = 400; // Firestore limit is 500, use 400 for safety
   for (let i = 0; i < itemsToUpdate.length; i += BATCH_SIZE) {
-    const batch = itemsToUpdate.slice(i, i + BATCH_SIZE);
-    await Promise.all(batch.map(item =>
-      db.collection(col).doc(item.id).set(item, {merge:true}).catch(e => console.warn('batch write err:', e))
-    ));
+    const chunk = itemsToUpdate.slice(i, i + BATCH_SIZE);
+    const batch = db.batch();
+    chunk.forEach(item => {
+      batch.set(db.collection(col).doc(item.id), item, {merge:true});
+    });
+    await batch.commit();
   }
 }
 async function deleteItem(id) {
@@ -3372,17 +3374,17 @@ async function autoUnmergeViolations() {
 
 // 一鍵重置：清除所有編排，從零開始重新分配
 async function fullReset() {
-  if (!confirm('⚠ 一鍵重置所有編排？\n\n此操作會：\n1. 取消所有融合\n2. 清除所有格子分配\n3. 按體積從小到大重新編號\n4. 自動融合（新規則）\n\n大抽屜和收納袋的零件不受影響。\n\n確定執行？')) return;
+  if (!confirm('⚠ 一鍵重置所有編排？\n\n1. 取消所有融合\n2. 按分類+體積重新編號\n3. 自動融合（<20%規則）\n\n大抽屜和收納袋不受影響。\n確定執行？')) return;
 
   showScreen('s-processing');
+
+  // === Step 1: 從 Firebase 讀取一次 ===
+  setProcessingMsg('Step 1/5：從 Firebase 讀取...');
   const items = await loadItems();
-
-  // === Phase 1: Collect all small items, clear their slots ===
-  setProcessingMsg('Phase 1/4：收集零件...');
   const smallItems = items.filter(i => (i.slotType||'small') === 'small' && i.slot);
-  const nonSmall = items.filter(i => (i.slotType||'small') !== 'small' || !i.slot);
 
-  // Sort: by group → tag → volume (small first)
+  // === Step 2: 排序（純記憶體） ===
+  setProcessingMsg('Step 2/5：排序 ' + smallItems.length + ' 種零件...');
   smallItems.sort((a, b) => {
     const gA = getCategoryGroup(a.featureTags) || 'zzz';
     const gB = getCategoryGroup(b.featureTags) || 'zzz';
@@ -3393,30 +3395,68 @@ async function fullReset() {
     return (a.estimateVolumeMl||0) - (b.estimateVolumeMl||0);
   });
 
-  // === Phase 2: Assign slots sequentially ===
-  setProcessingMsg('Phase 2/4：重新編號 ' + smallItems.length + ' 種零件...');
+  // === Step 3: 重新編號（純記憶體） ===
+  setProcessingMsg('Step 3/5：重新編號...');
   const allSlots = [];
   for (let d = 1; d <= SMALL_DRAWERS; d++) { allSlots.push(d+'a'); allSlots.push(d+'b'); }
 
-  const changedItems = [];
   smallItems.forEach((item, idx) => {
-    const newSlot = idx < allSlots.length ? allSlots[idx] : 'OVERFLOW';
-    if (item.slot !== newSlot) {
-      item.slot = newSlot;
-      item.updatedAt = Date.now();
-      changedItems.push(item);
-    }
+    item.slot = idx < allSlots.length ? allSlots[idx] : 'OVERFLOW';
+    item.updatedAt = Date.now();
   });
 
-  // === Phase 3: Batch write ===
-  setProcessingMsg('Phase 3/4：寫入 ' + changedItems.length + ' 個變更...');
-  await batchUpdateItems(changedItems);
+  // === Step 4: 自動融合（純記憶體） ===
+  setProcessingMsg('Step 4/5：計算融合方案...');
+  const MAX_USAGE = 0.20;
+  const MAX_PER_SLOT = 3;
+  const slotData = {};
+  smallItems.forEach(i => {
+    if (!slotData[i.slot]) slotData[i.slot] = { items: [], vol: 0 };
+    slotData[i.slot].items.push(i);
+    slotData[i.slot].vol += (i.estimateVolumeMl||2) * (i.quantity||1);
+  });
 
-  // === Phase 4: Auto merge ===
-  setProcessingMsg('Phase 4/4：自動融合...');
-  await mergeAll();
+  const candidates = [];
+  Object.entries(slotData).forEach(([slot, data]) => {
+    const hasLargePart = data.items.some(i => !fitsInSlot(i.name || '', i));
+    if (hasLargePart) return;
+    if (data.vol / SMALL_SLOT_ML >= MAX_USAGE) return;
+    const tags = new Set(data.items.flatMap(i => (i.featureTags||[]).map(t => t.toLowerCase())));
+    candidates.push({ slot, ...data, tags });
+  });
 
-  showToast('重置完成！' + smallItems.length + ' 種零件重新編排');
+  candidates.sort((a, b) => a.vol - b.vol);
+  const merged = new Set();
+  let mergeCount = 0;
+
+  for (let i = 0; i < candidates.length; i++) {
+    if (merged.has(i)) continue;
+    const bin = { slot: candidates[i].slot, vol: candidates[i].vol, count: candidates[i].items.length, tags: new Set(candidates[i].tags) };
+
+    for (let j = i + 1; j < candidates.length; j++) {
+      if (merged.has(j)) continue;
+      if (bin.count + candidates[j].items.length > MAX_PER_SLOT) continue;
+      if (bin.vol + candidates[j].vol > SMALL_SLOT_ML * 0.85) continue;
+      let overlap = 0;
+      candidates[j].tags.forEach(t => { if (bin.tags.has(t)) overlap++; });
+      if (overlap === 0) continue;
+
+      // Merge in memory: move items to bin's slot
+      candidates[j].items.forEach(item => { item.slot = bin.slot; item.updatedAt = Date.now(); });
+      bin.vol += candidates[j].vol;
+      bin.count += candidates[j].items.length;
+      candidates[j].tags.forEach(t => bin.tags.add(t));
+      merged.add(j);
+      mergeCount++;
+    }
+  }
+
+  // === Step 5: 一次寫入 Firebase ===
+  setProcessingMsg('Step 5/5：寫入 Firebase（' + smallItems.length + ' 個）...');
+  await batchUpdateItems(smallItems);
+
+  const occupiedAfter = new Set(smallItems.map(i => i.slot)).size;
+  showToast('重置完成！' + smallItems.length + ' 種零件 → ' + occupiedAfter + ' 格（融合 ' + mergeCount + ' 組）');
   showScreen('s-main'); refreshMain();
   setTimeout(() => openDrawerMap('small'), 500);
 }
