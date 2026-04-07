@@ -2540,7 +2540,7 @@ async function mergeSlots() {
   });
 
   // Only consider slots with usage < 20% AND fits in dimensions
-  const MAX_USAGE = 0.20;
+  const MAX_USAGE = 0.30;
   const singles = Object.entries(slotMap)
     .filter(([s, d]) => {
       if (!fitsInSlot(d.items[0]?.name || '', d.items[0])) return false;
@@ -2642,7 +2642,7 @@ async function mergeAll() {
   const occupiedBefore = Object.keys(slotData).length;
 
   // Filter: only slots with usage < 20% AND fits in slot dimensions
-  const MAX_USAGE = 0.20; // 每格使用量 < 20% 才參與融合
+  const MAX_USAGE = 0.30; // 每格使用量 < 20% 才參與融合
   const MAX_PER_SLOT = 3;
   const candidates = [];
 
@@ -3635,7 +3635,7 @@ async function fullReset() {
   // Step 6: Auto merge (strict <20% rule)
   // ═══════════════════════════════════════
   setProcessingMsg('Step 6/10：自動融合...');
-  const MAX_USAGE = 0.20, MAX_PER_SLOT = 3;
+  const MAX_USAGE = 0.30, MAX_PER_SLOT = 3;
 
   // Only merge items already assigned to real slots (not _pending_)
   const assignedItems = remaining.filter(i => !i.slot.startsWith('_pending_'));
