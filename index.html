@@ -2235,7 +2235,7 @@ async function reorderAllSlots() {
 
   // === Phase 2: Reorder bags by category/series ===
   setProcessingMsg('重新分組收納袋...');
-  const allAfter = await loadItems();
+  const allAfter = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
   const bagItems = allAfter.filter(i => i.slotType === 'bag' && i.slot && i.slot.startsWith('B'));
 
   if (bagItems.length > 0) {
@@ -2273,7 +2273,7 @@ async function reorderAllSlots() {
 
     // Clear stale overflowBag references
     if (bagMoves > 0) {
-      const allItems2 = await loadItems();
+      const allItems2 = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
       const overflowFixes = [];
       for (const item of allItems2) {
         if (item.overflowBag && !allItems2.some(b => b.slot === item.overflowBag && b.slotType === 'bag')) {
@@ -2703,12 +2703,12 @@ async function mergeAll() {
     await batchUpdateItems(allMergeChanges);
   }
 
-  const allAfter = await loadItems();
-  const occupiedAfter = new Set(allAfter.filter(i=>(i.slotType||'small')==='small'&&i.slot).map(i=>i.slot)).size;
-  const freed = occupiedBefore - occupiedAfter;
+  // Calculate freed slots from existing data (no extra Firebase read)
+  const slotsAfter = new Set(smallItems.map(i => i.slot)).size;
+  const freed = occupiedBefore - slotsAfter;
 
   showToast('融合完成！移動 ' + totalMoves + ' 種零件，釋放 ' + freed + ' 個格子');
-  refreshMain();
+  showScreen('s-main'); refreshMain();
 }
 
 async function mergeConfirm() {
