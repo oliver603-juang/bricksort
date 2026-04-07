@@ -710,7 +710,17 @@ async function loadItems() {
   if (pendingSync) {
     return JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
   }
-  if (db) { try { const snap=await db.collection(cfg.fbCol||'lego_parts').orderBy('createdAt','desc').get(); return snap.docs.map(d=>({id:d.id,...d.data()})); } catch(e) { console.warn('Firestore read failed',e); } }
+  if (db) {
+    try {
+      // Timeout: if Firebase doesn't respond in 5 seconds, use localStorage
+      const fbPromise = db.collection(cfg.fbCol||'lego_parts').orderBy('createdAt','desc').get();
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+      const snap = await Promise.race([fbPromise, timeoutPromise]);
+      return snap.docs.map(d=>({id:d.id,...d.data()}));
+    } catch(e) {
+      console.warn('Firestore read failed/timeout, using localStorage', e.message);
+    }
+  }
   return JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
 }
 async function saveItem(item) {
@@ -718,9 +728,16 @@ async function saveItem(item) {
   const items=JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]'); items.unshift(item); localStorage.setItem(ITEMS_KEY,JSON.stringify(items));
 }
 async function updateItem(item) {
-  if (db) await db.collection(cfg.fbCol||'lego_parts').doc(item.id).set(item,{merge:true});
+  // Always write localStorage first (instant)
   let items=JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]'); const idx=items.findIndex(i=>i.id===item.id);
   if(idx>=0) items[idx]=item; else items.unshift(item); localStorage.setItem(ITEMS_KEY,JSON.stringify(items));
+  // Firebase: non-blocking with timeout
+  if (db) {
+    try {
+      const p = db.collection(cfg.fbCol||'lego_parts').doc(item.id).set(item,{merge:true});
+      await Promise.race([p, new Promise((_,r) => setTimeout(()=>r(new Error('timeout')),5000))]);
+    } catch(e) { console.warn('updateItem Firebase failed:', e.message); localStorage.setItem('bricksort_pending_sync','true'); }
+  }
 }
 
 // Batch update: localStorage first (instant), Firebase in background
