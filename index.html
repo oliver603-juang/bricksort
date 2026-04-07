@@ -258,7 +258,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 <!-- SEARCH RESULTS -->
 <div id="s-search" class="screen">
 <div class="header">
-  <button class="back-btn" onclick="showScreen('s-main')">← 返回</button>
+  <button class="back-btn" onclick="goBack()">← 返回</button>
   <span class="header-title" id="search-title">搜尋結果</span>
 </div>
 <div id="search-results" class="item-list" style="padding:16px 20px"></div>
@@ -267,7 +267,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 <!-- ALL PARTS -->
 <div id="s-allparts" class="screen">
 <div class="header">
-  <button class="back-btn" onclick="showScreen('s-main')">← 返回</button>
+  <button class="back-btn" onclick="goBack()">← 返回</button>
   <span class="header-title">全部零件</span>
 </div>
 <div style="padding:8px 20px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -285,7 +285,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 <!-- DRAWER MAP -->
 <div id="s-drawers" class="screen">
 <div class="header">
-  <button class="back-btn" onclick="showScreen('s-main')">← 返回</button>
+  <button class="back-btn" onclick="goBack()">← 返回</button>
   <span class="header-title">抽屜地圖</span>
 </div>
 <div id="drawers-content" style="padding:16px 20px 80px"></div>
@@ -672,10 +672,25 @@ function saveSetup() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   initFirebase(); showScreen('s-main'); refreshMain();
 }
-function showScreen(id) {
+const navHistory = [];
+function showScreen(id, pushHistory = true) {
+  const current = document.querySelector('.screen.active')?.id;
+  if (pushHistory && current && current !== id && id !== 's-processing') {
+    navHistory.push(current);
+    if (navHistory.length > 20) navHistory.shift();
+  }
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active'); window.scrollTo(0,0);
   if (id !== 's-processing' && window._procTimer) { clearInterval(window._procTimer); window._procTimer=null; const el=document.getElementById('processing-timer'); if(el) el.textContent=''; }
+}
+function goBack() {
+  if (navHistory.length > 0) {
+    const prev = navHistory.pop();
+    showScreen(prev, false);
+    if (prev === 's-drawers' && window._lastZoneFilter) openDrawerMap(window._lastZoneFilter);
+  } else {
+    showScreen('s-main', false);
+  }
 }
 function setProcessingMsg(msg) {
   document.getElementById('processing-msg').textContent = msg;
@@ -1444,6 +1459,7 @@ async function openAllParts(sortMode) {
 // DRAWER MAP
 // ══════════════════════════════════════════════
 async function openDrawerMap(zoneFilter) {
+  window._lastZoneFilter = zoneFilter;
   const items = await loadItems();
   const slotCounts = {};
   items.forEach(i => { const s=i.slot||'?'; slotCounts[s]=(slotCounts[s]||0)+1; });
