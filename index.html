@@ -1354,7 +1354,15 @@ function safeParseJSON(text) {
 async function doSearch(value) {
   if (!value.trim()) return;
   const items = await loadItems(), q = value.toLowerCase();
-  const results = items.filter(i => (i.name||'').toLowerCase().includes(q) || (i.nameCN||'').toLowerCase().includes(q) || (i.designId||'').toLowerCase().includes(q) || (i.slot||'').toLowerCase().includes(q) || (i.featureTags||[]).some(t=>t.toLowerCase().includes(q)));
+  // Exact slot match for L1, B1 etc. (avoid L1 matching L10, L11...)
+  const isExactSlot = /^(l\d+|b\d+|\d+[ab]?)$/i.test(q);
+  const results = items.filter(i => {
+    if (isExactSlot) {
+      const slot = (i.slot||'').toLowerCase();
+      return slot === q || slot === q+'a' || slot === q+'b';
+    }
+    return (i.name||'').toLowerCase().includes(q) || (i.nameCN||'').toLowerCase().includes(q) || (i.designId||'').toLowerCase().includes(q) || (i.slot||'').toLowerCase().includes(q) || (i.featureTags||[]).some(t=>t.toLowerCase().includes(q));
+  });
 
   // Check if searching for a specific slot (L1, B1, etc.)
   const isSlotSearch = /^(L\d+|B\d+)$/i.test(value.trim());
