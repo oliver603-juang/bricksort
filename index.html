@@ -703,6 +703,11 @@ function showToast(msg, type='success') { const t=document.getElementById('toast
 // DATA LAYER
 // ══════════════════════════════════════════════
 async function loadItems() {
+  // If pending sync, localStorage has newer data than Firebase
+  const pendingSync = localStorage.getItem('bricksort_pending_sync') === 'true';
+  if (pendingSync) {
+    return JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
+  }
   if (db) { try { const snap=await db.collection(cfg.fbCol||'lego_parts').orderBy('createdAt','desc').get(); return snap.docs.map(d=>({id:d.id,...d.data()})); } catch(e) { console.warn('Firestore read failed',e); } }
   return JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
 }
