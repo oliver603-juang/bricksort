@@ -138,6 +138,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 <div class="header" style="flex-direction:column;gap:4px;padding-bottom:6px">
   <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
     <span class="header-title">🧱 BrickSort</span>
+    <button id="sync-badge" onclick="syncToFirebase()" style="background:#e24b4a;color:white;border:none;font-size:11px;cursor:pointer;padding:4px 8px;border-radius:4px;display:none">☁ 待同步</button>
     <button onclick="showScreen('s-setup')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:4px 8px">⚙ 設定</button>
   </div>
   <div style="display:flex;gap:4px;width:100%;overflow-x:auto" class="nav-bar">
@@ -715,11 +716,11 @@ async function updateItem(item) {
   if(idx>=0) items[idx]=item; else items.unshift(item); localStorage.setItem(ITEMS_KEY,JSON.stringify(items));
 }
 
-// Batch update: write all to localStorage first, then Firebase using native batch API
-async function batchUpdateItems(itemsToUpdate) {
+// Batch update: localStorage first (instant), Firebase in background
+async function batchUpdateItems(itemsToUpdate, skipFirebase) {
   if (!itemsToUpdate.length) return;
 
-  // Step 1: Bulk update localStorage (instant)
+  // Step 1: Bulk update localStorage (instant, always succeeds)
   let allItems = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
   const idMap = {};
   allItems.forEach((item, idx) => { idMap[item.id] = idx; });
@@ -730,18 +731,51 @@ async function batchUpdateItems(itemsToUpdate) {
   });
   localStorage.setItem(ITEMS_KEY, JSON.stringify(allItems));
 
-  // Step 2: Firebase writeBatch (500 ops per batch, native API)
-  if (!db) return;
-  const col = cfg.fbCol || 'lego_parts';
-  const BATCH_SIZE = 400; // Firestore limit is 500, use 400 for safety
-  for (let i = 0; i < itemsToUpdate.length; i += BATCH_SIZE) {
-    const chunk = itemsToUpdate.slice(i, i + BATCH_SIZE);
-    const batch = db.batch();
-    chunk.forEach(item => {
-      batch.set(db.collection(col).doc(item.id), item, {merge:true});
-    });
-    await batch.commit();
+  // Mark as pending sync
+  if (!skipFirebase) {
+    localStorage.setItem('bricksort_pending_sync', 'true');
   }
+}
+
+// Upload localStorage to Firebase (call separately)
+async function syncToFirebase() {
+  if (!db) { showToast('Firebase 未連線', 'error'); return; }
+
+  const items = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
+  if (!items.length) return;
+
+  const col = cfg.fbCol || 'lego_parts';
+  const BATCH_SIZE = 300;
+  const total = items.length;
+  let written = 0, errors = 0;
+
+  showScreen('s-processing');
+  for (let i = 0; i < total; i += BATCH_SIZE) {
+    const chunk = items.slice(i, i + BATCH_SIZE);
+    setProcessingMsg('上傳 Firebase ' + Math.min(i+BATCH_SIZE, total) + '/' + total + '...');
+
+    try {
+      const batch = db.batch();
+      chunk.forEach(item => {
+        batch.set(db.collection(col).doc(item.id), item, {merge:true});
+      });
+      await batch.commit();
+      written += chunk.length;
+    } catch(e) {
+      console.warn('Batch write error at chunk ' + i + ':', e);
+      // Fallback: try individual writes for this chunk
+      for (const item of chunk) {
+        try {
+          await db.collection(col).doc(item.id).set(item, {merge:true});
+          written++;
+        } catch(e2) { errors++; }
+      }
+    }
+  }
+
+  localStorage.removeItem('bricksort_pending_sync');
+  showToast('Firebase 同步完成：' + written + ' 個' + (errors ? '，' + errors + ' 個失敗' : ''));
+  showScreen('s-main'); refreshMain();
 }
 async function deleteItem(id) {
   if (db) await db.collection(cfg.fbCol||'lego_parts').doc(id).delete();
@@ -760,6 +794,11 @@ function setMode(mode) {
 }
 
 async function refreshMain() {
+  const syncBadge = document.getElementById('sync-badge');
+  if (syncBadge) {
+    const pending = localStorage.getItem('bricksort_pending_sync') === 'true';
+    syncBadge.style.display = pending ? '' : 'none';
+  }
   renderSyncStatus();
   const items = await loadItems();
   const smallCount = items.filter(i=>(i.slotType||'small')==='small').length;
@@ -1677,6 +1716,8 @@ async function openDrawerMap(zoneFilter) {
   html += '<div style="margin-top:12px;text-align:center;display:flex;gap:8px;justify-content:center;align-items:center">';
   html += '<select onchange="if(this.value){window[this.value]();this.value=\'\'}" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:6px 10px;border-radius:6px;font-size:11px">';
   html += '<option value="">🛠 工具...</option>';
+  const hasPending = localStorage.getItem('bricksort_pending_sync') === 'true';
+  if (hasPending) html += '<option value="syncToFirebase">☁ 上傳到 Firebase（待同步）</option>';
   html += '<option value="fullReset">🔄 一鍵重置編排</option>';
   html += '<option value="refreshAllThumbnails">🖼 更新所有縮圖</option>';
   html += '<option value="runRepairBags">🔧 修復收納袋</option>';
