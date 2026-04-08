@@ -307,8 +307,8 @@ tr:hover{background:var(--accent-bg)}
     <div id="result-slot" class="slot-main"></div>
     <div id="result-slot-type" class="slot-type"></div>
   </div>
-  <button class="btn-primary" style="width:100%" onclick="confirmPart()">✓ 確認儲存</button>
-  <button class="btn" style="width:100%;margin-top:8px" onclick="cancelResult()">取消</button>
+  <button id="result-confirm-btn" class="btn-primary" style="width:100%" onclick="confirmPart()">✓ 確認儲存</button>
+  <button id="result-cancel-btn" class="btn" style="width:100%;margin-top:8px" onclick="cancelResult()">取消</button>
 </div>
 </div>
 
@@ -903,9 +903,10 @@ async function brickognizePredict(base64Image){
     return null}catch(e){return null}
 }
 
-async function smartRecognize(base64Image,hint){
-  const existingList=await buildExistingList();let bkResult=null;
-  setProcessingMsg('🔍 Brickognize 辨識中…');bkResult=await brickognizePredict(base64Image);
+async function smartRecognize(base64Image,hint,prefetchedBk){
+  const existingList=await buildExistingList();
+  let bkResult=prefetchedBk||null;
+  if(!bkResult){setProcessingMsg('🔍 Brickognize 辨識中…');bkResult=await brickognizePredict(base64Image)}
   // Brickognize minifig detection: lowered threshold 50→30
   if(bkResult&&bkResult.score>=30&&bkResult.type==='minifig'&&bkResult.id){
     setProcessingMsg('🧑 人偶辨識：'+bkResult.name+' ('+bkResult.score+'%)');
@@ -951,7 +952,45 @@ async function parseLensScreenshot(dataUrl){
   }catch(err){showTab('main');showToast('解析失敗：'+err.message,'error')}
 }
 async function handleCatalogCamera(event){const file=event.target.files[0];if(!file)return;event.target.value='';const reader=new FileReader();reader.onload=async e=>{const resized=await resizeImage(e.target.result,800);currentImageData=resized;showScreen('s-processing');try{const item=await smartRecognize(resized.split(',')[1],'');await processResult(item)}catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}};reader.readAsDataURL(file)}
-async function handleCameraInput(event){const file=event.target.files[0];if(!file)return;event.target.value='';const reader=new FileReader();reader.onload=async e=>{const resized=await resizeImage(e.target.result,800);currentImageData=resized;showScreen('s-processing');try{const hint=(document.getElementById('storage-hint')?.value||'').trim();const item=await smartRecognize(resized.split(',')[1],hint);await processResult(item)}catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}};reader.readAsDataURL(file)}
+async function handleCameraInput(event){const file=event.target.files[0];if(!file)return;event.target.value='';const reader=new FileReader();reader.onload=async e=>{const resized=await resizeImage(e.target.result,800);currentImageData=resized;showScreen('s-processing');try{const hint=(document.getElementById('storage-hint')?.value||'').trim();const base64=resized.split(',')[1];
+  // === FAST PATH: Brickognize → match DB → show slot (skip Gemini) ===
+  setProcessingMsg('🔍 Brickognize 辨識中…');
+  const bkResult=await brickognizePredict(base64);
+  if(bkResult&&bkResult.score>=50&&bkResult.id){
+    const bkId=bkResult.id;const baseId=getBaseDesignId(bkId);
+    // Search allItems for this designId
+    let match=allItems.find(i=>(i.designId||'').toLowerCase()===bkId.toLowerCase());
+    if(!match&&baseId)match=allItems.find(i=>getBaseDesignId(i.designId)===baseId);
+    if(match){
+      // FOUND! Show result directly — no Gemini needed
+      setProcessingMsg('✓ '+bkResult.name+' → '+match.slot);
+      const thumbnailUrl=match.thumbnailUrl||bkResult.imgUrl||(bkId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'');
+      pendingPart={design_id:bkId,name:match.name||bkResult.name,name_cn:match.nameCN||'',designId:bkId,slot:match.slot,slotType:match.slotType||'small',thumbnailUrl,estimateVolumeMl:match.estimateVolumeMl||0,featureTags:match.featureTags||[],bricklinkCategory:match.bricklinkCategory||'',description:match.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:match.id,_brickognize:{score:bkResult.score,id:bkId}};
+      // Render result screen
+      document.getElementById('result-img').src=thumbnailUrl||currentImageData||'';
+      document.getElementById('result-name').textContent=match.nameCN||match.name||bkResult.name;
+      document.getElementById('result-designid').innerHTML=(bkId?'Design ID: '+bkId:'')+' <span style="font-size:10px;padding:2px 6px;background:rgba(76,175,80,0.15);border:1px solid var(--green);color:var(--green);border-radius:4px">Brickognize '+bkResult.score+'%</span>';
+      document.getElementById('result-desc').textContent=match.description||'';
+      document.getElementById('result-tags').innerHTML=(match.featureTags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
+      document.getElementById('result-volume').textContent='佔位體積 ≈ '+(match.estimateVolumeMl||0)+'ml';
+      document.getElementById('result-slot').textContent=match.slot;
+      const typeLabel=match.slotType==='large'?'大抽屜':match.slotType==='bag'?'收納袋':'小抽屜分格';
+      document.getElementById('result-slot-type').textContent=typeLabel;
+      const banner=document.getElementById('match-banner');
+      banner.style.display='block';banner.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--green)">⚡ 快速辨識（'+Math.round(performance.now()-window._procStart)+'ms）</div><div style="font-size:12px;color:var(--muted)">Brickognize '+bkResult.score+'% → 「'+(match.nameCN||match.name)+'」已在 '+match.slot+'</div>';
+      if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+      // Storage mode: just show location, no save needed
+      document.getElementById('result-confirm-btn').textContent='← 返回';
+      document.getElementById('result-confirm-btn').onclick=()=>goBack();
+      document.getElementById('result-cancel-btn').style.display='none';
+      showScreen('s-result');return;
+    }
+    // Brickognize matched but NOT in DB → new part, need Gemini for cataloging
+    setProcessingMsg('✓ '+bkResult.name+' (未建檔)，AI 分類中…');
+  }
+  // === SLOW PATH: full smartRecognize (Brickognize failed or not in DB) ===
+  const item=await smartRecognize(base64,hint,bkResult);await processResult(item);
+}catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}};reader.readAsDataURL(file)}
 
 async function handlePartIdBatch(){
   const input=document.getElementById('part-id-input'),raw=input.value.trim();if(!raw){input.focus();return}
@@ -1025,6 +1064,10 @@ async function processResult(item){
   const banner=document.getElementById('match-banner');
   if(match){banner.style.display='block';banner.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--green)">✓ 找到相同外型零件</div><div style="font-size:12px;color:var(--muted)">「'+(match.name||match.nameCN)+'」已在 '+match.slot+'</div>'}else{banner.style.display='none'}
   if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+  // Reset buttons to default (catalog mode)
+  document.getElementById('result-confirm-btn').textContent='✓ 確認儲存';
+  document.getElementById('result-confirm-btn').onclick=()=>confirmPart();
+  document.getElementById('result-cancel-btn').style.display='';
   showScreen('s-result');
 }
 
