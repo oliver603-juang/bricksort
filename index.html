@@ -379,6 +379,14 @@ tr:hover{background:var(--accent-bg)}
     <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="saveAllToFirebase()">☁️ 全部回傳 Firebase</button>
     <button class="btn" style="width:100%" onclick="exportForLabels()">🏷 匯出標籤列印資料 (JSON)</button>
   </div>
+  <div class="card">
+    <div class="card-title">📦 離線備份 / 還原</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">Firebase 無法使用時，可匯出完整資料到手機，之後再匯入還原。</div>
+    <button class="btn btn-green" style="width:100%;margin-bottom:8px" onclick="exportFullData()">📤 匯出完整資料 (JSON)</button>
+    <input type="file" id="import-json-input" accept=".json" style="display:none" onchange="importFullData(event)">
+    <button class="btn" style="width:100%;margin-bottom:8px" onclick="document.getElementById('import-json-input').click()">📥 匯入 JSON 資料</button>
+    <div id="import-status" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+  </div>
   <div class="card" id="lock-card">
     <div class="card-title">🔒 編排鎖定</div>
     <div id="lock-status"></div>
@@ -1532,6 +1540,82 @@ function exportForLabels(){
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='bricksort-labels-'+new Date().toISOString().slice(0,10)+'.json';a.click();
   showToast('已匯出 '+data.length+' 筆標籤資料');
+}
+
+function exportFullData(){
+  if(!allItems.length){showToast('沒有資料可匯出','error');return}
+  const exportObj={
+    version:2,
+    exportedAt:new Date().toISOString(),
+    slotConfig:{nextSmallSlot:slotConfig.nextSmallSlot,nextBagSlot:slotConfig.nextBagSlot,totalSmallDrawers:slotConfig.totalSmallDrawers,bagCapacity:slotConfig.bagCapacity,locked:slotConfig.locked},
+    items:allItems
+  };
+  const blob=new Blob([JSON.stringify(exportObj)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='bricksort-full-'+new Date().toISOString().slice(0,10)+'.json';a.click();
+  showToast('已匯出 '+allItems.length+' 筆完整資料');
+}
+
+function importFullData(event){
+  const file=event.target.files[0];if(!file)return;
+  const statusEl=document.getElementById('import-status');
+  statusEl.textContent='讀取中…';statusEl.style.color='var(--accent)';
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const raw=JSON.parse(e.target.result);
+      let items,cfg;
+      // Support both formats: {version,items,slotConfig} or plain array
+      if(raw.version&&raw.items){
+        items=raw.items;cfg=raw.slotConfig;
+        statusEl.textContent='格式：BrickSort 完整備份 v'+raw.version+' ('+raw.exportedAt+')';
+      } else if(Array.isArray(raw)){
+        items=raw;cfg=null;
+        statusEl.textContent='格式：JSON 陣列';
+      } else {
+        statusEl.textContent='❌ 無法辨識的 JSON 格式';statusEl.style.color='var(--red)';return;
+      }
+      if(!items.length){statusEl.textContent='❌ JSON 中沒有零件資料';statusEl.style.color='var(--red)';return}
+      // Validate: items should have slot field
+      const hasSlot=items.filter(i=>i.slot).length;
+      const mode=allItems.length>0?'merge':'replace';
+      if(mode==='merge'){
+        if(!confirm('目前已有 '+allItems.length+' 筆資料。\n\n選擇匯入模式：\n• 確定 = 合併（保留現有 + 加入新的）\n• 取消 = 放棄匯入')){
+          statusEl.textContent='已取消';statusEl.style.color='var(--muted)';return;
+        }
+        // Merge: add new items, update existing by id
+        let added=0,updated=0;
+        const existingIds=new Set(allItems.map(i=>i.id));
+        items.forEach(item=>{
+          if(!item.id)item.id='lego_'+Date.now()+'_'+Math.random().toString(36).slice(2,5);
+          if(existingIds.has(item.id)){
+            const existing=allItems.find(i=>i.id===item.id);
+            if(existing){Object.assign(existing,item);updated++}
+          } else {
+            allItems.push(item);added++;
+          }
+          markDirty(item.id);
+        });
+        statusEl.innerHTML='<span style="color:var(--green)">✅ 合併完成：新增 '+added+' 筆，更新 '+updated+' 筆（共 '+allItems.length+' 筆）</span>';
+      } else {
+        // Replace: clear and load
+        allItems=items.map(i=>{if(!i.id)i.id='lego_'+Date.now()+'_'+Math.random().toString(36).slice(2,5);return i});
+        allItems.forEach(i=>markDirty(i.id));
+        statusEl.innerHTML='<span style="color:var(--green)">✅ 已載入 '+allItems.length+' 筆零件</span>';
+      }
+      // Restore slotConfig if available
+      if(cfg){
+        slotConfig={...slotConfig,...cfg};
+        markDirty('__config__');
+        statusEl.innerHTML+='<br><span style="color:var(--accent)">📌 slotConfig 已還原：next='+slotConfig.nextSmallSlot+'</span>';
+      }
+      renderStats();applyFilter();renderSyncStatus();renderLockStatus();
+      showToast('JSON 匯入成功：'+allItems.length+' 筆');
+    }catch(err){
+      statusEl.textContent='❌ 解析失敗：'+err.message;statusEl.style.color='var(--red)';
+    }
+  };
+  reader.readAsText(file);
+  event.target.value='';
 }
 
 function showToast(msg,type){const t=document.getElementById('toast');t.textContent=msg;t.style.background=type==='error'?'var(--red)':'var(--green)';t.style.color=type==='error'?'#fff':'#0a0a0a';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
