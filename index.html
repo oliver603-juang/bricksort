@@ -918,7 +918,7 @@ async function smartRecognize(base64Image,hint,prefetchedBk){
     setProcessingMsg('AI 分類中…');
     const prompt='LEGO零件「'+pName+'」Design ID='+dId+'。回應純JSON：{"design_id":"'+dId+'","name":"'+pName+'","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"15字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":false,"matched_existing_id":"同外型零件id或null。已有:'+existingList+'"}';
     const textResp=await callGeminiAPI(prompt,null,0,GEMINI_LEGO_SYSTEM);const parsed=safeParseJSON(textResp);
-    parsed.design_id=dId;parsed.name=parsed.name||pName;parsed._brickognize={score:bkResult.score,id:bkResult.id};return parsed;
+    parsed.design_id=dId;parsed.name=parsed.name||pName;parsed._brickognize={score:bkResult.score,id:bkResult.id,name:bkResult.name};return parsed;
   }
   // Gemini full recognition with minifigure detection
   const hintText=hint?'使用者提示此零件是「'+hint+'」。':'';
@@ -927,7 +927,7 @@ async function smartRecognize(base64Image,hint,prefetchedBk){
   const mfPrompt='【重要】先判斷圖中是「完整組裝人偶」還是「單一零件」。完整人偶=有頭+身體+腿的完整角色（如城市居民、忍者、星際大戰角色等）。如果是完整人偶：design_id填BrickLink人偶編號（格式如njo788,sw0001,sh001,cty1234），is_complete_minifig設true，bricklink_category設"Minifigure"。如果是單一零件（頭部、武器、帽子、工具等配件）：design_id填零件Design ID數字，is_complete_minifig設false。';
   const prompt=mfPrompt+hintText+bkHint+'回應純JSON：{"design_id":"編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型零件id或null。已有:'+existingList+'"}';
   const textResp=await callGeminiAPI(prompt,base64Image,0,GEMINI_LEGO_SYSTEM);const parsed=safeParseJSON(textResp);
-  if(bkResult&&bkResult.score>=30)parsed._brickognize={score:bkResult.score,id:bkResult.id};return parsed;
+  if(bkResult&&bkResult.score>=30)parsed._brickognize={score:bkResult.score,id:bkResult.id,name:bkResult.name};return parsed;
 }
 
 // ═══════════════════════════════════════════════════
@@ -956,20 +956,32 @@ async function handleCameraInput(event){const file=event.target.files[0];if(!fil
   // === FAST PATH: Brickognize → match DB → show slot (skip Gemini) ===
   setProcessingMsg('🔍 Brickognize 辨識中…');
   const bkResult=await brickognizePredict(base64);
-  if(bkResult&&bkResult.score>=50&&bkResult.id){
-    const bkId=bkResult.id;const baseId=getBaseDesignId(bkId);
-    // Search allItems for this designId
-    let match=allItems.find(i=>(i.designId||'').toLowerCase()===bkId.toLowerCase());
-    if(!match&&baseId)match=allItems.find(i=>getBaseDesignId(i.designId)===baseId);
+  if(bkResult&&bkResult.score>=40){
+    let match=null;
+    const bkId=bkResult.id||'';const bkName=(bkResult.name||'').toLowerCase();const baseId=getBaseDesignId(bkId);
+    // Strategy 1: match by designId (most accurate)
+    if(bkId){
+      match=allItems.find(i=>(i.designId||'').toLowerCase()===bkId.toLowerCase());
+      if(!match&&baseId)match=allItems.find(i=>getBaseDesignId(i.designId)===baseId);
+    }
+    // Strategy 2: match by stored brickognizeName (for parts without ID)
+    if(!match&&bkName.length>=3){
+      match=allItems.find(i=>i.brickognizeName&&i.brickognizeName.toLowerCase()===bkName);
+    }
+    // Strategy 3: match by English name similarity (fuzzy fallback)
+    if(!match&&bkName.length>=5){
+      match=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(bkName)||bkName.includes(n))});
+    }
     if(match){
       // FOUND! Show result directly — no Gemini needed
       setProcessingMsg('✓ '+bkResult.name+' → '+match.slot);
       const thumbnailUrl=match.thumbnailUrl||bkResult.imgUrl||(bkId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'');
-      pendingPart={design_id:bkId,name:match.name||bkResult.name,name_cn:match.nameCN||'',designId:bkId,slot:match.slot,slotType:match.slotType||'small',thumbnailUrl,estimateVolumeMl:match.estimateVolumeMl||0,featureTags:match.featureTags||[],bricklinkCategory:match.bricklinkCategory||'',description:match.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:match.id,_brickognize:{score:bkResult.score,id:bkId}};
+      pendingPart={design_id:bkId||match.designId,name:match.name||bkResult.name,name_cn:match.nameCN||'',designId:bkId||match.designId,slot:match.slot,slotType:match.slotType||'small',thumbnailUrl,estimateVolumeMl:match.estimateVolumeMl||0,featureTags:match.featureTags||[],bricklinkCategory:match.bricklinkCategory||'',description:match.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:match.id,_brickognize:{score:bkResult.score,id:bkId,name:bkResult.name}};
       // Render result screen
       document.getElementById('result-img').src=thumbnailUrl||currentImageData||'';
       document.getElementById('result-name').textContent=match.nameCN||match.name||bkResult.name;
-      document.getElementById('result-designid').innerHTML=(bkId?'Design ID: '+bkId:'')+' <span style="font-size:10px;padding:2px 6px;background:rgba(76,175,80,0.15);border:1px solid var(--green);color:var(--green);border-radius:4px">Brickognize '+bkResult.score+'%</span>';
+      const matchMethod=bkId?'ID: '+bkId:'名稱: '+bkResult.name;
+      document.getElementById('result-designid').innerHTML=(match.designId?'Design ID: '+match.designId:'')+' <span style="font-size:10px;padding:2px 6px;background:rgba(76,175,80,0.15);border:1px solid var(--green);color:var(--green);border-radius:4px">⚡ '+bkResult.score+'% '+matchMethod+'</span>';
       document.getElementById('result-desc').textContent=match.description||'';
       document.getElementById('result-tags').innerHTML=(match.featureTags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
       document.getElementById('result-volume').textContent='佔位體積 ≈ '+(match.estimateVolumeMl||0)+'ml';
@@ -985,8 +997,8 @@ async function handleCameraInput(event){const file=event.target.files[0];if(!fil
       document.getElementById('result-cancel-btn').style.display='none';
       showScreen('s-result');return;
     }
-    // Brickognize matched but NOT in DB → new part, need Gemini for cataloging
-    setProcessingMsg('✓ '+bkResult.name+' (未建檔)，AI 分類中…');
+    // Brickognize recognized but NOT in DB → new part, need Gemini
+    if(bkId||bkName)setProcessingMsg('✓ '+(bkResult.name||bkId)+' (未建檔)，AI 分類中…');
   }
   // === SLOW PATH: full smartRecognize (Brickognize failed or not in DB) ===
   const item=await smartRecognize(base64,hint,bkResult);await processResult(item);
@@ -1074,7 +1086,7 @@ async function processResult(item){
 async function confirmPart(){
   if(!pendingPart)return;
   const now=Date.now();
-  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:pendingPart.bricklinkCategory||'',estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:'',quantity:1,updatedAt:now};
+  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:pendingPart.bricklinkCategory||'',estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:'',quantity:1,updatedAt:now};
   if(pendingPart.isUpdate&&pendingPart.matchedId){item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;if(existing)Object.assign(existing,item);showToast('已更新：'+item.slot+'（數量 +1）')}
   else{item.id='lego_'+now+'_'+Math.random().toString(36).slice(2,5);item.createdAt=now;allItems.unshift(item);showToast('已儲存到 '+item.slot)}
   markDirty(item.id);await fbSaveItem(item);
