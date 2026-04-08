@@ -1097,8 +1097,11 @@ function renderDrawerMap(zone){
     html+=renderSmallZone(ZONE_TOP,0);
     html+='<div style="font-size:13px;color:var(--muted);margin:16px 0 8px">主區 小抽屜 91~450（18×20，蛇形排列）</div>';
     html+=renderSmallZone(ZONE_MAIN,90);
-    html+='<div style="font-size:13px;color:var(--muted);margin:16px 0 8px">擴充區 小抽屜 451~630（18×10，蛇形排列）</div>';
-    html+=renderSmallZone(ZONE_EXT,450);
+    const extUsed=allItems.some(i=>{const m=(i.slot||'').match(/^0*(\d+)/);return m&&parseInt(m[1])>450&&(i.slotType||'small')==='small'});
+    if(extUsed){
+      html+='<div style="font-size:13px;color:var(--muted);margin:16px 0 8px">擴充區 小抽屜 451~630（18×10，蛇形排列）</div>';
+      html+=renderSmallZone(ZONE_EXT,450);
+    }
     document.getElementById('map-small-content').innerHTML=html;
   }
   else if(zone==='large'){
