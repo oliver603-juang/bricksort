@@ -1106,10 +1106,11 @@ function renderDrawerMap(zone){
     html+='<div class="drawer-grid" style="grid-template-columns:repeat(9,1fr)">';
     for(let row=0;row<ZONE_LARGE_MAP.rows;row++){for(let col=0;col<ZONE_LARGE_MAP.cols;col++){
       const d=gridToDrawerNum(col,row,ZONE_LARGE_MAP.cols);if(d>ZONE_LARGE_MAP.drawers)continue;
-      const c=slotCounts['L'+d]||0,cls=c>0?'has-items':'';
-      const lItem=allItems.find(i=>i.slot==='L'+d);const lThumb=lItem?(lItem.thumbnailUrl||''):'';
+      const lPlain='L'+d, lPad='L'+String(d).padStart(2,'0');
+      const c=(slotCounts[lPlain]||0)+(slotCounts[lPad]||0),cls=c>0?'has-items':'';
+      const lItem=allItems.find(i=>i.slot===lPlain||i.slot===lPad);const lThumb=lItem?(lItem.thumbnailUrl||''):'';
       const lThumbHtml=lThumb?'<img src="'+lThumb+'" style="width:24px;height:24px;object-fit:contain;border-radius:2px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">':'';
-      html+='<div class="drawer-cell '+cls+'" style="min-height:56px" onclick="doSearch(\'L'+d+'\')"><div style="font-size:11px">L'+d+'</div>'+lThumbHtml+'<div style="font-size:7px">'+c+'件</div></div>';
+      html+='<div class="drawer-cell '+cls+'" style="min-height:56px" onclick="doSearch(\''+lPad+'\')"><div style="font-size:11px">L'+d+'</div>'+lThumbHtml+'<div style="font-size:7px">'+c+'件</div></div>';
     }}html+='</div>';
     html+='<div style="margin-top:12px;text-align:center"><button class="btn btn-primary btn-sm" onclick="autoAssignLargeDrawers()">📦 自動指派大抽屜（Top 27）</button></div>';
     document.getElementById('map-large-content').innerHTML=html;
