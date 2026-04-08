@@ -483,6 +483,7 @@ let pendingPart=null, currentImageData=null, currentMode='catalog';
 let batchQueue=[], batchCancelled=false, batchRunning=false;
 let _lastWorkingModel=null;
 let currentTab='main';
+let dataReady=false, _loadPromise=null;
 
 // ═══════════════════════════════════════════════════
 // INIT
@@ -493,7 +494,7 @@ function init(){
   try{db=firebase.initializeApp(FB_CONFIG,'bs').firestore()}catch(e){try{db=firebase.app('bs').firestore()}catch(e2){}}
   if(document.getElementById('inp-apikey'))document.getElementById('inp-apikey').value=cfg.apiKey||'';
   if(document.getElementById('inp-rbkey'))document.getElementById('inp-rbkey').value=cfg.rbKey||DEFAULT_RB_KEY;
-  loadData();
+  _loadPromise=loadData();
 }
 
 function saveSettings(){
@@ -512,10 +513,12 @@ function showScreen(id){
   document.getElementById(id).classList.add('active');
   window.scrollTo(0,0);
 }
-function showTab(tab){
+async function showTab(tab){
   currentTab=tab;
   document.querySelectorAll('.nav-tab').forEach((t,i)=>t.classList.toggle('active',['main','merged','map-small','map-large','map-bag','allparts'][i]===tab));
   if(tab==='main'){showScreen('s-main');return}
+  // Wait for data if not ready yet
+  if(!dataReady&&_loadPromise){await _loadPromise}
   if(tab==='map-small'){showScreen('s-map-small');renderDrawerMap('small');return}
   if(tab==='map-large'){showScreen('s-map-large');renderDrawerMap('large');return}
   if(tab==='map-bag'){showScreen('s-map-bag');renderDrawerMap('bag');return}
@@ -537,6 +540,7 @@ function setProcessingMsg(msg){document.getElementById('processing-msg').textCon
 // FIREBASE DATA LAYER
 // ═══════════════════════════════════════════════════
 async function loadData(){
+  dataReady=false;
   document.getElementById('loading').style.display='';
   document.getElementById('tbody').innerHTML='';
   document.getElementById('status-text').textContent='載入中…';
@@ -551,6 +555,7 @@ async function loadData(){
     document.getElementById('status-text').textContent='✅ '+allItems.length+'筆';
   }catch(e){document.getElementById('status-text').textContent='❌ '+e.message;allItems=[]}
   document.getElementById('loading').style.display='none';
+  dataReady=true;
   renderStats();applySort();renderSyncStatus();
 }
 
@@ -1136,14 +1141,42 @@ function autoAssignLargeDrawers(){
 // MERGED VIEW
 // ═══════════════════════════════════════════════════
 function renderMergedView(){
-  const merged=allItems.filter(i=>i.mergedWith&&i.mergedWith.length>0);
-  let html='<div style="font-size:13px;color:var(--muted);margin-bottom:12px">已融合零件：'+merged.length+' 件</div>';
-  if(!merged.length)html+='<div style="color:var(--dim);text-align:center;padding:48px">尚無融合零件</div>';
-  else{const bySlot={};merged.forEach(i=>{if(!bySlot[i.slot])bySlot[i.slot]=[];bySlot[i.slot].push(i)});
-    Object.entries(bySlot).sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true})).forEach(([slot,items])=>{
-      html+='<div class="card"><div style="font-family:var(--mono);font-size:12px;color:var(--accent);margin-bottom:8px">'+slot+' ('+items.length+' 件融合)</div>';
-      items.forEach(i=>{html+='<div class="item-row" onclick="openItem(\''+i.id+'\')"><div class="item-info"><div class="item-name">'+(i.name||i.nameCN||'未知')+'</div><div class="item-meta"><span class="mono">'+i.designId+'</span></div></div></div>'});
-      html+='</div>'});
+  // Detect merged items TWO ways:
+  // 1. mergedWith field from pipeline
+  // 2. Multiple items sharing the same slot (runtime detection - works without pipeline)
+  const slotGroups={};
+  allItems.forEach(i=>{
+    if(!i.slot||(i.slotType||'small')!=='small')return;
+    // Normalize: "077a" → "077a", "077" → "077" (full drawer = not merged)
+    const s=i.slot;
+    if(!slotGroups[s])slotGroups[s]=[];
+    slotGroups[s].push(i);
+  });
+
+  // A slot is "merged" if it has 2+ items, OR any item has mergedWith
+  const mergedSlots=Object.entries(slotGroups).filter(([slot,items])=>{
+    if(items.length>=2)return true;
+    return items.some(i=>i.mergedWith&&i.mergedWith.length>0);
+  }).sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true}));
+
+  const totalMergedItems=mergedSlots.reduce((s,e)=>s+e[1].length,0);
+  let html='<div style="font-size:13px;color:var(--muted);margin-bottom:12px">已融合格子：'+mergedSlots.length+' 格（'+totalMergedItems+' 件零件共用格子）</div>';
+
+  if(!mergedSlots.length)html+='<div style="color:var(--dim);text-align:center;padding:48px">尚無融合零件<br><span style="font-size:12px">執行「格子自動分配」後，體積 ≤'+MERGE_LIMIT+'ml 的零件會被融合到同一格</span></div>';
+  else{
+    mergedSlots.forEach(([slot,items])=>{
+      const totalVol=items.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+      const pct=Math.min(100,Math.round(totalVol/SLOT_ML*100));
+      const barColor=pct>80?'var(--red)':pct>50?'var(--orange)':'var(--green)';
+      html+='<div class="card"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="slot-badge slot-small" style="font-size:13px">'+slot+'</span><span style="font-size:12px;color:var(--muted)">'+items.length+' 件 · '+Math.round(totalVol)+'ml/'+SLOT_ML+'ml</span></div>';
+      html+='<div style="height:4px;background:var(--surface);border-radius:2px;overflow:hidden;margin-bottom:8px"><div style="width:'+pct+'%;height:100%;background:'+barColor+';border-radius:2px"></div></div>';
+      items.forEach(i=>{
+        const thumb=i.thumbnailUrl||(i.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(i.designId)+'.png':'');
+        const vol=Math.round((i.estimateVolumeMl||0)*(i.quantity||1));
+        html+='<div class="item-row" onclick="openItem(\''+i.id+'\')">'+(thumb?'<img class="item-thumb" src="'+thumb+'" loading="lazy" onerror="this.style.display=\'none\'">':'<div style="width:40px;height:40px;border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center">🧱</div>')+'<div class="item-info"><div class="item-name">'+(i.name||i.nameCN||'未知')+'</div><div class="item-meta"><span class="mono" style="font-size:11px">'+(i.designId||'')+'</span><span>'+vol+'ml</span><span>'+(i.featureTags||[]).slice(0,1).join('')+'</span></div></div></div>';
+      });
+      html+='</div>';
+    });
   }
   document.getElementById('merged-content').innerHTML=html;
 }
