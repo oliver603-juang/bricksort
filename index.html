@@ -574,11 +574,12 @@ async function saveAllToFirebase(){
   const st=document.getElementById('status-text');
   st.textContent='上傳中 0/'+total+'…';
   let written=0,errors=0;
-  for(let i=0;i<toSave.length;i+=300){
-    const chunk=toSave.slice(i,i+300);
+  for(let i=0;i<toSave.length;i+=100){
+    const chunk=toSave.slice(i,i+100);
     try{const b=db.batch();chunk.forEach(item=>b.set(db.collection(FB_COL).doc(item.id),item,{merge:true}));await b.commit();written+=chunk.length}
     catch(e){for(const item of chunk){try{await db.collection(FB_COL).doc(item.id).set(item,{merge:true});written++}catch(e2){errors++}}}
-    st.textContent='上傳中 '+(written+errors)+'/'+total+'…';
+    st.textContent='上傳中 '+written+'/'+total+(errors?' ('+errors+'失敗)':'')+'…';
+    if(i+100<toSave.length) await new Promise(r=>setTimeout(r,1000));
   }
   if(needCfg){try{await db.collection(FB_COL).doc(FB_CONFIG_DOC).set({nextSmallSlot:slotConfig.nextSmallSlot,nextBagSlot:slotConfig.nextBagSlot,totalSmallDrawers:slotConfig.totalSmallDrawers,bagCapacity:slotConfig.bagCapacity||BAG_ML_DEFAULT,lastUpdatedAt:Date.now()},{merge:true});written++}catch(e){errors++}}
   dirty.clear();
@@ -1348,13 +1349,31 @@ function showAssignReport(){
 }
 
 async function writeAssignToFirebase(){
-  if(!confirm('確定將 '+assignAssignments.length+' 筆分配結果寫入 Firebase？'))return;
+  if(!confirm('確定將 '+assignAssignments.length+' 筆分配結果寫入 Firebase？\n（約需 '+Math.ceil(assignAssignments.length/100)+'秒）'))return;
   document.getElementById('assign-status').textContent='寫入中…';
   let written=0,errors=0;const total=assignAssignments.length;
-  for(let i=0;i<total;i+=300){const chunk=assignAssignments.slice(i,i+300);try{const batch=db.batch();chunk.forEach(a=>{batch.update(db.collection(FB_COL).doc(a.item.id),{slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],updatedAt:Date.now()})});await batch.commit();written+=chunk.length}catch(e){for(const a of chunk){try{await db.collection(FB_COL).doc(a.item.id).update({slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],updatedAt:Date.now()});written++}catch(e2){errors++}}}}
+  const BATCH=100; // smaller batches to avoid quota/rate limits
+  for(let i=0;i<total;i+=BATCH){
+    const chunk=assignAssignments.slice(i,i+BATCH);
+    try{
+      const batch=db.batch();
+      chunk.forEach(a=>{batch.update(db.collection(FB_COL).doc(a.item.id),{slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],updatedAt:Date.now()})});
+      await batch.commit();
+      written+=chunk.length;
+    }catch(e){
+      // Fallback: individual writes with delay
+      for(const a of chunk){
+        try{await db.collection(FB_COL).doc(a.item.id).update({slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],updatedAt:Date.now()});written++}
+        catch(e2){errors++}
+      }
+    }
+    document.getElementById('assign-status').textContent='寫入中 '+written+'/'+total+(errors?' ('+errors+'失敗)':'');
+    // Rate limit: 1s delay between batches
+    if(i+BATCH<total) await new Promise(r=>setTimeout(r,1000));
+  }
   const nextD=window._nextAvailableDrawer||1;
   try{await db.collection(FB_COL).doc(FB_CONFIG_DOC).set({nextSmallSlot:drawerNumToLabel(nextD)+'a',nextBagSlot:'B'+String((window._bagCount||0)+1).padStart(2,'0'),totalSmallDrawers:TOTAL_SMALL_DRAWERS_ASSIGN,bagCapacity:window._bagCapacity||BAG_ML_DEFAULT,lastAssignedAt:Date.now()},{merge:true})}catch(e){}
-  document.getElementById('assign-status').textContent='✅ 已寫入 '+written+'筆';
+  document.getElementById('assign-status').textContent='✅ 已寫入 '+written+'筆'+(errors?' ('+errors+'失敗)':'');
   showToast('Firebase 寫入完成：'+written+'筆');await loadData();
 }
 
