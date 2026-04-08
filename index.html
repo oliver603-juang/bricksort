@@ -336,7 +336,7 @@ tr:hover{background:var(--accent-bg)}
 <!-- ═══ ASSIGN PIPELINE ═══ -->
 <div id="s-assign" class="screen">
 <div style="padding:12px 16px;display:flex;align-items:center;gap:12px">
-  <button class="btn btn-sm" onclick="showTab('main')">← 返回</button>
+  <button class="btn btn-sm" onclick="goBack()">← 返回</button>
   <span style="font-family:var(--mono);font-size:14px;color:var(--accent)">格子自動分配</span>
   <span class="mono" style="font-size:11px;color:var(--muted);margin-left:auto" id="assign-status">準備中</span>
 </div>
@@ -352,18 +352,18 @@ tr:hover{background:var(--accent-bg)}
 
 <!-- ═══ SEARCH RESULTS ═══ -->
 <div id="s-search" class="screen">
-<div style="padding:12px 16px"><button class="btn btn-sm" onclick="showTab('main')">← 返回</button> <span id="search-title" style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:8px">搜尋結果</span></div>
+<div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span id="search-title" style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:8px">搜尋結果</span></div>
 <div id="search-results" class="content"></div>
 </div>
 
 <!-- ═══ SETTINGS ═══ -->
 <div id="s-settings" class="screen">
-<div style="padding:12px 16px"><button class="btn btn-sm" onclick="showTab('main')">← 返回</button> <span style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:8px">設定</span></div>
+<div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:8px">設定</span></div>
 <div class="content">
   <div class="card">
     <div class="card-title">API Keys</div>
     <div class="field"><label>Gemini API Key <span style="color:var(--accent);font-size:10px">必填</span></label><input type="password" id="inp-apikey" placeholder="AIzaSy..."></div>
-    <div style="font-size:12px;margin-bottom:8px"><a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">🔑 取得 Gemini API Key →</a></div>
+    <div style="font-size:12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">🔑 取得 Gemini API Key →</a><button onclick="navigator.clipboard.readText().then(t=>{document.getElementById('inp-apikey').value=t.trim();document.getElementById('inp-apikey').type='text';showToast('已貼上')}).catch(()=>showToast('無法讀取剪貼簿','error'))" style="background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:3px 10px;border-radius:5px;font-size:11px;cursor:pointer;white-space:nowrap">📋 貼上剪貼簿</button></div>
     <div class="field"><label>Rebrickable API Key</label><input type="text" id="inp-rbkey" placeholder="56ee6047eaeb..."></div>
     <div style="font-size:12px;margin-bottom:8px"><a href="https://rebrickable.com/api/" target="_blank" style="color:var(--accent)">🔑 取得 Rebrickable Key →</a></div>
     <button class="btn-primary" style="width:100%" onclick="saveSettings()">💾 儲存設定</button>
@@ -375,8 +375,13 @@ tr:hover{background:var(--accent-bg)}
   <div class="card">
     <div class="card-title">操作</div>
     <button class="btn" style="width:100%;margin-bottom:8px" onclick="loadData()">🔄 重新載入 Firebase</button>
-    <button class="btn" style="width:100%;margin-bottom:8px" onclick="showScreen('s-assign')">🔀 開啟格子分配工具</button>
-    <button class="btn btn-primary" style="width:100%" onclick="saveAllToFirebase()">☁️ 全部回傳 Firebase</button>
+    <button class="btn" style="width:100%;margin-bottom:8px" onclick="openAssignPage()">🔀 開啟格子分配工具</button>
+    <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="saveAllToFirebase()">☁️ 全部回傳 Firebase</button>
+    <button class="btn" style="width:100%" onclick="exportForLabels()">🏷 匯出標籤列印資料 (JSON)</button>
+  </div>
+  <div class="card" id="lock-card">
+    <div class="card-title">🔒 編排鎖定</div>
+    <div id="lock-status"></div>
   </div>
 </div>
 </div>
@@ -449,7 +454,7 @@ const LARGE_W=108,LARGE_L=136,LARGE_H=53;
 const LARGE_ML=LARGE_W*LARGE_L*LARGE_H/1000; // ~778
 const LARGE_COUNT=27;
 const BAG_ML_DEFAULT=800,BAG_ML_LARGE=1000,BAG_THRESHOLD=100;
-const MERGE_LIMIT=62,MERGE_MAX_ITEMS=3;
+const MERGE_LIMIT=62,MERGE_MAX_ITEMS=4;
 const BASE_DRAWERS=450,EXPAND_SIZE=180;
 
 const STUD_PITCH=8,PLATE_H=3.2,BRICK_H=9.6;
@@ -477,7 +482,7 @@ const GEMINI_LEGO_SYSTEM=`你是一位專業的樂高零件資料庫工程師與
 let db=null, allItems=[], filtered=[], currentItem=null, isNewItem=false;
 let currentSort={key:'createdAt',dir:'desc'};
 let dirty=new Set();
-let slotConfig={nextSmallSlot:'001a',nextBagSlot:'B01',totalSmallDrawers:450,bagCapacity:800};
+let slotConfig={nextSmallSlot:'001a',nextBagSlot:'B01',totalSmallDrawers:450,bagCapacity:800,locked:false};
 let cfg={apiKey:'',rbKey:DEFAULT_RB_KEY};
 let pendingPart=null, currentImageData=null, currentMode='catalog';
 let batchQueue=[], batchCancelled=false, batchRunning=false;
@@ -508,23 +513,52 @@ function saveSettings(){
 // ═══════════════════════════════════════════════════
 // NAVIGATION
 // ═══════════════════════════════════════════════════
-function showScreen(id){
+const navHistory=[];
+function showScreen(id,pushHistory=true){
+  const current=document.querySelector('.screen.active');
+  const currentId=current?current.id:'';
+  // Push to history (skip transient screens like processing)
+  if(pushHistory&&currentId&&currentId!==id&&currentId!=='s-processing'){
+    navHistory.push(currentId);
+    if(navHistory.length>20)navHistory.shift();
+  }
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   window.scrollTo(0,0);
 }
+function goBack(){
+  if(navHistory.length>0){
+    const prev=navHistory.pop();
+    showScreen(prev,false);
+    // Update tab highlight if going back to a tab screen
+    const tabMap={'s-main':'main','s-merged':'merged','s-map-small':'map-small','s-map-large':'map-large','s-map-bag':'map-bag','s-allparts':'allparts'};
+    if(tabMap[prev]){
+      currentTab=tabMap[prev];
+      document.querySelectorAll('.nav-tab').forEach((t,i)=>t.classList.toggle('active',['main','merged','map-small','map-large','map-bag','allparts'][i]===currentTab));
+      // Re-render tab content if needed
+      if(currentTab==='merged')renderMergedView();
+      else if(currentTab==='map-small')renderDrawerMap('small');
+      else if(currentTab==='map-large')renderDrawerMap('large');
+      else if(currentTab==='map-bag')renderDrawerMap('bag');
+      else if(currentTab==='allparts')renderAllParts();
+    }
+  } else {
+    showTab('main');
+  }
+}
 async function showTab(tab){
   currentTab=tab;
+  navHistory.length=0; // Tab click = fresh navigation, clear history
   document.querySelectorAll('.nav-tab').forEach((t,i)=>t.classList.toggle('active',['main','merged','map-small','map-large','map-bag','allparts'][i]===tab));
-  if(tab==='main'){showScreen('s-main');return}
+  if(tab==='main'){showScreen('s-main',false);return}
   // Wait for data if not ready yet
   if(!dataReady&&_loadPromise){await _loadPromise}
-  if(tab==='map-small'){showScreen('s-map-small');renderDrawerMap('small');return}
-  if(tab==='map-large'){showScreen('s-map-large');renderDrawerMap('large');return}
-  if(tab==='map-bag'){showScreen('s-map-bag');renderDrawerMap('bag');return}
-  if(tab==='merged'){showScreen('s-merged');renderMergedView();return}
-  if(tab==='allparts'){showScreen('s-allparts');renderAllParts();return}
-  showScreen('s-'+tab);
+  if(tab==='map-small'){showScreen('s-map-small',false);renderDrawerMap('small');return}
+  if(tab==='map-large'){showScreen('s-map-large',false);renderDrawerMap('large');return}
+  if(tab==='map-bag'){showScreen('s-map-bag',false);renderDrawerMap('bag');return}
+  if(tab==='merged'){showScreen('s-merged',false);renderMergedView();return}
+  if(tab==='allparts'){showScreen('s-allparts',false);renderAllParts();return}
+  showScreen('s-'+tab,false);
 }
 function setMode(mode){
   currentMode=mode;
@@ -556,7 +590,7 @@ async function loadData(){
   }catch(e){document.getElementById('status-text').textContent='❌ '+e.message;allItems=[]}
   document.getElementById('loading').style.display='none';
   dataReady=true;
-  renderStats();applySort();renderSyncStatus();
+  renderStats();applySort();renderSyncStatus();renderLockStatus();
 }
 
 async function fbSaveItem(item){
@@ -592,7 +626,34 @@ function markDirty(id){dirty.add(id);document.getElementById('sync-badge').style
 function renderSyncStatus(){
   const el=document.getElementById('sync-status');
   const ok=!!db;
-  el.innerHTML='<div class="sync-inner"><div class="sync-dot '+(ok?'online':'offline')+'"></div><span style="flex:1;font-family:var(--mono);font-size:11px;color:var(--muted)">Firebase '+(ok?'已連線':'未連線')+' · 本機 '+allItems.length+' 件'+(dirty.size?' · ⚠ 待上傳':'')+' </span>'+(dirty.size?'<button class="btn btn-sm btn-primary" onclick="saveAllToFirebase()">☁ 上傳</button>':'')+'<button class="btn btn-sm" onclick="loadData()">↓ 下載</button></div>';
+  const lockIcon=slotConfig.locked?'<span style="color:var(--green);font-size:11px;margin-right:4px">🔒 已鎖定</span>':'';
+  el.innerHTML='<div class="sync-inner"><div class="sync-dot '+(ok?'online':'offline')+'"></div><span style="flex:1;font-family:var(--mono);font-size:11px;color:var(--muted)">'+lockIcon+'Firebase '+(ok?'已連線':'未連線')+' · 本機 '+allItems.length+' 件'+(dirty.size?' · ⚠ 待上傳':'')+' </span>'+(dirty.size?'<button class="btn btn-sm btn-primary" onclick="saveAllToFirebase()">☁ 上傳</button>':'')+'<button class="btn btn-sm" onclick="loadData()">↓ 下載</button></div>';
+}
+
+function renderLockStatus(){
+  const el=document.getElementById('lock-status');
+  if(!el)return;
+  if(slotConfig.locked){
+    el.innerHTML='<div style="background:var(--green-bg);border:1px solid var(--green);border-radius:8px;padding:12px;margin-bottom:12px"><div style="font-size:14px;font-weight:700;color:var(--green);margin-bottom:6px">🔒 編排已鎖定</div><div style="font-size:12px;color:var(--muted);line-height:1.6">零件已放入實體抽屜。<br>• 新零件會自動分配到下一個空格（'+slotConfig.nextSmallSlot+'）或收納袋（'+slotConfig.nextBagSlot+'）<br>• 不會移動任何已有零件的格子<br>• 重新分配功能已停用</div></div><button class="btn btn-danger" style="width:100%" onclick="toggleLock()">🔓 解除鎖定（允許重新編排）</button>';
+  } else {
+    el.innerHTML='<div style="background:var(--orange-bg);border:1px solid var(--orange);border-radius:8px;padding:12px;margin-bottom:12px"><div style="font-size:14px;font-weight:700;color:var(--orange);margin-bottom:6px">🔓 編排未鎖定</div><div style="font-size:12px;color:var(--muted);line-height:1.6">完成分配並將零件放入實體抽屜後，請鎖定編排。<br>鎖定後新零件只會往後追加，不會動到已有的格子。</div></div><button class="btn btn-green" style="width:100%" onclick="toggleLock()">🔒 鎖定編排（零件已放入抽屜）</button>';
+  }
+}
+
+async function toggleLock(){
+  if(!slotConfig.locked){
+    if(!confirm('確定鎖定？\n\n鎖定後：\n• 新零件追加到 '+slotConfig.nextSmallSlot+' 之後\n• 不能重新分配（避免抽屜大風吹）\n• 可隨時在設定中解鎖'))return;
+    slotConfig.locked=true;
+    showToast('🔒 編排已鎖定');
+  } else {
+    if(!confirm('⚠ 解除鎖定？\n\n解除後可以重新分配所有格子。\n如果零件已放入實體抽屜，重新分配後需要重新擺放所有零件！'))return;
+    slotConfig.locked=false;
+    showToast('🔓 已解除鎖定');
+  }
+  markDirty('__config__');
+  // Write lock state to Firebase immediately
+  try{await db.collection(FB_COL).doc(FB_CONFIG_DOC).set({locked:slotConfig.locked,lastUpdatedAt:Date.now()},{merge:true})}catch(e){}
+  renderLockStatus();renderSyncStatus();
 }
 
 // ═══════════════════════════════════════════════════
@@ -690,7 +751,7 @@ function renderTable(){
     const st=item.slotType||'small',sc=st==='large'?'slot-large':st==='bag'?'slot-bag':st==='box'?'slot-box':'slot-small';
     const tags=(item.featureTags||[]).slice(0,2).map(t=>'<span class="tag">'+t+'</span>').join('');
     const dr=dirty.has(item.id)?' style="border-left:3px solid var(--accent)"':'';
-    const ov=item.overflowSlot?'<span class="overflow-tag">+'+item.overflowSlot+'</span>':'';
+    const ov=item.overflowSlot&&(item.overflowQty||0)>0?'<span class="overflow-tag">+'+item.overflowSlot+'('+item.overflowQty+'件)</span>':'';
     return'<tr onclick="openItem(\''+item.id+'\')"'+dr+'>'+
       '<td>'+(thumb?'<img class="thumb" src="'+thumb+'" loading="lazy" onerror="this.style.display=\'none\'">':'🧱')+'</td>'+
       '<td><div style="font-weight:500">'+(item.name||item.nameCN||'未知')+'</div>'+(item.nameCN&&item.name?'<div style="font-size:11px;color:var(--muted)">'+item.nameCN+'</div>':'')+'</td>'+
@@ -731,7 +792,7 @@ function populateModal(i){
   document.getElementById('m-bl-link').href=did?'https://www.bricklink.com/v2/catalog/catalogitem.page?P='+did:'#';
   document.getElementById('m-rb-link').href=did?'https://rebrickable.com/parts/'+did+'/':'#';
   const ovEl=document.getElementById('m-overflow-info');
-  if(i.overflowSlot){const mainQty=(i.quantity||1)-(i.overflowQty||0);ovEl.innerHTML='📦 溢出：主位 <b>'+i.slot+'</b> 留 '+mainQty+' 件，溢出 <b>'+i.overflowSlot+'</b> 放 '+(i.overflowQty||0)+' 件';ovEl.style.display=''}else ovEl.style.display='none';
+  if(i.overflowSlot&&(i.overflowQty||0)>0){const mainQty=(i.quantity||1)-(i.overflowQty||0);ovEl.innerHTML='📦 溢出：主位 <b>'+i.slot+'</b> 留 '+mainQty+' 件，溢出 <b>'+i.overflowSlot+'</b> 放 '+i.overflowQty+' 件';ovEl.style.display=''}else ovEl.style.display='none';
   document.getElementById('m-overflow-warn').innerHTML='';recalcVol();
 }
 function closeModal(){document.getElementById('overlay').classList.remove('open');currentItem=null;isNewItem=false}
@@ -968,7 +1029,7 @@ async function confirmPart(){
   markDirty(item.id);await fbSaveItem(item);
   pendingPart=null;currentImageData=null;showTab('main');renderStats();applyFilter();
 }
-function cancelResult(){pendingPart=null;currentImageData=null;if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}showTab('main')}
+function cancelResult(){pendingPart=null;currentImageData=null;if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}goBack()}
 function cancelBatch(){if(batchRunning){batchCancelled=true}else showTab('main')}
 function renderBatchList(){document.getElementById('batch-item-list').innerHTML=batchQueue.map(item=>'<div class="item-row" style="border-left:3px solid '+(item.status==='done'?'var(--green)':item.status==='error'?'var(--red)':item.status==='processing'?'var(--accent)':'var(--border)')+'"><div class="item-info"><div class="item-name">'+item.name+'</div><div class="item-meta">'+(item.status==='done'?'✅ '+(item.result?.slot||''):(item.status==='error'?'❌ '+item.error:item.status==='processing'?'⏳ 處理中…':'⏸ 等待中'))+'</div></div></div>').join('')}
 function updateBatchProgress(done,total){document.getElementById('batch-status-text').textContent=done+'/'+total;document.getElementById('batch-count-badge').textContent=Math.round(done/total*100)+'%';document.getElementById('batch-progress-bar').style.width=(done/total*100)+'%'}
@@ -1066,13 +1127,56 @@ function doSearch(q){
 }
 function searchDrawer(d){
   const pad=String(d).padStart(3,'0'), plain=String(d);
-  const results=allItems.filter(i=>{
+  const matchSlot=s=>s===pad||s===plain||s===pad+'a'||s===pad+'b'||s===plain+'a'||s===plain+'b';
+  const results=allItems.filter(i=>matchSlot(i.slot||''));
+  
+  // Group by side: a, b, or full drawer
+  const sides={a:[],b:[],full:[]};
+  results.forEach(i=>{
     const s=i.slot||'';
-    // Match: "001a", "001b", "001", "1a", "1b" — but NOT "3001" or "B01"
-    return s===pad||s===plain||s===pad+'a'||s===pad+'b'||s===plain+'a'||s===plain+'b';
+    if(s.endsWith('a'))sides.a.push(i);
+    else if(s.endsWith('b'))sides.b.push(i);
+    else sides.full.push(i);
   });
+  
+  const totalVol=results.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+  const drawerCap=DRAWER_ML; // 248ml for full drawer
+  const slotCap=SLOT_ML; // 124ml per side
+  
+  let html='<div style="margin-bottom:16px">';
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="slot-badge slot-small" style="font-size:16px;padding:6px 14px">抽屜 '+d+'</span>';
+  html+='<span style="font-family:var(--mono);font-size:13px;color:var(--muted)">'+results.length+' 種零件 · '+Math.round(totalVol)+'ml / '+Math.round(drawerCap)+'ml</span></div>';
+  
+  // Full drawer capacity bar
+  const drawerPct=Math.min(100,Math.round(totalVol/drawerCap*100));
+  const drawerColor=drawerPct>90?'var(--red)':drawerPct>70?'var(--orange)':'var(--green)';
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><div style="flex:1;height:6px;background:var(--surface);border-radius:3px;overflow:hidden"><div style="width:'+drawerPct+'%;height:100%;background:'+drawerColor+';border-radius:3px"></div></div><span style="font-family:var(--mono);font-size:11px;color:var(--muted)">'+drawerPct+'%</span></div>';
+  html+='</div>';
+  
+  function renderSide(label,items,cap){
+    const vol=items.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+    const pct=Math.min(100,Math.round(vol/cap*100));
+    const color=pct>90?'var(--red)':pct>70?'var(--orange)':'var(--green)';
+    const border=vol>cap?'border:2px solid var(--red);box-shadow:0 0 8px rgba(239,68,68,0.3)':'border:1px solid var(--border)';
+    let h='<div style="background:var(--card);'+border+';border-radius:10px;padding:12px;margin-bottom:8px">';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent)">'+label+'</span><span style="font-size:12px;color:var(--muted)">'+items.length+' 種</span></div>';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="flex:1;height:4px;background:var(--surface);border-radius:2px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+color+';border-radius:2px"></div></div><span style="font-family:var(--mono);font-size:10px;color:'+(vol>cap?'var(--red)':'var(--muted)')+'">'+Math.round(vol)+'/'+Math.round(cap)+'ml</span></div>';
+    if(items.length){h+=items.map(partRowHTML).join('')}
+    else{h+='<div style="color:var(--dim);font-size:12px;padding:8px 0">空</div>'}
+    h+='</div>';
+    return h;
+  }
+  
+  if(sides.full.length>0){
+    // Full drawer (no a/b split)
+    html+=renderSide(pad,sides.full,drawerCap);
+  } else {
+    html+=renderSide(pad+'a',sides.a,slotCap);
+    html+=renderSide(pad+'b',sides.b,slotCap);
+  }
+  
   document.getElementById('search-title').textContent='抽屜 '+d+'：'+results.length+' 筆';
-  document.getElementById('search-results').innerHTML=results.length?results.map(partRowHTML).join(''):'<div style="text-align:center;padding:48px;color:var(--muted)">此抽屜無零件</div>';
+  document.getElementById('search-results').innerHTML=html;
   showScreen('s-search');
 }
 function partRowHTML(item){
@@ -1152,7 +1256,7 @@ function renderDrawerMap(zone){
     const bagCap=slotConfig.bagCapacity||BAG_ML_DEFAULT;
     const bagsBySlot={};allItems.filter(i=>i.slotType==='bag').forEach(i=>{if(!bagsBySlot[i.slot])bagsBySlot[i.slot]=[];bagsBySlot[i.slot].push(i)});
     // Also collect overflow references
-    const overflowToBag={};allItems.filter(i=>i.overflowSlot).forEach(i=>{const b=i.overflowSlot;if(!overflowToBag[b])overflowToBag[b]=[];overflowToBag[b].push(i)});
+    const overflowToBag={};allItems.filter(i=>i.overflowSlot&&(i.overflowQty||0)>0).forEach(i=>{const b=i.overflowSlot;if(!overflowToBag[b])overflowToBag[b]=[];overflowToBag[b].push(i)});
     const bags=Object.entries(bagsBySlot).sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true}));
     const totalBagVol=bags.reduce((s,e)=>s+e[1].reduce((ss,i)=>ss+(i.estimateVolumeMl||0)*(i.quantity||1),0),0);
     let html='<div style="font-size:13px;color:var(--muted);margin-bottom:12px">收納袋 · '+bags.length+' 袋 · '+Math.round(totalBagVol)+'ml · 容量 '+bagCap+'ml/袋</div>';
@@ -1257,7 +1361,22 @@ function drawerNumToLabel(n){return String(n).padStart(3,'0')}
 let TOTAL_SMALL_DRAWERS_ASSIGN=BASE_DRAWERS,expandCountAssign=0;
 function ensureDrawerCapAssign(n){while(n>TOTAL_SMALL_DRAWERS_ASSIGN){TOTAL_SMALL_DRAWERS_ASSIGN+=EXPAND_SIZE;expandCountAssign++;assignLog('  ⚠ 抽屜擴充 +'+EXPAND_SIZE+' → '+TOTAL_SMALL_DRAWERS_ASSIGN,'warn')}}
 
+function openAssignPage(){
+  showScreen('s-assign');
+  if(slotConfig.locked){
+    document.getElementById('assign-content').innerHTML='<div class="card" style="text-align:center;padding:32px"><div style="font-size:48px;margin-bottom:12px">🔒</div><h2 style="margin-bottom:8px;color:var(--green)">編排已鎖定</h2><p style="color:var(--muted);margin-bottom:16px;font-size:13px;line-height:1.6">零件已放入實體抽屜，重新分配功能已停用。<br>新零件會自動追加到 <b style="color:var(--accent)">'+slotConfig.nextSmallSlot+'</b> 之後。<br>收納袋從 <b style="color:var(--accent)">'+slotConfig.nextBagSlot+'</b> 繼續。</p><p style="color:var(--orange);font-size:12px;margin-bottom:24px">如需重新編排，請先到設定頁解除鎖定。</p><button class="btn btn-lg" onclick="goBack()">← 返回</button></div>';
+  } else {
+    document.getElementById('assign-content').innerHTML='<div class="card" style="text-align:center;padding:32px"><div style="font-size:48px;margin-bottom:12px">🧱</div><h2 style="margin-bottom:8px">BrickSort 格子自動分配</h2><p style="color:var(--muted);margin-bottom:8px;font-size:13px">從 Firebase 讀取所有零件 → 依體積/分類自動分配格子 → 回寫 Firebase</p><p style="color:var(--orange);font-size:12px;margin-bottom:24px">⚠ 會重新編排所有格子！如果零件已放入實體抽屜，需要重新擺放。</p><button class="btn btn-primary btn-lg" onclick="startPipeline()">▶ 開始分配</button></div>';
+  }
+}
+
 async function startPipeline(){
+  if(slotConfig.locked){
+    if(!confirm('⚠ 編排已鎖定！\n\n重新分配會打亂所有格子編號，已放入實體抽屜的零件需要全部重新擺放。\n\n確定要解鎖並重新分配？')){return}
+    slotConfig.locked=false;
+    try{await db.collection(FB_COL).doc(FB_CONFIG_DOC).set({locked:false},{merge:true})}catch(e){}
+    showToast('🔓 已解除鎖定');
+  }
   assignLogLines=[];TOTAL_SMALL_DRAWERS_ASSIGN=BASE_DRAWERS;expandCountAssign=0;assignAssignments=[];
   document.getElementById('assign-status').textContent='載入中…';
   document.getElementById('assign-content').innerHTML='<div class="loading"><div class="spinner"></div>從 Firebase 載入中…</div>';
@@ -1331,9 +1450,12 @@ function assignBagsStep(){
 }
 
 function showAssignReport(){
+  // Apply results to memory immediately (no Firebase needed)
+  applyAssignToMemory();
+
   const nd=window._nextAvailableDrawer||1,bc=window._bagCount||0;
   const smA=assignAssignments.filter(a=>a.slotType==='small'),lgA=assignAssignments.filter(a=>a.slotType==='large'),bgA=assignAssignments.filter(a=>a.slotType==='bag'),bxA=assignAssignments.filter(a=>a.slotType==='box');
-  document.getElementById('assign-status').textContent='✅ 完成';
+  document.getElementById('assign-status').textContent='✅ 完成（已套用本機）';
   document.getElementById('assign-content').innerHTML=`
     <div class="stats-row">
       <div class="stat-card"><div class="stat-num">${allItems.length}</div><div class="stat-label">總數</div></div>
@@ -1341,11 +1463,35 @@ function showAssignReport(){
       <div class="stat-card"><div class="stat-num">${lgA.length}/${LARGE_COUNT}</div><div class="stat-label">大抽屜</div></div>
       <div class="stat-card"><div class="stat-num">${bc}</div><div class="stat-label">收納袋</div></div>
     </div>
+    <div style="background:var(--green-bg);border:1px solid var(--green);border-radius:10px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--green)">✅ 分配結果已套用到本機記憶體。切換到其他分頁即可看到變化。<br><span style="color:var(--muted);font-size:12px">⚠ 尚未回寫 Firebase，重新整理頁面會還原。請在配額恢復後點下方按鈕同步。</span></div>
     <div class="card"><div class="card-title">📊 分配記錄</div><div class="log">${assignLogLines.map(l=>'<span class="'+l.cls+'">'+l.msg+'</span>').join('\n')}</div></div>
-    <div style="display:flex;gap:12px;margin-top:16px">
+    <div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap">
       <button class="btn btn-lg" onclick="startPipeline()">🔄 重新分配</button>
-      <button class="btn btn-primary btn-lg" onclick="writeAssignToFirebase()">☁️ 確認回寫 Firebase</button>
-    </div>`;
+      <button class="btn btn-primary btn-lg" onclick="writeAssignToFirebase()">☁️ 回寫 Firebase</button>
+    </div>
+    <div style="margin-top:12px"><button class="btn btn-green" style="width:100%;padding:14px;font-size:15px" onclick="toggleLock()">🔒 鎖定編排（零件放入抽屜後點此）</button></div>`;
+}
+
+function applyAssignToMemory(){
+  // Apply pipeline results directly to allItems (no Firebase write needed)
+  const assignMap={};
+  assignAssignments.forEach(a=>{assignMap[a.item.id]={slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[]}});
+  allItems.forEach(item=>{
+    const a=assignMap[item.id];
+    if(a){item.slot=a.slot;item.slotType=a.slotType;item.mergedWith=a.mergedWith;
+      // Clear stale overflow data from old system
+      item.overflowSlot='';item.overflowQty=0;item.isFull=false;
+      item.updatedAt=Date.now();markDirty(item.id)}
+  });
+  // Update slotConfig
+  const nextD=window._nextAvailableDrawer||1;
+  slotConfig.nextSmallSlot=drawerNumToLabel(nextD)+'a';
+  slotConfig.nextBagSlot='B'+String((window._bagCount||0)+1).padStart(2,'0');
+  slotConfig.totalSmallDrawers=TOTAL_SMALL_DRAWERS_ASSIGN;
+  slotConfig.bagCapacity=window._bagCapacity||BAG_ML_DEFAULT;
+  markDirty('__config__');
+  // Refresh UI
+  renderStats();applyFilter();
 }
 
 async function writeAssignToFirebase(){
@@ -1357,13 +1503,13 @@ async function writeAssignToFirebase(){
     const chunk=assignAssignments.slice(i,i+BATCH);
     try{
       const batch=db.batch();
-      chunk.forEach(a=>{batch.update(db.collection(FB_COL).doc(a.item.id),{slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],updatedAt:Date.now()})});
+      chunk.forEach(a=>{batch.update(db.collection(FB_COL).doc(a.item.id),{slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],overflowSlot:'',overflowQty:0,isFull:false,updatedAt:Date.now()})});
       await batch.commit();
       written+=chunk.length;
     }catch(e){
       // Fallback: individual writes with delay
       for(const a of chunk){
-        try{await db.collection(FB_COL).doc(a.item.id).update({slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],updatedAt:Date.now()});written++}
+        try{await db.collection(FB_COL).doc(a.item.id).update({slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],overflowSlot:'',overflowQty:0,isFull:false,updatedAt:Date.now()});written++}
         catch(e2){errors++}
       }
     }
@@ -1380,6 +1526,14 @@ async function writeAssignToFirebase(){
 // ═══════════════════════════════════════════════════
 // TOAST
 // ═══════════════════════════════════════════════════
+function exportForLabels(){
+  if(!allItems.length){showToast('沒有資料可匯出','error');return}
+  const data=allItems.map(i=>({slot:i.slot||'',slotType:i.slotType||'small',name:i.name||'',nameCN:i.nameCN||'',designId:i.designId||'',thumbnailUrl:i.thumbnailUrl||'',quantity:i.quantity||1}));
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='bricksort-labels-'+new Date().toISOString().slice(0,10)+'.json';a.click();
+  showToast('已匯出 '+data.length+' 筆標籤資料');
+}
+
 function showToast(msg,type){const t=document.getElementById('toast');t.textContent=msg;t.style.background=type==='error'?'var(--red)':'var(--green)';t.style.color=type==='error'?'#fff':'#0a0a0a';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
 
 // ═══════════════════════════════════════════════════
