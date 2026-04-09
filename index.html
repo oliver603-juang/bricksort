@@ -437,6 +437,17 @@ tr:hover{background:var(--accent-bg)}
     <button class="btn" style="width:100%;margin-bottom:8px" onclick="document.getElementById('import-json-input').click()">📥 匯入 JSON 資料</button>
     <div id="import-status" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
   </div>
+  <div class="card">
+    <div class="card-title">🎮 藍牙快拍</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">連接藍牙自拍棒/遙控器後，按下按鈕即可在任何頁面觸發收納模式拍照。</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <label style="font-size:13px;flex:1">啟用藍牙快拍</label>
+      <input type="checkbox" id="bt-shutter-toggle" style="accent-color:var(--accent);width:20px;height:20px" onchange="toggleBtShutter(this.checked)">
+    </div>
+    <button class="btn" style="width:100%;margin-bottom:8px" onclick="startBtDetect()">🔍 偵測按鈕訊號</button>
+    <div id="bt-detect-result" style="font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--surface);border-radius:6px;padding:8px;min-height:20px;white-space:pre-wrap"></div>
+    <button id="bt-detect-stop" class="btn" style="width:100%;margin-top:8px;display:none" onclick="stopBtDetect()">停止偵測</button>
+  </div>
   <div class="card" id="lock-card">
     <div class="card-title">🔒 編排鎖定</div>
     <div id="lock-status"></div>
@@ -591,6 +602,67 @@ function init(){
   if(document.getElementById('inp-apikey'))document.getElementById('inp-apikey').value=cfg.apiKey||'';
   if(document.getElementById('inp-rbkey'))document.getElementById('inp-rbkey').value=cfg.rbKey||DEFAULT_RB_KEY;
   _loadPromise=loadData();
+  // Bluetooth / Volume key listener
+  initBtShutter();
+}
+
+let btShutterEnabled=false;
+let btDetectMode=false;
+function initBtShutter(){
+  btShutterEnabled=localStorage.getItem('bricksort_bt_shutter')==='true';
+  document.addEventListener('keydown',handleBtKey,true);
+}
+function handleBtKey(e){
+  // Detect mode: show all key events
+  if(btDetectMode){
+    e.preventDefault();e.stopPropagation();
+    const info='key: '+e.key+'\ncode: '+e.code+'\nkeyCode: '+e.keyCode+'\nwhich: '+e.which;
+    document.getElementById('bt-detect-result').textContent=info;
+    showToast('偵測到: '+e.key+' ('+e.code+')');
+    return;
+  }
+  // Normal mode: trigger camera on volume key
+  if(!btShutterEnabled)return;
+  const isVolume=e.key==='VolumeUp'||e.key==='VolumeDown'||e.keyCode===24||e.keyCode===25;
+  const isEnter=e.key==='Enter'||e.keyCode===13;
+  const isSpace=e.key===' '||e.keyCode===32;
+  // Only handle volume keys and Enter (common BT shutter keys)
+  // Skip Space to avoid interfering with text input
+  if(!isVolume&&!isEnter)return;
+  // Don't trigger if user is typing in an input field
+  const active=document.activeElement;
+  if(active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT'))return;
+  e.preventDefault();e.stopPropagation();
+  // Determine action based on current screen
+  const activeScreen=document.querySelector('.screen.active');
+  const screenId=activeScreen?activeScreen.id:'';
+  if(screenId==='s-processing'){
+    // Ignore during processing
+    return;
+  }
+  if(screenId==='s-result'){
+    // On result screen: act as "back"
+    goBack();
+    return;
+  }
+  // Any other screen: trigger storage camera
+  document.getElementById('camera-storage').click();
+}
+function toggleBtShutter(on){
+  btShutterEnabled=on;
+  localStorage.setItem('bricksort_bt_shutter',on?'true':'false');
+  showToast(on?'🎮 藍牙快拍已啟用':'藍牙快拍已停用');
+}
+function startBtDetect(){
+  btDetectMode=true;
+  document.getElementById('bt-detect-result').textContent='等待按鈕訊號…\n請按下藍牙遙控器的按鈕';
+  document.getElementById('bt-detect-stop').style.display='';
+  showToast('偵測模式啟動，請按下藍牙按鈕');
+}
+function stopBtDetect(){
+  btDetectMode=false;
+  document.getElementById('bt-detect-stop').style.display='none';
+  showToast('偵測模式已停止');
 }
 
 function saveSettings(){
@@ -698,6 +770,7 @@ async function loadData(){
   document.getElementById('loading').style.display='none';
   dataReady=true;
   renderStats();applySort();renderSyncStatus();renderLockStatus();
+  const btToggle=document.getElementById('bt-shutter-toggle');if(btToggle)btToggle.checked=btShutterEnabled;
 }
 
 async function fbSaveItem(item){
