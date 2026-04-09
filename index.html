@@ -230,7 +230,9 @@ tr:hover{background:var(--accent-bg)}
       <input type="text" id="storage-hint" placeholder="提示關鍵字（選填，如「拆解器」「齒輪」）" style="flex:1;background:none;border:none;color:var(--text);padding:12px 0;font-size:13px;outline:none">
     </div>
     <button class="btn" style="width:100%;padding:14px;font-size:14px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('camera-storage').click()">📷 拍照辨識 → 顯示收納位置</button>
-    <div style="font-size:11px;color:var(--dim);margin-top:6px;text-align:center">非 LEGO 零件建議填寫提示關鍵字，提升辨識準確度</div>
+    <input type="file" id="camera-instruction" accept="image/*" capture="environment" style="display:none" onchange="handleInstructionPhoto(event)">
+    <button class="btn" style="width:100%;padding:12px;font-size:13px;margin-top:8px" onclick="document.getElementById('camera-instruction').click()">📋 拍說明書 → 查找零件位置</button>
+    <div style="font-size:11px;color:var(--dim);margin-top:6px;text-align:center">拍照辨識單一零件 · 拍說明書一次查找多個零件</div>
   </div>
 
   <div id="stats-row" class="stats-row" style="margin-top:12px"></div>
@@ -239,12 +241,26 @@ tr:hover{background:var(--accent-bg)}
   <!-- Editor controls -->
   <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <select id="sort-select" onchange="applySort()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:12px">
-      <option value="createdAt-desc">最新建檔</option>
+      <option value="createdAt-desc">建檔日期 ↓ 新→舊</option>
+      <option value="createdAt-asc">建檔日期 ↑ 舊→新</option>
       <option value="name-asc">名稱 A→Z</option>
+      <option value="name-desc">名稱 Z→A</option>
       <option value="designId-asc">Design ID ↑</option>
-      <option value="vol-desc">體積 ↓</option>
+      <option value="designId-desc">Design ID ↓</option>
+      <option value="vol-desc">單件體積 ↓ 大→小</option>
+      <option value="vol-asc">單件體積 ↑ 小→大</option>
+      <option value="totalVol-desc">佔位體積 ↓ 大→小</option>
+      <option value="totalVol-asc">佔位體積 ↑ 小→大</option>
+      <option value="dimW-desc">寬 ↓</option>
+      <option value="dimW-asc">寬 ↑</option>
+      <option value="dimL-desc">長 ↓</option>
+      <option value="dimL-asc">長 ↑</option>
+      <option value="dimH-desc">高 ↓</option>
+      <option value="dimH-asc">高 ↑</option>
       <option value="slot-asc">格子 ↑</option>
+      <option value="slot-desc">格子 ↓</option>
       <option value="quantity-desc">數量 ↓</option>
+      <option value="quantity-asc">數量 ↑</option>
     </select>
     <input type="text" id="filter-input" placeholder="🔍 搜尋…" oninput="applyFilter()" style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px;outline:none">
     <span id="count-label" style="font-size:11px;color:var(--muted);font-family:var(--mono);white-space:nowrap"></span>
@@ -351,6 +367,12 @@ tr:hover{background:var(--accent-bg)}
 </div>
 </div>
 
+<!-- ═══ INSTRUCTION LOOKUP ═══ -->
+<div id="s-instruction" class="screen">
+<div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:8px">📋 說明書零件查找</span></div>
+<div class="content" id="instruction-results"></div>
+</div>
+
 <!-- ═══ SEARCH RESULTS ═══ -->
 <div id="s-search" class="screen">
 <div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span id="search-title" style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:8px">搜尋結果</span></div>
@@ -392,6 +414,30 @@ tr:hover{background:var(--accent-bg)}
     <div class="card-title">🔒 編排鎖定</div>
     <div id="lock-status"></div>
   </div>
+</div>
+</div>
+
+<!-- ═══ VARIANT CONFIRM MODAL ═══ -->
+<div class="overlay" id="variant-overlay" onclick="resolveVariant(false)" style="align-items:center">
+<div class="modal" onclick="event.stopPropagation()" style="max-width:380px;padding:20px;border-radius:20px;transform:none">
+  <div style="text-align:center;font-size:15px;font-weight:700;color:var(--accent);margin-bottom:16px">🔍 發現疑似相同零件</div>
+  <div style="display:flex;gap:12px;margin-bottom:16px">
+    <div style="flex:1;background:var(--surface);border-radius:10px;padding:10px;text-align:center">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px">新辨識</div>
+      <img id="vc-new-img" src="" style="width:64px;height:64px;object-fit:contain;border-radius:6px;background:rgba(255,255,255,0.08)" onerror="this.style.display='none'">
+      <div id="vc-new-id" style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent);margin-top:6px"></div>
+      <div id="vc-new-name" style="font-size:11px;color:var(--muted);margin-top:2px;line-height:1.3"></div>
+    </div>
+    <div style="flex:1;background:var(--surface);border-radius:10px;padding:10px;text-align:center">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px">資料庫</div>
+      <img id="vc-db-img" src="" style="width:64px;height:64px;object-fit:contain;border-radius:6px;background:rgba(255,255,255,0.08)" onerror="this.style.display='none'">
+      <div id="vc-db-id" style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green);margin-top:6px"></div>
+      <div id="vc-db-name" style="font-size:11px;color:var(--muted);margin-top:2px;line-height:1.3"></div>
+      <div id="vc-db-meta" style="font-size:10px;color:var(--dim);margin-top:4px"></div>
+    </div>
+  </div>
+  <button class="btn-primary" style="width:100%;padding:12px;font-size:14px" onclick="resolveVariant(true)">✓ 同一零件（放到 <span id="vc-slot"></span>）</button>
+  <button class="btn" style="width:100%;margin-top:8px;padding:10px" onclick="resolveVariant(false)">✕ 不同零件（新建檔）</button>
 </div>
 </div>
 
@@ -470,7 +516,16 @@ const STUD_PITCH=8,PLATE_H=3.2,BRICK_H=9.6;
 
 const LEGO_TAGS='Arch,Bar,Baseplate,Boat,Bracket,Brick,Brick Modified,Brick Round,Cone,Container,Cylinder,Dish,Door,Door Frame,Fence,Flag,Hinge,Hook,Hose,Ladder,Panel,Plant,Plate,Plate Modified,Plate Round,Projectile,Propeller,Rock,Roof,Slope,Slope Curved,Slope Inverted,Stairs,Support,Tail,Tap,Technic,Technic Axle,Technic Connector,Technic Gear,Technic Liftarm,Technic Link,Technic Panel,Technic Pin,Technic Plate,Tile,Tile Modified,Tile Round,Train,Turntable,Vehicle,Vehicle Base,Vehicle Mudguard,Wedge,Wedge Plate,Wheel,Wheel Tire,Window,Window Glass,Windscreen,Wing,Minifigure Utensil,Minifigure Weapon,Animal,Food,String Net,Human Tool,Riding Cycle,Motor,Pneumatic,Spring';
 
-const CATEGORY_GROUPS={'Plate':'Plate','Plate Modified':'Plate Modified','Plate Round':'Plate Round','Brick':'Brick','Brick Modified':'Brick Modified','Brick Round':'Brick Round','Tile':'Tile','Tile Modified':'Tile Modified','Tile Round':'Tile Round','Slope':'Slope','Slope Curved':'Slope Curved','Slope Inverted':'Slope Inverted','Technic':'Technic','Technic Axle':'Technic Axle','Technic Pin':'Technic Pin','Technic Connector':'Technic Connector','Technic Gear':'Technic Gear','Technic Liftarm':'Technic Liftarm','Technic Link':'Technic Link','Technic Panel':'Technic Panel','Technic Plate':'Technic Plate','Bracket':'Bracket','Hinge':'Hinge','Arch':'Arch','Bar':'Bar','Wedge':'Wedge','Wedge Plate':'Wedge Plate','Wing':'Wing','Cone':'Cone','Cylinder':'Cylinder','Dish':'Dish','Support':'Support','Panel':'Panel','Baseplate':'Baseplate','Window':'門窗類','Window Glass':'門窗類','Windscreen':'門窗類','Door':'門窗類','Door Frame':'門窗類','Vehicle':'車輛類','Vehicle Base':'車輛類','Vehicle Mudguard':'車輛類','Wheel':'輪子類','Wheel Tire':'輪子類','Train':'軌道類','Turntable':'軌道類','Minifigure Utensil':'人偶配件','Minifigure Weapon':'人偶配件','Animal':'生物自然','Food':'生物自然','Plant':'生物自然','Flag':'小型配件','Hook':'小型配件','Tap':'小型配件','Ladder':'小型配件','String Net':'小型配件','Rock':'結構配件','Roof':'結構配件','Stairs':'結構配件','Fence':'結構配件','Hose':'結構配件','Boat':'載具配件','Propeller':'載具配件','Projectile':'載具配件','Human Tool':'小型配件','Riding Cycle':'車輛類','Motor':'結構配件','Pneumatic':'結構配件','Spring':'小型配件'};
+const CATEGORY_GROUPS={'Plate':'Plate','Plate Modified':'Plate Modified','Plate Round':'Plate Round','Brick':'Brick','Brick Modified':'Brick Modified','Brick Round':'Brick Round','Tile':'Tile','Tile Modified':'Tile Modified','Tile Round':'Tile Round','Slope':'Slope','Slope Curved':'Slope Curved','Slope Inverted':'Slope Inverted','Technic':'Technic','Technic Axle':'Technic Axle','Technic Pin':'Technic Pin','Technic Connector':'Technic Connector','Technic Gear':'Technic Gear','Technic Liftarm':'Technic Liftarm','Technic Link':'Technic Link','Technic Panel':'Technic Panel','Technic Plate':'Technic Plate','Bracket':'Bracket','Hinge':'Hinge','Arch':'Arch','Bar':'Bar','Wedge':'Wedge','Wedge Plate':'Wedge Plate','Wing':'Wing','Cone':'Cone','Cylinder':'Cylinder','Dish':'Dish','Support':'Support','Panel':'Panel','Baseplate':'Baseplate','Window':'門窗類','Window Glass':'門窗類','Windscreen':'門窗類','Door':'門窗類','Door Frame':'門窗類','Vehicle':'車輛類','Vehicle Base':'車輛類','Vehicle Mudguard':'車輛類','Wheel':'輪子類','Wheel Tire':'輪子類','Train':'軌道類','Turntable':'軌道類','Minifigure Utensil':'人偶工具','Minifigure Weapon':'人偶武器','Animal':'生物自然','Food':'生物自然','Plant':'生物自然','Flag':'小型配件','Hook':'小型配件','Tap':'小型配件','Ladder':'小型配件','String Net':'小型配件','Rock':'結構配件','Roof':'結構配件','Stairs':'結構配件','Fence':'結構配件','Hose':'結構配件','Boat':'載具配件','Propeller':'載具配件','Projectile':'載具配件','Human Tool':'小型配件','Riding Cycle':'車輛類','Motor':'結構配件','Pneumatic':'結構配件','Spring':'小型配件'};
+
+// Minifig body part sub-categories (checked via bricklinkCategory)
+const MINIFIG_CAT_MAP={
+  'minifigure, head':'人偶頭部','minifig head':'人偶頭部','minifig, head':'人偶頭部',
+  'minifigure, hair':'人偶頭飾','minifigure, headwear':'人偶頭飾','minifigure, headgear':'人偶頭飾','minifig, headwear':'人偶頭飾','minifigure, headwear accessory':'人偶頭飾','minifigure headwear':'人偶頭飾',
+  'minifigure, body part':'人偶身體','minifigure, body wear':'人偶身體','minifigure, armor':'人偶身體','minifigure, neckwear':'人偶身體','minifig, neck wear':'人偶身體',
+  'minifigure, shield':'人偶武器','minifig weapon':'人偶武器','minifig, weapon':'人偶武器','minifigure weapon':'人偶武器',
+  'minifigure, utensil':'人偶工具','minifig utensil':'人偶工具','minifig, utensil':'人偶工具','minifigure utensil':'人偶工具'
+};
 const TIER1_GROUPS=new Set(['Plate','Plate Modified','Plate Round','Brick','Brick Modified','Brick Round','Tile','Tile Modified','Tile Round','Slope','Slope Curved','Slope Inverted','Technic','Technic Axle','Technic Pin','Technic Connector','Technic Gear','Technic Liftarm','Technic Link','Technic Panel','Technic Plate','Bracket','Hinge','Arch','Bar','Wedge','Wedge Plate','Wing','Cone','Cylinder','Dish','Support','Panel','Baseplate']);
 const TIER2_GROUPS=new Set(['門窗類','車輛類','輪子類','軌道類']);
 const TIER3_GROUPS=new Set(['人偶配件','生物自然','小型配件','結構配件','載具配件']);
@@ -672,10 +727,10 @@ function renderStats(){
   const s=allItems.length,sm=allItems.filter(i=>(i.slotType||'small')==='small').length;
   const lg=allItems.filter(i=>i.slotType==='large').length,bg=allItems.filter(i=>i.slotType==='bag').length;
   document.getElementById('stats-row').innerHTML=
-    '<div class="stat-card"><div class="stat-num">'+s+'</div><div class="stat-label">零件總數</div></div>'+
-    '<div class="stat-card"><div class="stat-num">'+sm+'</div><div class="stat-label">小抽屜</div></div>'+
-    '<div class="stat-card"><div class="stat-num">'+lg+'</div><div class="stat-label">大抽屜</div></div>'+
-    '<div class="stat-card"><div class="stat-num">'+bg+'</div><div class="stat-label">收納袋</div></div>';
+    '<div class="stat-card" onclick="showTab(\'allparts\')" style="cursor:pointer"><div class="stat-num">'+s+'</div><div class="stat-label">零件總數</div></div>'+
+    '<div class="stat-card" onclick="showTab(\'map-small\')" style="cursor:pointer"><div class="stat-num">'+sm+'</div><div class="stat-label">小抽屜</div></div>'+
+    '<div class="stat-card" onclick="showTab(\'map-large\')" style="cursor:pointer"><div class="stat-num">'+lg+'</div><div class="stat-label">大抽屜</div></div>'+
+    '<div class="stat-card" onclick="showTab(\'map-bag\')" style="cursor:pointer"><div class="stat-num">'+bg+'</div><div class="stat-label">收納袋</div></div>';
 }
 
 // ═══════════════════════════════════════════════════
@@ -712,19 +767,55 @@ function findBagForOverflow(vol){
 // ═══════════════════════════════════════════════════
 // CLASSIFICATION HELPERS
 // ═══════════════════════════════════════════════════
-function getCatGroup(tags){if(!tags||!tags.length)return'未分類';for(const t of tags){if(CATEGORY_GROUPS[t])return CATEGORY_GROUPS[t]}return tags[0]||'未分類'}
+function getCatGroup(tags,blCat){
+  // Check bricklinkCategory first for minifig body part sub-categories
+  if(blCat){const mfGroup=MINIFIG_CAT_MAP[blCat.toLowerCase()];if(mfGroup)return mfGroup}
+  if(!tags||!tags.length)return'未分類';
+  for(const t of tags){if(CATEGORY_GROUPS[t])return CATEGORY_GROUPS[t]}
+  return tags[0]||'未分類';
+}
 function getTier(group){if(TIER1_GROUPS.has(group))return 1;if(TIER2_GROUPS.has(group))return 2;if(TIER3_GROUPS.has(group))return 3;return 3}
 function getBaseDesignId(id){if(!id)return'';return id.replace(/(pb|pr|pat)\d+.*$/i,'').trim()}
+function getNumericBase(id){if(!id)return'';return id.replace(/(pb|pr|pat)\d+.*$/i,'').replace(/^(\d+)[a-d]$/i,'$1').trim()}
+
+let _variantResolve=null;
+function showVariantConfirm(newId,newName,newImg,candidate){
+  return new Promise(resolve=>{
+    _variantResolve=resolve;
+    // DB image: try thumbnailUrl → Rebrickable CDN with base ID → numeric base
+    const dbBase=getBaseDesignId(candidate.designId);
+    const dbNum=getNumericBase(candidate.designId);
+    const dbImg=candidate.thumbnailUrl||
+      (dbBase?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+dbBase+'.png':'');
+    const dbFallback=dbNum&&dbNum!==dbBase?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+dbNum+'.png':'';
+    // New image: camera photo (dataURL) → brickognize → Rebrickable CDN
+    const newThumb=newImg||(newId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(newId)+'.png':'');
+    const elNewImg=document.getElementById('vc-new-img');
+    const elDbImg=document.getElementById('vc-db-img');
+    elNewImg.style.display='';elNewImg.src=newThumb;
+    elNewImg.onerror=function(){this.style.display='none'};
+    elDbImg.style.display='';elDbImg.src=dbImg;
+    elDbImg.onerror=function(){if(dbFallback&&this.src!==dbFallback){this.src=dbFallback}else{this.style.display='none'}};
+    document.getElementById('vc-new-id').textContent=newId;
+    document.getElementById('vc-new-name').textContent=newName;
+    document.getElementById('vc-db-id').textContent=candidate.designId;
+    document.getElementById('vc-db-name').textContent=candidate.nameCN||candidate.name||'';
+    document.getElementById('vc-db-meta').textContent='位置 '+candidate.slot+' · '+(candidate.estimateVolumeMl||0)+'ml · '+candidate.quantity+'件';
+    document.getElementById('vc-slot').textContent=candidate.slot;
+    document.getElementById('variant-overlay').classList.add('open');
+  });
+}
+function resolveVariant(yes){
+  document.getElementById('variant-overlay').classList.remove('open');
+  if(_variantResolve){_variantResolve(yes);_variantResolve=null}
+}
 function isCategoryAlwaysBag(tags){return(tags||[]).some(t=>ALWAYS_BAG_CATEGORIES.has(t))}
 function isMinifigure(item){
-  // Only TRUE for complete assembled minifigures, NOT parts/accessories
+  // Only TRUE for complete assembled minifigures (head+torso+legs), NOT body-only parts
   if(item.is_complete_minifig) return true;
   const cat=(item.bricklinkCategory||'').trim();
   // Exact "Minifigure" with no sub-category = complete minifig
   if(cat==='Minifigure') return true;
-  // Has torso or legs in name = complete minifig (assembled)
-  const n=(item.name||'').toLowerCase();
-  if((n.includes('torso')&&n.includes('legs'))||n.startsWith('complete assembly')) return true;
   // Minifig ID format: 2-4 letters + 3-4 digits (njo788, sw0001, sh001, cty1234)
   const did=(item.designId||'');
   if(/^[a-z]{2,4}\d{3,5}$/i.test(did)) return true;
@@ -743,6 +834,10 @@ function applyFilter(){
   const{key,dir}=currentSort,m=dir==='desc'?-1:1;
   filtered.sort((a,b)=>{let va,vb;
     if(key==='vol'){va=a.estimateVolumeMl||0;vb=b.estimateVolumeMl||0}
+    else if(key==='totalVol'){va=(a.estimateVolumeMl||0)*(a.quantity||1);vb=(b.estimateVolumeMl||0)*(b.quantity||1)}
+    else if(key==='dimW'){va=(a.dimW||0)*10;vb=(b.dimW||0)*10}
+    else if(key==='dimL'){va=(a.dimL||0)*10;vb=(b.dimL||0)*10}
+    else if(key==='dimH'){va=(a.dimH||0)*10;vb=(b.dimH||0)*10}
     else if(key==='quantity'){va=a.quantity||1;vb=b.quantity||1}
     else if(key==='createdAt'){va=a.createdAt||0;vb=b.createdAt||0}
     else if(key==='slot'){return(a.slot||'').localeCompare(b.slot||'',undefined,{numeric:true})*m}
@@ -1027,20 +1122,36 @@ async function handleCameraInput(event){const file=event.target.files[0];if(!fil
   setProcessingMsg('🔍 Brickognize 辨識中…');
   const bkResult=await brickognizePredict(base64);
   if(bkResult&&bkResult.score>=40){
-    let match=null;
-    const bkId=bkResult.id||'';const bkName=(bkResult.name||'').toLowerCase();const baseId=getBaseDesignId(bkId);
-    // Strategy 1: match by designId (most accurate)
+    let match=null;let matchType='';
+    const bkId=bkResult.id||'';const bkName=(bkResult.name||'').toLowerCase();const baseId=getBaseDesignId(bkId);const numBase=getNumericBase(bkId);
+    // Strategy 1: exact designId (auto)
     if(bkId){
       match=allItems.find(i=>(i.designId||'').toLowerCase()===bkId.toLowerCase());
-      if(!match&&baseId)match=allItems.find(i=>getBaseDesignId(i.designId)===baseId);
+      if(match)matchType='exact';
     }
-    // Strategy 2: match by stored brickognizeName (for parts without ID)
+    // Strategy 2: base ID after stripping pb/pr/pat (auto)
+    if(!match&&baseId){
+      match=allItems.find(i=>getBaseDesignId(i.designId)===baseId&&i.designId!==baseId);
+      if(match)matchType='print-variant';
+    }
+    // Strategy 3: numeric base after stripping a/b/c/d — needs confirmation
+    if(!match&&numBase){
+      const candidate=allItems.find(i=>{const iBase=getNumericBase(i.designId);return iBase===numBase&&(i.designId||'').toLowerCase()!==bkId.toLowerCase()});
+      if(candidate){
+        const newImg=currentImageData||bkResult.imgUrl||(bkId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(bkId)+'.png':'');
+        const yes=await showVariantConfirm(bkId,bkResult.name,newImg,candidate);
+        if(yes){match=candidate;matchType='variant-confirmed'}
+      }
+    }
+    // Strategy 4: brickognizeName (auto)
     if(!match&&bkName.length>=3){
-      match=allItems.find(i=>i.brickognizeName&&i.brickognizeName.toLowerCase()===bkName);
+      const found=allItems.find(i=>i.brickognizeName&&i.brickognizeName.toLowerCase()===bkName);
+      if(found){match=found;matchType='bk-name'}
     }
-    // Strategy 3: match by English name similarity (fuzzy fallback)
+    // Strategy 5: English name fuzzy (auto)
     if(!match&&bkName.length>=5){
-      match=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(bkName)||bkName.includes(n))});
+      const found=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(bkName)||bkName.includes(n))});
+      if(found){match=found;matchType='name-fuzzy'}
     }
     if(match){
       // FOUND! Show result directly — no Gemini needed
@@ -1050,7 +1161,7 @@ async function handleCameraInput(event){const file=event.target.files[0];if(!fil
       // Render result screen
       document.getElementById('result-img').src=thumbnailUrl||currentImageData||'';
       document.getElementById('result-name').textContent=match.nameCN||match.name||bkResult.name;
-      const matchMethod=bkId?'ID: '+bkId:'名稱: '+bkResult.name;
+      const matchMethod=matchType==='exact'?'ID: '+bkId:matchType==='variant-confirmed'?'變體: '+bkId+'→'+match.designId:matchType==='bk-name'?'BK名稱':matchType==='name-fuzzy'?'名稱相似':'ID: '+bkId;
       document.getElementById('result-designid').innerHTML=(match.designId?'Design ID: '+match.designId:'')+' <span style="font-size:10px;padding:2px 6px;background:rgba(76,175,80,0.15);border:1px solid var(--green);color:var(--green);border-radius:4px">⚡ '+bkResult.score+'% '+matchMethod+'</span>';
       document.getElementById('result-desc').textContent=match.description||'';
       document.getElementById('result-tags').innerHTML=(match.featureTags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
@@ -1074,6 +1185,77 @@ async function handleCameraInput(event){const file=event.target.files[0];if(!fil
   // === SLOW PATH: full smartRecognize (Brickognize failed or not in DB) ===
   const item=await smartRecognize(base64,hint,bkResult);await processResult(item);
 }catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}};reader.readAsDataURL(file)}
+
+async function handleInstructionPhoto(event){
+  const file=event.target.files[0];if(!file)return;event.target.value='';
+  const reader=new FileReader();reader.onload=async e=>{
+    const resized=await resizeImage(e.target.result,1200);
+    const base64=resized.split(',')[1];
+    showScreen('s-processing');setProcessingMsg('📋 分析說明書零件清單…');
+    try{
+      const prompt='分析這張樂高說明書頁面。找出左上角（或頁面中）的零件清單框，提取每個零件的資訊。如果沒有清單框，則分析組裝示意圖中可見的所有零件。回應純JSON陣列：[{"design_id":"零件Design ID數字","name":"英文名稱","qty":數量}]。注意：只提取零件編號和數量，不需要顏色資訊。';
+      const textResp=await callGeminiAPI(prompt,base64,0,GEMINI_LEGO_SYSTEM);
+      const parts=safeParseJSON(textResp);
+      const partsList=Array.isArray(parts)?parts:(parts.parts||parts.items||[parts]);
+      setProcessingMsg('比對倉庫資料…');
+      // Match each part against allItems
+      const results=partsList.map(p=>{
+        const did=(p.design_id||p.designId||'').toString();
+        const qty=p.qty||p.quantity||1;
+        const name=p.name||'';
+        let match=null,matchMethod='';
+        // Exact ID
+        if(did){match=allItems.find(i=>(i.designId||'').toLowerCase()===did.toLowerCase());if(match)matchMethod='ID精確'}
+        // Base ID (strip print suffix)
+        if(!match&&did){const base=getBaseDesignId(did);if(base)match=allItems.find(i=>getBaseDesignId(i.designId)===base);if(match)matchMethod='印刷變體'}
+        // Numeric base (strip mold variant)
+        if(!match&&did){const num=getNumericBase(did);if(num){const c=allItems.find(i=>getNumericBase(i.designId)===num&&(i.designId||'')!==did);if(c){match=c;matchMethod='模具變體'}}}
+        // Name fuzzy
+        if(!match&&name.length>=4){const nl=name.toLowerCase();match=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=4&&(n.includes(nl)||nl.includes(n))});if(match)matchMethod='名稱相似'}
+        const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(did?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(did)+'.png':'');
+        return{did,name,qty,match,matchMethod,thumb};
+      });
+      renderInstructionResults(results,resized);
+    }catch(err){showTab('main');showToast('說明書分析失敗：'+err.message,'error')}
+  };reader.readAsDataURL(file);
+}
+
+function renderInstructionResults(results,imgSrc){
+  const found=results.filter(r=>r.match).length;
+  const total=results.length;
+  let html='';
+  // Instruction image preview
+  if(imgSrc)html+='<div style="margin-bottom:12px;text-align:center"><img src="'+imgSrc+'" style="max-width:100%;max-height:200px;border-radius:10px;border:1px solid var(--border)" onerror="this.style.display=\'none\'"></div>';
+  // Summary
+  html+='<div class="stats-row" style="margin-bottom:12px"><div class="stat-card"><div class="stat-num">'+total+'</div><div class="stat-label">零件種類</div></div><div class="stat-card"><div class="stat-num" style="color:var(--green)">'+found+'</div><div class="stat-label">找到</div></div><div class="stat-card"><div class="stat-num" style="color:'+(total-found>0?'var(--red)':'var(--dim)')+'">'+( total-found)+'</div><div class="stat-label">缺少</div></div></div>';
+  // Parts list
+  results.forEach(r=>{
+    const status=r.match?'✅':'❌';
+    const slotBadge=r.match?'<span class="slot-badge slot-'+(r.match.slotType==='large'?'large':r.match.slotType==='bag'?'bag':'small')+'" style="font-size:13px;padding:4px 10px">'+r.match.slot+'</span>':'<span style="color:var(--red);font-size:12px">未找到</span>';
+    const matchInfo=r.matchMethod?'<span style="font-size:10px;color:var(--dim)">('+r.matchMethod+')</span>':'';
+    const nameDisplay=r.match?(r.match.nameCN||r.match.name||r.name):r.name;
+    html+='<div style="background:var(--card);border:1px solid '+(r.match?'var(--border)':'var(--red)')+';border-radius:10px;padding:10px 12px;margin-bottom:6px;'+(r.match?'cursor:pointer':'')+'" '+(r.match?'onclick="searchDrawer('+parseInt((r.match.slot||'0').replace(/\D/g,''))+');"':'')+'>';
+    html+='<div style="display:flex;align-items:center;gap:10px">';
+    html+='<img src="'+r.thumb+'" style="width:44px;height:44px;object-fit:contain;border-radius:6px;background:rgba(255,255,255,0.08)" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2244%22 height=%2244%22><text x=%2210%22 y=%2230%22 font-size=%2224%22>🧱</text></svg>\'">';
+    html+='<div style="flex:1;min-width:0">';
+    html+='<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+status+' '+nameDisplay+'</div>';
+    html+='<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">'+r.did+(r.qty>1?' × '+r.qty:'')+' '+matchInfo+'</div>';
+    html+='</div>';
+    html+=slotBadge;
+    html+='</div></div>';
+  });
+  // Missing parts summary
+  const missing=results.filter(r=>!r.match);
+  if(missing.length){
+    html+='<div style="margin-top:12px;padding:12px;background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:10px">';
+    html+='<div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:6px">⚠ 缺少 '+missing.length+' 種零件</div>';
+    html+='<div style="font-size:12px;color:var(--muted)">'+missing.map(r=>r.did+' '+r.name+(r.qty>1?' ×'+r.qty:'')).join('<br>')+'</div>';
+    html+='</div>';
+  }
+  document.getElementById('instruction-results').innerHTML=html;
+  showScreen('s-instruction');
+  if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+}
 
 async function handlePartIdBatch(){
   const input=document.getElementById('part-id-input'),raw=input.value.trim();if(!raw){input.focus();return}
@@ -1130,6 +1312,15 @@ async function processResult(item){
   if(item.matched_existing_id&&item.matched_existing_id!=='null')match=allItems.find(i=>i.id===item.matched_existing_id);
   if(!match&&did)match=allItems.find(i=>(i.designId||'').toLowerCase()===did);
   if(!match){const baseDid=getBaseDesignId(item.design_id);if(baseDid)match=allItems.find(i=>getBaseDesignId(i.designId)===baseDid)}
+  // Variant check: 3062 vs 3062b — ask user
+  if(!match){const numBase=getNumericBase(item.design_id);if(numBase){
+    const candidate=allItems.find(i=>{const iBase=getNumericBase(i.designId);return iBase===numBase&&(i.designId||'').toLowerCase()!==(item.design_id||'').toLowerCase()});
+    if(candidate){
+      const newImg=currentImageData||window._pendingRbImgUrl||(item.design_id?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(item.design_id)+'.png':'');
+      const yes=await showVariantConfirm(item.design_id,item.name_cn||item.name||'',newImg,candidate);
+      if(yes)match=candidate;
+    }
+  }}
   const designId=item.design_id||'';const thumbnailUrl=window._pendingRbImgUrl||(designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+designId+'.png':'');window._pendingRbImgUrl='';
   const vol=calcVolFromAI(item.name||item.name_cn||'',item);
   let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...item,estimateVolumeMl:vol,quantity:1,featureTags:item.feature_tags||[]});
@@ -1516,7 +1707,7 @@ async function startPipeline(){
   document.getElementById('assign-status').textContent='載入中…';
   document.getElementById('assign-content').innerHTML='<div class="loading"><div class="spinner"></div>從 Firebase 載入中…</div>';
   try{const snap=await db.collection(FB_COL).get();allItems=[];snap.docs.forEach(d=>{if(d.id===FB_CONFIG_DOC)slotConfig={...slotConfig,...d.data()};else allItems.push({id:d.id,...d.data()})});assignLog('載入完成：'+allItems.length+' 個零件','ok')}catch(e){document.getElementById('assign-content').innerHTML='<div class="card" style="color:var(--red)">❌ '+e.message+'</div>';return}
-  allItems.forEach(item=>{const v=item.estimateVolumeMl||0,q=item.quantity||1;item._vt=Math.round(v*q*10)/10;item._catGroup=getCatGroup(item.featureTags);item._tier=getTier(item._catGroup);item._isMinifig=isMinifigure(item);item._fitsSmall=fitsSmallSlot(item)});
+  allItems.forEach(item=>{const v=item.estimateVolumeMl||0,q=item.quantity||1;item._vt=Math.round(v*q*10)/10;item._catGroup=getCatGroup(item.featureTags,item.bricklinkCategory);item._tier=getTier(item._catGroup);item._isMinifig=isMinifigure(item);item._fitsSmall=fitsSmallSlot(item)});
   classifyAssign();assignLargeDrawers();assignSmallDrawers();assignMergeStep();assignBagsStep();showAssignReport();
 }
 
