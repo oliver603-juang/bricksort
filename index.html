@@ -1870,7 +1870,7 @@ function renderMergedView(){
       const totalVol=items.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
       const pct=Math.min(100,Math.round(totalVol/SLOT_ML*100));
       const barColor=pct>80?'var(--red)':pct>50?'var(--orange)':'var(--green)';
-      html+='<div class="card"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="slot-badge slot-small" style="font-size:13px">'+slot+'</span><span style="font-size:12px;color:var(--muted)">'+items.length+' 件 · '+Math.round(totalVol)+'ml/'+SLOT_ML+'ml</span></div>';
+      html+='<div class="card"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="slot-badge slot-small" style="font-size:13px;cursor:pointer" onclick="event.stopPropagation();searchDrawer('+parseInt(slot)+')">'+slot+' →</span><span style="font-size:12px;color:var(--muted)">'+items.length+' 件 · '+Math.round(totalVol)+'ml/'+SLOT_ML+'ml</span></div>';
       html+='<div style="height:4px;background:var(--surface);border-radius:2px;overflow:hidden;margin-bottom:8px"><div style="width:'+pct+'%;height:100%;background:'+barColor+';border-radius:2px"></div></div>';
       items.forEach(i=>{
         const thumb=i.thumbnailUrl||(i.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(i.designId)+'.png':'');
