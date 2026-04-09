@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>BrickSort</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -185,8 +185,8 @@ tr:hover{background:var(--accent-bg)}
 <div id="s-main" class="screen active">
 <div class="content">
   <div class="mode-tabs">
-    <div class="mode-tab active" id="tab-catalog" onclick="setMode('catalog')">📦 建檔模式</div>
-    <div class="mode-tab" id="tab-storage" onclick="setMode('storage')">🔍 收納模式</div>
+    <div class="mode-tab" id="tab-catalog" onclick="setMode('catalog')">📦 建檔模式</div>
+    <div class="mode-tab active" id="tab-storage" onclick="setMode('storage')">🔍 收納模式</div>
   </div>
 
   <input type="file" id="lens-input" accept="image/*" multiple style="display:none" onchange="handleLensInput(event)">
@@ -194,7 +194,7 @@ tr:hover{background:var(--accent-bg)}
   <input type="file" id="camera-storage" accept="image/*" capture="environment" style="display:none" onchange="handleCameraInput(event)">
 
   <!-- 建檔模式 UI -->
-  <div id="mode-catalog-ui">
+  <div id="mode-catalog-ui" style="display:none">
     <div style="display:flex;gap:6px;margin-bottom:8px">
       <button class="btn" style="flex:1;padding:10px;font-size:13px" onclick="document.getElementById('lens-input').click()">📷 Lens截圖</button>
       <button class="btn" style="flex:1;padding:10px;font-size:13px" onclick="document.getElementById('camera-catalog').click()">📸 拍照</button>
@@ -219,7 +219,7 @@ tr:hover{background:var(--accent-bg)}
   </div>
 
   <!-- 收納模式 UI -->
-  <div id="mode-storage-ui" style="display:none">
+  <div id="mode-storage-ui">
     <div class="search-bar">
       <span style="color:var(--muted)">⌕</span>
       <input type="text" id="search-input" placeholder="搜尋零件、抽屜號…" onkeydown="if(event.key==='Enter')doSearch(this.value)">
@@ -307,6 +307,7 @@ tr:hover{background:var(--accent-bg)}
     <div id="result-slot" class="slot-main"></div>
     <div id="result-slot-type" class="slot-type"></div>
   </div>
+  <div id="result-minimap" style="margin-bottom:12px"></div>
   <button id="result-confirm-btn" class="btn-primary" style="width:100%" onclick="confirmPart()">✓ 確認儲存</button>
   <button id="result-cancel-btn" class="btn" style="width:100%;margin-top:8px" onclick="cancelResult()">取消</button>
 </div>
@@ -492,7 +493,7 @@ let currentSort={key:'createdAt',dir:'desc'};
 let dirty=new Set();
 let slotConfig={nextSmallSlot:'001a',nextBagSlot:'B01',totalSmallDrawers:450,bagCapacity:800,locked:false};
 let cfg={apiKey:'',rbKey:DEFAULT_RB_KEY};
-let pendingPart=null, currentImageData=null, currentMode='catalog';
+let pendingPart=null, currentImageData=null, currentMode='storage';
 let batchQueue=[], batchCancelled=false, batchRunning=false;
 let _lastWorkingModel=null;
 let currentTab='main';
@@ -939,6 +940,75 @@ async function resizeImage(dataUrl,maxDim){return new Promise(resolve=>{const im
 async function cropLensThumb(dataUrl){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const W=img.width,H=img.height,cx=Math.floor(W*0.6),cy=Math.floor(H*0.1),cw=Math.floor(W*0.38),ch=Math.floor(H*0.25);const c=document.createElement('canvas');c.width=cw;c.height=ch;c.getContext('2d').drawImage(img,cx,cy,cw,ch,0,0,cw,ch);resolve(c.toDataURL('image/jpeg',0.9))};img.src=dataUrl})}
 function calcVolFromAI(name,parsed){const mw=parseFloat(parsed.dim_mm_w),ml=parseFloat(parsed.dim_mm_l),mh=parseFloat(parsed.dim_mm_h);if(mw>0&&ml>0&&mh>0){parsed._dimW=Math.round(mw)/10;parsed._dimL=Math.round(ml)/10;parsed._dimH=Math.round(mh)/10;return Math.max(0.3,Math.round(mw*ml*mh/1000*10)/10)}return parseInt(parsed.estimate_volume_ml)||2}
 
+function renderMiniMap(slot){
+  const el=document.getElementById('result-minimap');if(!el)return;
+  if(!slot){el.innerHTML='';return}
+  const s=slot.replace(/^0+/,'');
+  // Parse slot type
+  const mSmall=s.match(/^(\d+)([ab])?$/);
+  const mLarge=s.match(/^L0*(\d+)$/i);
+  const mBag=s.match(/^B/i);
+  if(mBag){el.innerHTML='<div style="text-align:center;font-size:12px;color:var(--muted);padding:8px">📦 收納袋區</div>';return}
+  // Grid layout constants
+  const COLS=18,TOP_ROWS=5,LARGE_ROWS=2,MAIN_ROWS=20;
+  const TOTAL_ROWS=TOP_ROWS+LARGE_ROWS+MAIN_ROWS;
+  const CW=5,CH=4,GAP=1; // cell width, height, gap
+  const W=COLS*(CW+GAP)+40,H=TOTAL_ROWS*(CH+GAP)+16;
+  // Reverse snake: drawer num → (row, col)
+  function drawerToRC(d,cols){const idx=d-1;const row=Math.floor(idx/cols);const colInRow=idx%cols;const col=row%2===0?colInRow:(cols-1-colInRow);return{row,col}}
+  let targetRow=-1,targetCol=-1,targetZone='';
+  if(mSmall){
+    const d=parseInt(mSmall[1]);
+    if(d>=1&&d<=90){const rc=drawerToRC(d,COLS);targetRow=rc.row;targetCol=rc.col;targetZone='top'}
+    else if(d>=91&&d<=450){const rc=drawerToRC(d-90,COLS);targetRow=TOP_ROWS+LARGE_ROWS+rc.row;targetCol=rc.col;targetZone='main'}
+  }
+  if(mLarge){
+    const d=parseInt(mLarge[1]);const rc=drawerToRC(d,9);
+    targetRow=TOP_ROWS+rc.row;targetCol=rc.col*2;targetZone='large'}
+  // Build SVG
+  let svg='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto">';
+  // Background
+  svg+='<rect width="'+W+'" height="'+H+'" rx="8" fill="#1a1a1a"/>';
+  // Zone labels
+  svg+='<text x="2" y="'+(TOP_ROWS*(CH+GAP)/2+4)+'" font-size="5" fill="#666" font-family="monospace">頂</text>';
+  svg+='<text x="2" y="'+(TOP_ROWS*(CH+GAP)+LARGE_ROWS*(CH+GAP)/2+4)+'" font-size="5" fill="#666" font-family="monospace">大</text>';
+  svg+='<text x="2" y="'+((TOP_ROWS+LARGE_ROWS)*(CH+GAP)+MAIN_ROWS*(CH+GAP)/2+4)+'" font-size="5" fill="#666" font-family="monospace">主</text>';
+  const OX=14; // left offset for labels
+  // Draw top zone (1-90)
+  for(let r=0;r<TOP_ROWS;r++)for(let c=0;c<COLS;c++){
+    const x=OX+c*(CW+GAP),y=r*(CH+GAP);
+    const isTarget=targetZone==='top'&&r===targetRow&&c===targetCol;
+    svg+='<rect x="'+x+'" y="'+y+'" width="'+CW+'" height="'+CH+'" rx="1" fill="'+(isTarget?'#F5A623':'#333')+'"/>';
+    if(isTarget)svg+='<rect x="'+(x-1)+'" y="'+(y-1)+'" width="'+(CW+2)+'" height="'+(CH+2)+'" rx="2" fill="none" stroke="#F5A623" stroke-width="1.5"/>';
+  }
+  // Draw large zone (9 cols, wider cells)
+  const LCW=CW*2+GAP,LY0=TOP_ROWS*(CH+GAP);
+  for(let r=0;r<3;r++)for(let c=0;c<9;c++){
+    const x=OX+c*(LCW+GAP),y=LY0+r*(CH+GAP);
+    const isTarget=targetZone==='large'&&r===(targetRow-TOP_ROWS)&&c===Math.floor(targetCol/2);
+    svg+='<rect x="'+x+'" y="'+y+'" width="'+LCW+'" height="'+CH+'" rx="1" fill="'+(isTarget?'#F5A623':'#2a2a2a')+'"/>';
+    if(isTarget)svg+='<rect x="'+(x-1)+'" y="'+(y-1)+'" width="'+(LCW+2)+'" height="'+(CH+2)+'" rx="2" fill="none" stroke="#F5A623" stroke-width="1.5"/>';
+  }
+  // Draw main zone (91-450)
+  const MY0=(TOP_ROWS+LARGE_ROWS)*(CH+GAP);
+  for(let r=0;r<MAIN_ROWS;r++)for(let c=0;c<COLS;c++){
+    const x=OX+c*(CW+GAP),y=MY0+r*(CH+GAP);
+    const isTarget=targetZone==='main'&&(TOP_ROWS+LARGE_ROWS+r)===targetRow&&c===targetCol;
+    svg+='<rect x="'+x+'" y="'+y+'" width="'+CW+'" height="'+CH+'" rx="1" fill="'+(isTarget?'#F5A623':'#333')+'"/>';
+    if(isTarget)svg+='<rect x="'+(x-1)+'" y="'+(y-1)+'" width="'+(CW+2)+'" height="'+(CH+2)+'" rx="2" fill="none" stroke="#F5A623" stroke-width="1.5"/>';
+  }
+  // Arrow pointing to target
+  if(targetRow>=0){
+    const ty=targetZone==='large'?LY0+(targetRow-TOP_ROWS)*(CH+GAP)+CH/2:
+             targetZone==='top'?targetRow*(CH+GAP)+CH/2:
+             MY0+(targetRow-TOP_ROWS-LARGE_ROWS)*(CH+GAP)+CH/2;
+    const tx=targetZone==='large'?OX+Math.floor(targetCol/2)*(LCW+GAP)+LCW+4:OX+targetCol*(CW+GAP)+CW+4;
+    svg+='<text x="'+Math.min(tx,W-20)+'" y="'+(ty+2)+'" font-size="5" fill="#F5A623" font-family="monospace" font-weight="bold">← '+s+'</text>';
+  }
+  svg+='</svg>';
+  el.innerHTML='<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--muted);margin-bottom:6px">📍 抽屜位置（蛇形排列·頂→大→主區）</div>'+svg+'</div>';
+}
+
 // ═══════════════════════════════════════════════════
 // LENS / CAMERA / PART ID
 // ═══════════════════════════════════════════════════
@@ -988,6 +1058,7 @@ async function handleCameraInput(event){const file=event.target.files[0];if(!fil
       document.getElementById('result-slot').textContent=match.slot;
       const typeLabel=match.slotType==='large'?'大抽屜':match.slotType==='bag'?'收納袋':'小抽屜分格';
       document.getElementById('result-slot-type').textContent=typeLabel;
+      renderMiniMap(match.slot);
       const banner=document.getElementById('match-banner');
       banner.style.display='block';banner.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--green)">⚡ 快速辨識（'+Math.round(performance.now()-window._procStart)+'ms）</div><div style="font-size:12px;color:var(--muted)">Brickognize '+bkResult.score+'% → 「'+(match.nameCN||match.name)+'」已在 '+match.slot+'</div>';
       if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
@@ -1073,6 +1144,7 @@ async function processResult(item){
   document.getElementById('result-slot').textContent=slotInfo.slot;
   const isCompleteMF=item.is_complete_minifig;
   document.getElementById('result-slot-type').textContent=isCompleteMF?'🧑 完整人偶 → 收納袋':slotInfo.slotType==='large'?'大抽屜':slotInfo.slotType==='bag'?'收納袋':'小抽屜分格';
+  renderMiniMap(slotInfo.slot);
   const banner=document.getElementById('match-banner');
   if(match){banner.style.display='block';banner.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--green)">✓ 找到相同外型零件</div><div style="font-size:12px;color:var(--muted)">「'+(match.name||match.nameCN)+'」已在 '+match.slot+'</div>'}else{banner.style.display='none'}
   if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
