@@ -611,38 +611,34 @@ let btDetectMode=false;
 function initBtShutter(){
   btShutterEnabled=localStorage.getItem('bricksort_bt_shutter')==='true';
   document.addEventListener('keydown',handleBtKey,true);
+  document.addEventListener('keyup',handleBtKeyDetect,true);
+}
+function handleBtKeyDetect(e){
+  if(!btDetectMode)return;
+  e.preventDefault();e.stopPropagation();
+  const info='[keyup]\nkey: '+e.key+'\ncode: '+e.code+'\nkeyCode: '+e.keyCode;
+  document.getElementById('bt-detect-result').textContent+='\n---\n'+info;
 }
 function handleBtKey(e){
   // Detect mode: show all key events
   if(btDetectMode){
     e.preventDefault();e.stopPropagation();
-    const info='key: '+e.key+'\ncode: '+e.code+'\nkeyCode: '+e.keyCode+'\nwhich: '+e.which;
+    const info='[keydown]\nkey: '+e.key+'\ncode: '+e.code+'\nkeyCode: '+e.keyCode+'\nwhich: '+e.which;
     document.getElementById('bt-detect-result').textContent=info;
-    showToast('偵測到: '+e.key+' ('+e.code+')');
+    showToast('偵測到: '+e.key+' (code:'+e.code+' keyCode:'+e.keyCode+')');
     return;
   }
-  // Normal mode: trigger camera on volume key
+  // Normal mode
   if(!btShutterEnabled)return;
-  const isEnter=e.key==='Enter'||e.keyCode===13;
-  // Only handle Enter (most common BT shutter key on mobile)
-  if(!isEnter)return;
-  // Don't trigger if user is typing in an input field
+  const isShutter=e.key==='Enter'||e.keyCode===13||e.key==='Camera'||e.keyCode===27||e.keyCode===66||e.key==='VolumeUp'||e.keyCode===24;
+  if(!isShutter)return;
   const active=document.activeElement;
   if(active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT'))return;
   e.preventDefault();e.stopPropagation();
-  // Determine action based on current screen
   const activeScreen=document.querySelector('.screen.active');
   const screenId=activeScreen?activeScreen.id:'';
-  if(screenId==='s-processing'){
-    // Ignore during processing
-    return;
-  }
-  if(screenId==='s-result'){
-    // On result screen: act as "back"
-    goBack();
-    return;
-  }
-  // Any other screen: trigger storage camera
+  if(screenId==='s-processing')return;
+  if(screenId==='s-result'){goBack();return}
   document.getElementById('camera-storage').click();
 }
 function toggleBtShutter(on){
@@ -652,13 +648,20 @@ function toggleBtShutter(on){
 }
 function startBtDetect(){
   btDetectMode=true;
-  document.getElementById('bt-detect-result').textContent='等待按鈕訊號…\n請按下藍牙遙控器的按鈕';
+  document.getElementById('bt-detect-result').textContent='等待按鈕訊號…\n請按下藍牙遙控器的按鈕\n（監聽 keydown/keyup/click/focus）';
   document.getElementById('bt-detect-stop').style.display='';
+  // Add extra listeners for detect mode
+  window._btDetectFocus=e=>{const el=document.getElementById('bt-detect-result');if(btDetectMode)el.textContent+='\n[focus] '+e.target.tagName+'#'+e.target.id};
+  window._btDetectClick=e=>{const el=document.getElementById('bt-detect-result');if(btDetectMode){el.textContent+='\n[click] '+e.target.tagName+'#'+e.target.id;showToast('偵測到 click: '+e.target.tagName)}};
+  document.addEventListener('focusin',window._btDetectFocus,true);
+  document.addEventListener('click',window._btDetectClick,true);
   showToast('偵測模式啟動，請按下藍牙按鈕');
 }
 function stopBtDetect(){
   btDetectMode=false;
   document.getElementById('bt-detect-stop').style.display='none';
+  if(window._btDetectFocus)document.removeEventListener('focusin',window._btDetectFocus,true);
+  if(window._btDetectClick)document.removeEventListener('click',window._btDetectClick,true);
   showToast('偵測模式已停止');
 }
 
