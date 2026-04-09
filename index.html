@@ -623,12 +623,9 @@ function handleBtKey(e){
   }
   // Normal mode: trigger camera on volume key
   if(!btShutterEnabled)return;
-  const isVolume=e.key==='VolumeUp'||e.key==='VolumeDown'||e.keyCode===24||e.keyCode===25;
   const isEnter=e.key==='Enter'||e.keyCode===13;
-  const isSpace=e.key===' '||e.keyCode===32;
-  // Only handle volume keys and Enter (common BT shutter keys)
-  // Skip Space to avoid interfering with text input
-  if(!isVolume&&!isEnter)return;
+  // Only handle Enter (most common BT shutter key on mobile)
+  if(!isEnter)return;
   // Don't trigger if user is typing in an input field
   const active=document.activeElement;
   if(active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT'))return;
