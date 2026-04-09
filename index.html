@@ -578,6 +578,7 @@ const ZONE_EXT={name:'擴充區',start:451,end:630,cols:18,rows:10};
 
 const GEMINI_MODELS=['gemini-2.5-flash','gemini-3-flash-preview','gemini-3.1-flash-lite-preview'];
 const GEMINI_LEGO_SYSTEM=`你是一位專業的樂高零件資料庫工程師與 LDraw 3D 建模專家。請根據使用者提供的「樂高零件名稱與 Design ID」，精確推算或估算該零件的「實體外框極限尺寸 (Bounding Box)」與「佔位體積」。
+【語言規則】：所有中文欄位（name_cn、description）必須使用繁體中文（臺灣正體），絕對不可使用簡體中文。例如：「圓頂蜘蛛網」而非「圆顶蜘蛛网」，「附桿和夾」而非「附杆和夹」。
 【運算核心規則】：1. 基礎單位：1 顆粒 (Stud) = 8mm，標準磚高 (Brick) = 9.6mm，標準板高 (Plate) = 3.2mm，Stud突起 = 1.7mm。2. 方正零件處理：若為標準 Brick, Plate, Tile 等，請直接從名稱萃取數字進行嚴格數學相乘。高度必須包含Stud突起。3. 不規則零件處理：結合內部樂高實體知識，評估額外突出物對外框 X/Y/Z 軸的影響。4. 體積計算：直接用 dim_mm 的三邊相乘除以 1000 得到 ml。`;
 
 // ═══════════════════════════════════════════════════
@@ -1434,7 +1435,7 @@ async function handleSetBoxPhoto(event){
     const base64=resized.split(',')[1];
     showScreen('s-processing');setProcessingMsg('📷 辨識樂高套組…');
     try{
-      const prompt='辨識圖片中的樂高 (LEGO) 套組。找出套組的 Set Number（Rebrickable 格式，如 42115-1、75192-1、10300-1）。如果圖片中有盒子、產品編號、或可辨識的套組特徵，請回應。回應純JSON：{"set_num":"套組編號（含-1後綴）","name":"套組英文名稱","name_cn":"中文名稱","confidence":"high/medium/low"}';
+      const prompt='辨識圖片中的樂高 (LEGO) 套組。找出套組的 Set Number（Rebrickable 格式，如 42115-1、75192-1、10300-1）。如果圖片中有盒子、產品編號、或可辨識的套組特徵，請回應。回應純JSON：{"set_num":"套組編號（含-1後綴）","name":"套組英文名稱","name_cn":"繁體中文名稱","confidence":"high/medium/low"}';
       const textResp=await callGeminiAPI(prompt,base64,0);
       const parsed=safeParseJSON(textResp);
       if(!parsed.set_num){throw new Error('無法辨識套組編號')}
