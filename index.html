@@ -232,7 +232,11 @@ tr:hover{background:var(--accent-bg)}
     <button class="btn" style="width:100%;padding:14px;font-size:14px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('camera-storage').click()">📷 拍照辨識 → 顯示收納位置</button>
     <input type="file" id="camera-instruction" accept="image/*" style="display:none" onchange="handleInstructionPhoto(event)">
     <button class="btn" style="width:100%;padding:12px;font-size:13px;margin-top:8px" onclick="document.getElementById('camera-instruction').click()">📋 拍說明書/選圖片 → 查找零件位置</button>
-    <div style="font-size:11px;color:var(--dim);margin-top:6px;text-align:center">拍照辨識單一零件 · 拍說明書一次查找多個零件</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <input type="text" id="set-check-input" placeholder="盒組編號（如 42115 或 6592882）" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:13px;font-family:var(--mono)">
+      <button class="btn" style="padding:10px 14px;white-space:nowrap" onclick="checkSetInventory()">📦 盒組零件檢查</button>
+    </div>
+    <div style="font-size:11px;color:var(--dim);margin-top:6px;text-align:center">拍照辨識單一零件 · 拍說明書查多個 · 輸入盒組編號檢查庫存</div>
   </div>
 
   <div id="stats-row" class="stats-row" style="margin-top:12px"></div>
@@ -371,6 +375,12 @@ tr:hover{background:var(--accent-bg)}
 <div id="s-instruction" class="screen">
 <div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:8px">📋 說明書零件查找</span></div>
 <div class="content" id="instruction-results"></div>
+</div>
+
+<!-- ═══ SET CHECK ═══ -->
+<div id="s-setcheck" class="screen">
+<div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span id="setcheck-title" style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:8px">📦 盒組零件檢查</span></div>
+<div class="content" id="setcheck-results"></div>
 </div>
 
 <!-- ═══ SEARCH RESULTS ═══ -->
@@ -1257,6 +1267,149 @@ function renderInstructionResults(results,imgSrc){
   if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
 }
 
+async function checkSetInventory(){
+  let setNum=(document.getElementById('set-check-input')?.value||'').trim();
+  if(!setNum){document.getElementById('set-check-input')?.focus();return}
+  const key=cfg.rbKey||DEFAULT_RB_KEY;if(!key){showToast('請設定 Rebrickable API Key','error');return}
+  // Support both set number (42115) and LEGO product code (6592882)
+  if(!setNum.includes('-'))setNum+='-1';
+  showScreen('s-processing');setProcessingMsg('查詢套組 '+setNum+'…');
+  document.getElementById('set-check-input').value='';
+  try{
+    const setResp=await fetch('https://rebrickable.com/api/v3/lego/sets/'+setNum+'/?key='+key);
+    if(!setResp.ok)throw new Error('找不到套組 '+setNum+'。請試試 Rebrickable 的 Set Number（如 42115-1）');
+    const setInfo=await setResp.json();
+    // Fetch all parts (paginated)
+    let allParts=[],page=1;
+    while(true){
+      setProcessingMsg('讀取零件清單 (第'+page+'頁)…');
+      const resp=await fetch('https://rebrickable.com/api/v3/lego/sets/'+setNum+'/parts/?key='+key+'&page_size=500&page='+page);
+      const data=await resp.json();allParts=allParts.concat(data.results||[]);
+      if(!data.next)break;page++;
+    }
+    setProcessingMsg('比對倉庫資料…');
+    // Deduplicate by base design ID, skip stickers
+    const partMap={};
+    allParts.forEach(r=>{
+      const rawId=r.part?.part_num||'';const baseId=getBaseDesignId(rawId)||rawId;
+      if(!baseId)return;
+      const pName=(r.part?.name||'').toLowerCase();
+      if(pName.includes('sticker')||(r.part?.part_cat_id===160))return;
+      if(partMap[baseId]){partMap[baseId].quantity+=r.quantity;if(!partMap[baseId].imgUrl&&r.part?.part_img_url)partMap[baseId].imgUrl=r.part.part_img_url}
+      else{partMap[baseId]={designId:baseId,rawId,name:r.part?.name||'',quantity:r.quantity||1,imgUrl:r.part?.part_img_url||''}}
+    });
+    const uniqueParts=Object.values(partMap);
+    const totalPieces=uniqueParts.reduce((s,p)=>s+p.quantity,0);
+    // Match each part against allItems
+    const results=uniqueParts.map(p=>{
+      const did=p.designId;const numBase=getNumericBase(did);
+      let match=null,matchMethod='',inStock=0;
+      // Exact ID
+      match=allItems.find(i=>(i.designId||'').toLowerCase()===did.toLowerCase());
+      if(match){matchMethod='ID精確'}
+      // Base ID
+      if(!match){match=allItems.find(i=>{const b=getBaseDesignId(i.designId);return b&&b.toLowerCase()===did.toLowerCase()});if(match)matchMethod='印刷變體'}
+      // Numeric base
+      if(!match&&numBase){match=allItems.find(i=>getNumericBase(i.designId)===numBase);if(match)matchMethod='模具變體'}
+      // Name fuzzy
+      if(!match&&p.name.length>=5){const nl=p.name.toLowerCase();match=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(nl)||nl.includes(n))});if(match)matchMethod='名稱相似'}
+      if(match)inStock=match.quantity||1;
+      const needed=p.quantity;
+      const enough=inStock>=needed;
+      const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(p.imgUrl||(did?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+did+'.png':''));
+      return{did,name:p.name,needed,inStock,enough,match,matchMethod,thumb,nameCN:match?(match.nameCN||''):''};
+    });
+    // Sort: missing first, then insufficient, then OK
+    results.sort((a,b)=>{
+      if(!a.match&&b.match)return -1;if(a.match&&!b.match)return 1;
+      if(!a.enough&&b.enough)return -1;if(a.enough&&!b.enough)return 1;
+      return a.name.localeCompare(b.name);
+    });
+    renderSetCheckResults(setInfo,results,totalPieces);
+  }catch(err){showTab('main');showToast('查詢失敗：'+err.message,'error')}
+  if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+}
+
+function renderSetCheckResults(setInfo,results,totalPieces){
+  const found=results.filter(r=>r.match);
+  const enough=results.filter(r=>r.enough);
+  const missing=results.filter(r=>!r.match);
+  const insufficient=results.filter(r=>r.match&&!r.enough);
+  const totalNeeded=results.reduce((s,r)=>s+r.needed,0);
+  const totalHave=results.reduce((s,r)=>s+Math.min(r.inStock,r.needed),0);
+  
+  document.getElementById('setcheck-title').textContent='📦 '+(setInfo.name||setInfo.set_num);
+  let html='';
+  // Set info header
+  const setImg=setInfo.set_img_url||'';
+  html+='<div style="display:flex;gap:12px;margin-bottom:16px;align-items:center">';
+  if(setImg)html+='<img src="'+setImg+'" style="width:80px;height:80px;object-fit:contain;border-radius:8px;background:rgba(255,255,255,0.08)">';
+  html+='<div><div style="font-size:15px;font-weight:700">'+(setInfo.name||'')+'</div>';
+  html+='<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">'+setInfo.set_num+' · '+(setInfo.year||'')+' · '+totalPieces+'件</div></div></div>';
+  // Summary stats
+  const readyPct=results.length?Math.round(enough.length/results.length*100):0;
+  const piecePct=totalNeeded?Math.round(totalHave/totalNeeded*100):0;
+  const barColor=readyPct>=100?'var(--green)':readyPct>=80?'var(--orange)':'var(--red)';
+  html+='<div style="background:var(--card);border-radius:10px;padding:14px;margin-bottom:12px">';
+  html+='<div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-size:13px;font-weight:600">零件齊全度</span><span style="font-family:var(--mono);font-size:13px;color:'+barColor+'">'+readyPct+'%</span></div>';
+  html+='<div style="height:8px;background:var(--surface);border-radius:4px;overflow:hidden;margin-bottom:10px"><div style="width:'+readyPct+'%;height:100%;background:'+barColor+';border-radius:4px"></div></div>';
+  html+='<div class="stats-row">';
+  html+='<div class="stat-card"><div class="stat-num">'+results.length+'</div><div class="stat-label">零件種類</div></div>';
+  html+='<div class="stat-card"><div class="stat-num" style="color:var(--green)">'+enough.length+'</div><div class="stat-label">齊全</div></div>';
+  html+='<div class="stat-card"><div class="stat-num" style="color:var(--orange)">'+(insufficient.length)+'</div><div class="stat-label">不足</div></div>';
+  html+='<div class="stat-card"><div class="stat-num" style="color:var(--red)">'+missing.length+'</div><div class="stat-label">缺少</div></div>';
+  html+='</div></div>';
+  // Filter tabs
+  html+='<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">';
+  html+='<button class="btn btn-sm" onclick="filterSetCheck(\'all\')" id="sc-f-all" style="background:var(--accent);color:#111">全部 '+results.length+'</button>';
+  if(missing.length)html+='<button class="btn btn-sm" onclick="filterSetCheck(\'missing\')" id="sc-f-missing">❌ 缺少 '+missing.length+'</button>';
+  if(insufficient.length)html+='<button class="btn btn-sm" onclick="filterSetCheck(\'low\')" id="sc-f-low">⚠ 不足 '+insufficient.length+'</button>';
+  html+='<button class="btn btn-sm" onclick="filterSetCheck(\'ok\')" id="sc-f-ok">✅ 齊全 '+enough.length+'</button>';
+  html+='</div>';
+  // Parts list
+  html+='<div id="sc-parts-list">';
+  html+=renderSetCheckParts(results);
+  html+='</div>';
+  // Store results for filtering
+  window._setCheckResults=results;
+  document.getElementById('setcheck-results').innerHTML=html;
+  showScreen('s-setcheck');
+}
+
+function renderSetCheckParts(results){
+  let html='';
+  results.forEach(r=>{
+    const icon=!r.match?'❌':!r.enough?'⚠️':'✅';
+    const border=!r.match?'var(--red)':!r.enough?'var(--orange)':'var(--border)';
+    const slotBadge=r.match?'<span class="slot-badge slot-'+(r.match.slotType==='large'?'large':r.match.slotType==='bag'?'bag':'small')+'" style="font-size:11px;padding:2px 8px">'+r.match.slot+'</span>':'';
+    const qtyInfo=r.match?'<span style="font-size:11px;font-family:var(--mono);color:'+(r.enough?'var(--green)':'var(--orange)')+'">庫存 '+r.inStock+'/需要 '+r.needed+'</span>':'<span style="font-size:11px;color:var(--red)">需要 '+r.needed+' · 未建檔</span>';
+    const nameDisplay=r.nameCN||r.name;
+    html+='<div style="background:var(--card);border:1px solid '+border+';border-radius:8px;padding:8px 10px;margin-bottom:4px;'+(r.match?'cursor:pointer':'')+'" '+(r.match?'onclick="doSearch(\''+r.match.designId+'\')"':'')+'>';
+    html+='<div style="display:flex;align-items:center;gap:8px">';
+    html+='<img src="'+r.thumb+'" style="width:36px;height:36px;object-fit:contain;border-radius:4px;background:rgba(255,255,255,0.06)" onerror="this.style.display=\'none\'">';
+    html+='<div style="flex:1;min-width:0">';
+    html+='<div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+icon+' '+nameDisplay+'</div>';
+    html+='<div style="display:flex;align-items:center;gap:6px;margin-top:2px">'+qtyInfo+'</div>';
+    html+='</div>';
+    html+='<div style="text-align:right">'+slotBadge+'<div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-top:2px">'+r.did+'</div></div>';
+    html+='</div></div>';
+  });
+  return html;
+}
+
+function filterSetCheck(mode){
+  const results=window._setCheckResults||[];
+  let filtered;
+  if(mode==='missing')filtered=results.filter(r=>!r.match);
+  else if(mode==='low')filtered=results.filter(r=>r.match&&!r.enough);
+  else if(mode==='ok')filtered=results.filter(r=>r.enough);
+  else filtered=results;
+  document.getElementById('sc-parts-list').innerHTML=renderSetCheckParts(filtered);
+  document.querySelectorAll('[id^="sc-f-"]').forEach(b=>{b.style.background='';b.style.color=''});
+  const btn=document.getElementById('sc-f-'+mode);
+  if(btn){btn.style.background='var(--accent)';btn.style.color='#111'}
+}
+
 async function handlePartIdBatch(){
   const input=document.getElementById('part-id-input'),raw=input.value.trim();if(!raw){input.focus();return}
   const ids=raw.split(/[\s,，、]+/).map(s=>s.trim()).filter(s=>s.length>0);input.value='';if(!ids.length)return;
@@ -1945,3 +2098,8 @@ init();
 </script>
 </body>
 </html>
+拍照查找：適合逐步組裝時（一次 3~8 個零件）
+盒組編號：我要重新組裝6592882，請問倉庫中的零件都還在嗎?請列出在庫/缺失零件
+請先做b方案拍照查找：適合逐步組裝時（一次 3~8 個零件）
+盒組編號：我要重新組裝6592882，請問倉庫中的零件都還在嗎?請列出在庫/缺失零件
+請先做b方案
