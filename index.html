@@ -439,13 +439,19 @@ tr:hover{background:var(--accent-bg)}
   </div>
   <div class="card">
     <div class="card-title">🎮 藍牙快拍</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">連接藍牙自拍棒/遙控器後，按下按鈕即可在任何頁面觸發收納模式拍照。</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">連接藍牙自拍棒後，半按拍照鍵即可在任何頁面觸發收納模式拍照。</div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <label style="font-size:13px;flex:1">啟用藍牙快拍</label>
       <input type="checkbox" id="bt-shutter-toggle" style="accent-color:var(--accent);width:20px;height:20px" onchange="toggleBtShutter(this.checked)">
     </div>
-    <button class="btn" style="width:100%;margin-bottom:8px" onclick="startBtDetect()">🔍 偵測按鈕訊號</button>
-    <div id="bt-detect-result" style="font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--surface);border-radius:6px;padding:8px;min-height:20px;white-space:pre-wrap"></div>
+    <div id="bt-pos-status" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
+    <button class="btn" style="width:100%;margin-bottom:8px" onclick="startBtCalibrate()">🎯 校準藍牙按鈕位置</button>
+    <div id="bt-calibrate-area" style="display:none;background:var(--accent);border-radius:10px;padding:40px 20px;text-align:center;margin-bottom:8px;cursor:pointer">
+      <div style="font-size:18px;font-weight:700;color:#111">👆 請在此區域半按藍牙按鈕</div>
+      <div style="font-size:12px;color:#333;margin-top:8px">按下後會記錄觸碰位置</div>
+    </div>
+    <button class="btn" style="width:100%;margin-bottom:8px" onclick="startBtDetect()">🔍 偵測按鈕訊號（進階）</button>
+    <div id="bt-detect-result" style="font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--surface);border-radius:6px;padding:8px;min-height:20px;white-space:pre-wrap;display:none"></div>
     <button id="bt-detect-stop" class="btn" style="width:100%;margin-top:8px;display:none" onclick="stopBtDetect()">停止偵測</button>
   </div>
   <div class="card" id="lock-card">
@@ -610,21 +616,20 @@ let btShutterEnabled=false;
 let btDetectMode=false;
 function initBtShutter(){
   btShutterEnabled=localStorage.getItem('bricksort_bt_shutter')==='true';
+  const savedPos=localStorage.getItem('bricksort_bt_pos');
+  if(savedPos){try{window._btPos=JSON.parse(savedPos)}catch(e){}}
   document.addEventListener('keydown',handleBtKey,true);
   document.addEventListener('keyup',handleBtKeyDetect,true);
-  // BT half-press sends a click event with no coordinates
   document.addEventListener('click',handleBtClick,true);
 }
 function handleBtClick(e){
-  if(btDetectMode)return; // detect mode has its own handler
-  if(!btShutterEnabled)return;
-  // BT button clicks have screenX/screenY === 0 (no touch point)
-  if(e.screenX!==0||e.screenY!==0)return;
-  // Skip if clicking on interactive elements (real user taps)
-  const tag=e.target.tagName;
-  if(tag==='BUTTON'||tag==='A'||tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA')return;
-  if(e.target.closest('button,a,input,select,.item-row,.nav-tab,.stat-card,.mode-tab'))return;
-  // This is a BT half-press click!
+  if(btDetectMode)return;
+  if(!btShutterEnabled||!window._btPos)return;
+  // Check if click matches calibrated BT position (±10px tolerance)
+  const dx=Math.abs(e.screenX-window._btPos.x),dy=Math.abs(e.screenY-window._btPos.y);
+  if(dx>10||dy>10)return;
+  // Skip if on interactive elements
+  if(e.target.closest('button,a,input,select,textarea,.modal,.overlay.open'))return;
   e.preventDefault();e.stopPropagation();
   const activeScreen=document.querySelector('.screen.active');
   const screenId=activeScreen?activeScreen.id:'';
@@ -663,11 +668,36 @@ function handleBtKey(e){
 function toggleBtShutter(on){
   btShutterEnabled=on;
   localStorage.setItem('bricksort_bt_shutter',on?'true':'false');
-  showToast(on?'🎮 藍牙快拍已啟用':'藍牙快拍已停用');
+  if(on&&!window._btPos)showToast('請先校準藍牙按鈕位置');
+  else showToast(on?'🎮 藍牙快拍已啟用':'藍牙快拍已停用');
+}
+function startBtCalibrate(){
+  const area=document.getElementById('bt-calibrate-area');
+  area.style.display='';
+  window._btCalibrating=true;
+  // Listen for click on the calibrate area
+  area.onclick=function(e){
+    window._btPos={x:e.screenX,y:e.screenY};
+    localStorage.setItem('bricksort_bt_pos',JSON.stringify(window._btPos));
+    area.style.display='none';
+    window._btCalibrating=false;
+    renderBtPosStatus();
+    showToast('🎯 校準完成 ('+e.screenX+', '+e.screenY+')');
+  };
+}
+function renderBtPosStatus(){
+  const el=document.getElementById('bt-pos-status');
+  if(!el)return;
+  if(window._btPos){
+    el.innerHTML='<span style="color:var(--green)">✅ 已校準：位置 ('+window._btPos.x+', '+window._btPos.y+')</span>';
+  } else {
+    el.innerHTML='<span style="color:var(--orange)">⚠ 尚未校準，請按下方按鈕校準</span>';
+  }
 }
 function startBtDetect(){
   btDetectMode=true;
-  document.getElementById('bt-detect-result').textContent='等待按鈕訊號…\n請按下藍牙遙控器的按鈕\n（監聽 keydown/keyup/click/focus）';
+  document.getElementById('bt-detect-result').style.display='';
+  document.getElementById('bt-detect-result').textContent='等待按鈕訊號…\n請按下藍牙遙控器的按鈕';
   document.getElementById('bt-detect-stop').style.display='';
   // Add extra listeners for detect mode
   window._btDetectFocus=e=>{const el=document.getElementById('bt-detect-result');if(btDetectMode)el.textContent+='\n[focus] '+e.target.tagName+'#'+e.target.id};
@@ -789,7 +819,7 @@ async function loadData(){
   document.getElementById('loading').style.display='none';
   dataReady=true;
   renderStats();applySort();renderSyncStatus();renderLockStatus();
-  const btToggle=document.getElementById('bt-shutter-toggle');if(btToggle)btToggle.checked=btShutterEnabled;
+  const btToggle=document.getElementById('bt-shutter-toggle');if(btToggle)btToggle.checked=btShutterEnabled;renderBtPosStatus();
 }
 
 async function fbSaveItem(item){
