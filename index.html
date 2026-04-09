@@ -230,8 +230,8 @@ tr:hover{background:var(--accent-bg)}
       <input type="text" id="storage-hint" placeholder="提示關鍵字（選填，如「拆解器」「齒輪」）" style="flex:1;background:none;border:none;color:var(--text);padding:12px 0;font-size:13px;outline:none">
     </div>
     <button class="btn" style="width:100%;padding:14px;font-size:14px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('camera-storage').click()">📷 拍照辨識 → 顯示收納位置</button>
-    <input type="file" id="camera-instruction" accept="image/*" capture="environment" style="display:none" onchange="handleInstructionPhoto(event)">
-    <button class="btn" style="width:100%;padding:12px;font-size:13px;margin-top:8px" onclick="document.getElementById('camera-instruction').click()">📋 拍說明書 → 查找零件位置</button>
+    <input type="file" id="camera-instruction" accept="image/*" style="display:none" onchange="handleInstructionPhoto(event)">
+    <button class="btn" style="width:100%;padding:12px;font-size:13px;margin-top:8px" onclick="document.getElementById('camera-instruction').click()">📋 拍說明書/選圖片 → 查找零件位置</button>
     <div style="font-size:11px;color:var(--dim);margin-top:6px;text-align:center">拍照辨識單一零件 · 拍說明書一次查找多個零件</div>
   </div>
 
