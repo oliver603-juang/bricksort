@@ -233,10 +233,12 @@ tr:hover{background:var(--accent-bg)}
     <input type="file" id="camera-instruction" accept="image/*" style="display:none" onchange="handleInstructionPhoto(event)">
     <button class="btn" style="width:100%;padding:12px;font-size:13px;margin-top:8px" onclick="document.getElementById('camera-instruction').click()">📋 拍說明書/選圖片 → 查找零件位置</button>
     <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
-      <input type="text" id="set-check-input" placeholder="盒組編號（如 42115 或 6592882）" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:13px;font-family:var(--mono)">
-      <button class="btn" style="padding:10px 14px;white-space:nowrap" onclick="checkSetInventory()">📦 盒組零件檢查</button>
+      <input type="text" id="set-check-input" placeholder="盒組編號（如 42115）" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:13px;font-family:var(--mono)">
+      <button class="btn" style="padding:10px 14px;white-space:nowrap" onclick="checkSetInventory()">📦 檢查</button>
+      <input type="file" id="camera-setbox" accept="image/*" style="display:none" onchange="handleSetBoxPhoto(event)">
+      <button class="btn" style="padding:10px 14px;white-space:nowrap" onclick="document.getElementById('camera-setbox').click()">📷 拍盒</button>
     </div>
-    <div style="font-size:11px;color:var(--dim);margin-top:6px;text-align:center">拍照辨識單一零件 · 拍說明書查多個 · 輸入盒組編號檢查庫存</div>
+    <div style="font-size:11px;color:var(--dim);margin-top:6px;text-align:center">拍照辨識單一零件 · 拍說明書查多個 · 輸入盒組編號或拍盒子檢查庫存</div>
   </div>
 
   <div id="stats-row" class="stats-row" style="margin-top:12px"></div>
@@ -1267,6 +1269,34 @@ function renderInstructionResults(results,imgSrc){
   if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
 }
 
+async function handleSetBoxPhoto(event){
+  const file=event.target.files[0];if(!file)return;event.target.value='';
+  const reader=new FileReader();reader.onload=async e=>{
+    const resized=await resizeImage(e.target.result,800);
+    const base64=resized.split(',')[1];
+    showScreen('s-processing');setProcessingMsg('📷 辨識樂高套組…');
+    try{
+      const prompt='辨識圖片中的樂高 (LEGO) 套組。找出套組的 Set Number（Rebrickable 格式，如 42115-1、75192-1、10300-1）。如果圖片中有盒子、產品編號、或可辨識的套組特徵，請回應。回應純JSON：{"set_num":"套組編號（含-1後綴）","name":"套組英文名稱","name_cn":"中文名稱","confidence":"high/medium/low"}';
+      const textResp=await callGeminiAPI(prompt,base64,0);
+      const parsed=safeParseJSON(textResp);
+      if(!parsed.set_num){throw new Error('無法辨識套組編號')}
+      // Show result and ask user to confirm
+      if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+      const conf=parsed.confidence==='high'?'✅ 高信心':'⚠️ '+parsed.confidence;
+      const yes=confirm('辨識結果：\n\n'+(parsed.name_cn||parsed.name||'')+'\nSet: '+parsed.set_num+'\n信心度: '+conf+'\n\n確定檢查此套組的庫存？');
+      if(yes){
+        document.getElementById('set-check-input').value=parsed.set_num;
+        await checkSetInventory();
+      } else {
+        showTab('main');
+      }
+    }catch(err){
+      if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+      showTab('main');showToast('套組辨識失敗：'+err.message,'error');
+    }
+  };reader.readAsDataURL(file);
+}
+
 async function checkSetInventory(){
   let setNum=(document.getElementById('set-check-input')?.value||'').trim();
   if(!setNum){document.getElementById('set-check-input')?.focus();return}
@@ -2098,8 +2128,3 @@ init();
 </script>
 </body>
 </html>
-拍照查找：適合逐步組裝時（一次 3~8 個零件）
-盒組編號：我要重新組裝6592882，請問倉庫中的零件都還在嗎?請列出在庫/缺失零件
-請先做b方案拍照查找：適合逐步組裝時（一次 3~8 個零件）
-盒組編號：我要重新組裝6592882，請問倉庫中的零件都還在嗎?請列出在庫/缺失零件
-請先做b方案
