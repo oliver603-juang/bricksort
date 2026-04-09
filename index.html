@@ -446,10 +446,6 @@ tr:hover{background:var(--accent-bg)}
     </div>
     <div id="bt-pos-status" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
     <button class="btn" style="width:100%;margin-bottom:8px" onclick="startBtCalibrate()">🎯 校準藍牙按鈕位置</button>
-    <div id="bt-calibrate-area" style="display:none;background:var(--accent);border-radius:10px;padding:40px 20px;text-align:center;margin-bottom:8px;cursor:pointer">
-      <div style="font-size:18px;font-weight:700;color:#111">👆 請在此區域半按藍牙按鈕</div>
-      <div style="font-size:12px;color:#333;margin-top:8px">按下後會記錄觸碰位置</div>
-    </div>
     <button class="btn" style="width:100%;margin-bottom:8px" onclick="startBtDetect()">🔍 偵測按鈕訊號（進階）</button>
     <div id="bt-detect-result" style="font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--surface);border-radius:6px;padding:8px;min-height:20px;white-space:pre-wrap;display:none"></div>
     <button id="bt-detect-stop" class="btn" style="width:100%;margin-top:8px;display:none" onclick="stopBtDetect()">停止偵測</button>
@@ -672,18 +668,27 @@ function toggleBtShutter(on){
   else showToast(on?'🎮 藍牙快拍已啟用':'藍牙快拍已停用');
 }
 function startBtCalibrate(){
-  const area=document.getElementById('bt-calibrate-area');
-  area.style.display='';
-  window._btCalibrating=true;
-  // Listen for click on the calibrate area
-  area.onclick=function(e){
+  // Create fullscreen overlay
+  let ov=document.getElementById('bt-calibrate-overlay');
+  if(!ov){
+    ov=document.createElement('div');ov.id='bt-calibrate-overlay';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(245,166,35,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer';
+    ov.innerHTML='<div style="font-size:24px;font-weight:900;color:#111;margin-bottom:16px">🎯 校準模式</div><div style="font-size:16px;color:#333;text-align:center;line-height:1.8;padding:0 24px">現在請<b>半按</b>藍牙拍照鍵<br><br>畫面上任何位置都可以<br>按鈕的觸碰點會被記錄</div><div style="margin-top:32px;font-size:13px;color:#555">（點擊螢幕可取消）</div>';
+    document.body.appendChild(ov);
+  }
+  ov.style.display='flex';
+  // Capture first click
+  function onCalibClick(e){
+    // Ignore if user tapped the cancel text at bottom (real finger tap to cancel)
+    // Accept the click and record position
     window._btPos={x:e.screenX,y:e.screenY};
     localStorage.setItem('bricksort_bt_pos',JSON.stringify(window._btPos));
-    area.style.display='none';
-    window._btCalibrating=false;
+    ov.style.display='none';
+    ov.removeEventListener('click',onCalibClick);
     renderBtPosStatus();
     showToast('🎯 校準完成 ('+e.screenX+', '+e.screenY+')');
-  };
+  }
+  ov.addEventListener('click',onCalibClick);
 }
 function renderBtPosStatus(){
   const el=document.getElementById('bt-pos-status');
