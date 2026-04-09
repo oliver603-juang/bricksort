@@ -190,8 +190,23 @@ tr:hover{background:var(--accent-bg)}
   </div>
 
   <input type="file" id="lens-input" accept="image/*" multiple style="display:none" onchange="handleLensInput(event)">
-  <input type="file" id="camera-catalog" accept="image/*" style="display:none" onchange="handleCatalogCamera(event)">
-  <input type="file" id="camera-storage" accept="image/*" style="display:none" onchange="handleCameraInput(event)">
+  <input type="file" id="camera-catalog" accept="image/*" capture="environment" style="display:none" onchange="handleCatalogCamera(event)">
+  <input type="file" id="camera-catalog-gal" accept="image/*" style="display:none" onchange="handleCatalogCamera(event)">
+  <input type="file" id="camera-storage" accept="image/*" capture="environment" style="display:none" onchange="handleCameraInput(event)">
+  <input type="file" id="camera-storage-gal" accept="image/*" style="display:none" onchange="handleCameraInput(event)">
+  <input type="file" id="camera-instruction" accept="image/*" capture="environment" style="display:none" onchange="handleInstructionPhoto(event)">
+  <input type="file" id="camera-instruction-gal" accept="image/*" style="display:none" onchange="handleInstructionPhoto(event)">
+  <input type="file" id="camera-setbox" accept="image/*" capture="environment" style="display:none" onchange="handleSetBoxPhoto(event)">
+  <input type="file" id="camera-setbox-gal" accept="image/*" style="display:none" onchange="handleSetBoxPhoto(event)">
+
+  <!-- Photo Source Chooser -->
+  <div class="overlay" id="photo-chooser" style="align-items:center" onclick="document.getElementById('photo-chooser').classList.remove('open')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:320px;padding:20px;border-radius:20px;transform:none">
+    <div style="text-align:center;font-size:14px;font-weight:700;color:var(--accent);margin-bottom:16px" id="photo-chooser-title">選擇圖片來源</div>
+    <button class="btn" style="width:100%;padding:14px;font-size:15px;margin-bottom:8px" onclick="choosePhotoSource('camera')">📷 拍照</button>
+    <button class="btn" style="width:100%;padding:14px;font-size:15px" onclick="choosePhotoSource('gallery')">🖼 從圖庫選擇</button>
+  </div>
+  </div>
 
   <!-- 建檔模式 UI -->
   <div id="mode-catalog-ui" style="display:none">
@@ -229,14 +244,14 @@ tr:hover{background:var(--accent-bg)}
       <span style="font-size:14px">💡</span>
       <input type="text" id="storage-hint" placeholder="提示關鍵字（選填，如「拆解器」「齒輪」）" style="flex:1;background:none;border:none;color:var(--text);padding:12px 0;font-size:13px;outline:none">
     </div>
-    <button class="btn" style="width:100%;padding:14px;font-size:14px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('camera-storage').click()">📷 拍照辨識 → 顯示收納位置</button>
+    <button class="btn" style="width:100%;padding:14px;font-size:14px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="openPhotoChooser('storage')">📷 拍照辨識 → 顯示收納位置</button>
     <input type="file" id="camera-instruction" accept="image/*" style="display:none" onchange="handleInstructionPhoto(event)">
-    <button class="btn" style="width:100%;padding:12px;font-size:13px;margin-top:8px" onclick="document.getElementById('camera-instruction').click()">📋 拍說明書/選圖片 → 查找零件位置</button>
+    <button class="btn" style="width:100%;padding:12px;font-size:13px;margin-top:8px" onclick="openPhotoChooser('instruction')">📋 拍說明書/選圖片 → 查找零件位置</button>
     <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
       <input type="text" id="set-check-input" placeholder="盒組編號（如 42115）" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:13px;font-family:var(--mono)">
       <button class="btn" style="padding:10px 14px;white-space:nowrap" onclick="checkSetInventory()">📦 檢查</button>
       <input type="file" id="camera-setbox" accept="image/*" style="display:none" onchange="handleSetBoxPhoto(event)">
-      <button class="btn" style="padding:10px 14px;white-space:nowrap" onclick="document.getElementById('camera-setbox').click()">📷 拍盒</button>
+      <button class="btn" style="padding:10px 14px;white-space:nowrap" onclick="openPhotoChooser('setbox')">📷 拍盒</button>
     </div>
     <div style="font-size:11px;color:var(--dim);margin-top:6px;text-align:center">拍照辨識單一零件 · 拍說明書查多個 · 輸入盒組編號或拍盒子檢查庫存</div>
   </div>
@@ -644,6 +659,22 @@ function setMode(mode){
   document.getElementById('mode-storage-ui').style.display=mode==='storage'?'':'none';
 }
 function togglePanel(id){const el=document.getElementById(id);el.style.display=el.style.display==='none'?'':'none'}
+
+let _photoTarget='';
+function openPhotoChooser(target){
+  _photoTarget=target;
+  const titles={storage:'📷 拍照辨識',instruction:'📋 說明書查找',setbox:'📷 套組辨識'};
+  document.getElementById('photo-chooser-title').textContent=titles[target]||'選擇圖片來源';
+  document.getElementById('photo-chooser').classList.add('open');
+}
+function choosePhotoSource(source){
+  document.getElementById('photo-chooser').classList.remove('open');
+  const suffix=source==='gallery'?'-gal':'';
+  const inputId='camera-'+_photoTarget+suffix;
+  const el=document.getElementById(inputId);
+  if(el)el.click();
+}
+
 function setProcessingMsg(msg){document.getElementById('processing-msg').textContent=msg;if(!window._procTimer){window._procStart=performance.now();window._procTimer=setInterval(()=>{const el=document.getElementById('processing-timer');if(el&&window._procStart)el.textContent='⏱ '+((performance.now()-window._procStart)/1000).toFixed(1)+'s'},100)}}
 
 // ═══════════════════════════════════════════════════
