@@ -612,6 +612,25 @@ function initBtShutter(){
   btShutterEnabled=localStorage.getItem('bricksort_bt_shutter')==='true';
   document.addEventListener('keydown',handleBtKey,true);
   document.addEventListener('keyup',handleBtKeyDetect,true);
+  // BT half-press sends a click event with no coordinates
+  document.addEventListener('click',handleBtClick,true);
+}
+function handleBtClick(e){
+  if(btDetectMode)return; // detect mode has its own handler
+  if(!btShutterEnabled)return;
+  // BT button clicks have screenX/screenY === 0 (no touch point)
+  if(e.screenX!==0||e.screenY!==0)return;
+  // Skip if clicking on interactive elements (real user taps)
+  const tag=e.target.tagName;
+  if(tag==='BUTTON'||tag==='A'||tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA')return;
+  if(e.target.closest('button,a,input,select,.item-row,.nav-tab,.stat-card,.mode-tab'))return;
+  // This is a BT half-press click!
+  e.preventDefault();e.stopPropagation();
+  const activeScreen=document.querySelector('.screen.active');
+  const screenId=activeScreen?activeScreen.id:'';
+  if(screenId==='s-processing')return;
+  if(screenId==='s-result'){goBack();return}
+  document.getElementById('camera-storage').click();
 }
 function handleBtKeyDetect(e){
   if(!btDetectMode)return;
@@ -652,7 +671,7 @@ function startBtDetect(){
   document.getElementById('bt-detect-stop').style.display='';
   // Add extra listeners for detect mode
   window._btDetectFocus=e=>{const el=document.getElementById('bt-detect-result');if(btDetectMode)el.textContent+='\n[focus] '+e.target.tagName+'#'+e.target.id};
-  window._btDetectClick=e=>{const el=document.getElementById('bt-detect-result');if(btDetectMode){el.textContent+='\n[click] '+e.target.tagName+'#'+e.target.id;showToast('偵測到 click: '+e.target.tagName)}};
+  window._btDetectClick=e=>{const el=document.getElementById('bt-detect-result');if(btDetectMode){el.textContent+='\n[click] '+e.target.tagName+'#'+e.target.id+' screenX='+e.screenX+' screenY='+e.screenY+' pointerType='+(e.pointerType||'?');showToast('click: screenX='+e.screenX+' Y='+e.screenY)}};
   document.addEventListener('focusin',window._btDetectFocus,true);
   document.addEventListener('click',window._btDetectClick,true);
   showToast('偵測模式啟動，請按下藍牙按鈕');
