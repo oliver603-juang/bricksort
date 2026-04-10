@@ -220,7 +220,7 @@ tr:hover{background:var(--accent-bg)}
       </div>
       <div style="display:flex;gap:6px;align-items:center">
         <button class="btn btn-sm" style="flex:1" onclick="document.getElementById('lens-input').click()">📷 Lens截圖（批次）</button>
-        <button class="btn btn-sm" style="flex:1" onclick="openNewItem()">➕ 手動新建檔</button>
+        <button class="btn btn-sm" style="flex:1;display:none" onclick="openNewItem()">➕ 手動新建檔</button>
       </div>
     </div>
   </div>
@@ -256,7 +256,6 @@ tr:hover{background:var(--accent-bg)}
     </select>
     <input type="text" id="filter-input" placeholder="🔍 搜尋…" oninput="applyFilter()" style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px;outline:none">
     <span id="count-label" style="font-size:11px;color:var(--muted);font-family:var(--mono);white-space:nowrap"></span>
-    <button class="btn btn-green btn-sm" onclick="openNewItem()">➕ 新建檔</button>
     <button class="btn btn-primary btn-sm" onclick="saveAllToFirebase()">☁️ 回傳</button>
   </div>
 
@@ -455,7 +454,7 @@ tr:hover{background:var(--accent-bg)}
     </div>
   </div>
   <button class="btn-primary" style="width:100%;padding:12px;font-size:14px" onclick="resolveVariant(true)">✓ 同一零件（放到 <span id="vc-slot"></span>）</button>
-  <button class="btn" style="width:100%;margin-top:8px;padding:10px" onclick="resolveVariant(false)">✕ 不同零件（新建檔）</button>
+  <button class="btn" style="width:100%;margin-top:8px;padding:10px" onclick="resolveVariant(false)">✕ 不同零件</button>
 </div>
 </div>
 
