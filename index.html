@@ -233,6 +233,8 @@ tr:hover{background:var(--accent-bg)}
     <select id="sort-select" onchange="applySort()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:12px">
       <option value="createdAt-desc">建檔日期 ↓ 新→舊</option>
       <option value="createdAt-asc">建檔日期 ↑ 舊→新</option>
+      <option value="updatedAt-desc">收納日期 ↓ 新→舊</option>
+      <option value="updatedAt-asc">收納日期 ↑ 舊→新</option>
       <option value="name-asc">名稱 A→Z</option>
       <option value="name-desc">名稱 Z→A</option>
       <option value="designId-asc">Design ID ↑</option>
@@ -308,8 +310,8 @@ tr:hover{background:var(--accent-bg)}
     <div id="result-volume" style="margin-top:8px;font-size:12px;color:var(--muted);font-family:var(--mono)"></div>
   </div>
   <div id="match-banner" style="display:none;background:var(--green-bg);border:1px solid var(--green);border-radius:10px;padding:12px 14px;margin-bottom:12px"></div>
-  <div class="slot-display">
-    <div style="font-size:12px;color:var(--accent);font-family:var(--mono);margin-bottom:10px">收納位置</div>
+  <div class="slot-display" id="result-slot-display" style="cursor:pointer" onclick="jumpToSlotFromResult()">
+    <div style="font-size:12px;color:var(--accent);font-family:var(--mono);margin-bottom:10px">收納位置 <span style="font-size:10px;color:var(--dim)">（點擊查看格子內容）</span></div>
     <div id="result-slot" class="slot-main"></div>
     <div id="result-slot-type" class="slot-type"></div>
   </div>
@@ -958,6 +960,7 @@ function applyFilter(){
     else if(key==='dimH'){va=(a.dimH||0)*10;vb=(b.dimH||0)*10}
     else if(key==='quantity'){va=a.quantity||1;vb=b.quantity||1}
     else if(key==='createdAt'){va=a.createdAt||0;vb=b.createdAt||0}
+    else if(key==='updatedAt'){va=a.updatedAt||a.createdAt||0;vb=b.updatedAt||b.createdAt||0}
     else if(key==='slot'){return(a.slot||'').localeCompare(b.slot||'',undefined,{numeric:true})*m}
     else if(key==='name'){return(a.name||a.nameCN||'').localeCompare(b.name||b.nameCN||'')*m}
     else if(key==='designId'){return(a.designId||'').localeCompare(b.designId||'',undefined,{numeric:true})*m}
@@ -1846,6 +1849,17 @@ function doSearch(q){
   document.getElementById('search-title').textContent='搜尋「'+q+'」：'+results.length+' 筆';
   document.getElementById('search-results').innerHTML=results.length?results.map(partRowHTML).join(''):'<div style="text-align:center;padding:48px;color:var(--muted)">找不到結果</div>';
   showScreen('s-search');
+}
+function jumpToSlotFromResult(){
+  const slot=document.getElementById('result-slot').textContent||'';
+  if(!slot)return;
+  const d=parseInt(slot.replace(/\D/g,''));
+  if(slot.startsWith('B')){
+    // Bag: show bag map tab
+    showTab('main');document.querySelector('[onclick*="showBagMap"]')?.click();
+    return;
+  }
+  searchDrawer(d);
 }
 function searchDrawer(d){
   const pad=String(d).padStart(3,'0'), plain=String(d);
