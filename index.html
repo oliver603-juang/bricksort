@@ -1081,6 +1081,32 @@ function gatewayAssign(item){
   if(isCompleteMF||catBag||dimTooLarge||vt>LARGE_ML){const bag=slotConfig.nextBagSlot||'B01';const cap=slotConfig.bagCapacity||BAG_ML_DEFAULT;if(getBagVol(bag)>=cap*0.9){slotConfig.nextBagSlot=advanceBag(bag);return{slot:slotConfig.nextBagSlot,slotType:'bag'}}return{slot:bag,slotType:'bag'}}
   if(vt>DRAWER_ML){const bag=slotConfig.nextBagSlot||'B01';return{slot:bag,slotType:'bag'}}
   if(vt>SLOT_ML){const r=advanceSmallSlot(slotConfig.nextSmallSlot,true);slotConfig.nextSmallSlot=r.next;return{slot:r.assigned,slotType:'small'}}
+  // Try to pack into existing expansion zone slots (451+) that have room
+  const ptrSlot=slotConfig.nextSmallSlot||'451a';
+  const ptrDrawer=parseInt((ptrSlot.match(/\d+/)||['451'])[0]);
+  const startDrawer=slotConfig.locked?451:ptrDrawer;
+  if(startDrawer<=ptrDrawer){
+    for(let d=startDrawer;d<=ptrDrawer;d++){
+      for(const sub of['a','b']){
+        const s=String(d).padStart(3,'0')+sub;
+        const slotItems=allItems.filter(i=>i.slot===s&&(i.slotType||'small')==='small');
+        if(slotItems.length===0||slotItems.length>=MERGE_MAX_ITEMS)continue;
+        const slotVol=slotItems.reduce((sum,i)=>sum+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+        if(slotVol+vt<=SLOT_ML)return{slot:s,slotType:'small'};
+      }
+    }
+  }
+  // No existing slot has room → use pointer to open new slot
+  let cur=ptrSlot;
+  for(let tries=0;tries<20;tries++){
+    const r=advanceSmallSlot(cur,false);
+    const slotItems=allItems.filter(i=>i.slot===r.assigned&&(i.slotType||'small')==='small');
+    const slotVol=slotItems.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+    if(slotItems.length<MERGE_MAX_ITEMS&&slotVol+vt<=SLOT_ML){
+      slotConfig.nextSmallSlot=r.next;return{slot:r.assigned,slotType:'small'};
+    }
+    cur=r.next;
+  }
   const r=advanceSmallSlot(slotConfig.nextSmallSlot,false);slotConfig.nextSmallSlot=r.next;return{slot:r.assigned,slotType:'small'};
 }
 
