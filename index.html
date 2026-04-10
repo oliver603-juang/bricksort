@@ -316,6 +316,13 @@ tr:hover{background:var(--accent-bg)}
     <div id="result-slot-type" class="slot-type"></div>
   </div>
   <div id="result-minimap" style="margin-bottom:12px"></div>
+  <div id="result-qty-row" style="display:none;margin-bottom:12px;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
+    <label style="font-size:13px;color:var(--muted);white-space:nowrap">追加數量</label>
+    <button onclick="var el=document.getElementById('result-qty');el.value=Math.max(0,(parseInt(el.value)||0)-1)" style="width:36px;height:36px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:18px;cursor:pointer">−</button>
+    <input type="number" id="result-qty" value="1" min="0" max="999" style="width:60px;text-align:center;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:8px;border-radius:8px;font-size:18px;font-weight:700;font-family:var(--mono)" onfocus="if(this.value==='1'||this.value==='0')this.value=''" onblur="if(!this.value)this.value='0'">
+    <button onclick="var el=document.getElementById('result-qty');el.value=(parseInt(el.value)||0)+1" style="width:36px;height:36px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:18px;cursor:pointer">+</button>
+    <button id="result-qty-save" class="btn btn-green" style="flex:1;padding:8px;font-size:13px" onclick="saveResultQty()">✓ 追加</button>
+  </div>
   <button id="result-confirm-btn" class="btn-primary" style="width:100%" onclick="confirmPart()">✓ 確認儲存</button>
   <button id="result-cancel-btn" class="btn" style="width:100%;margin-top:8px" onclick="cancelResult()">取消</button>
 </div>
@@ -576,7 +583,7 @@ function init(){
   if(document.getElementById('inp-apikey'))document.getElementById('inp-apikey').value=cfg.apiKey||'';
   if(document.getElementById('inp-rbkey'))document.getElementById('inp-rbkey').value=cfg.rbKey||DEFAULT_RB_KEY;
   _loadPromise=loadData();
-  // Bluetooth / Volume key listener
+  // Bluetooth shutter listener (calibrated click + Enter/Camera key)
   initBtShutter();
 }
 
@@ -622,7 +629,7 @@ function handleBtKey(e){
   }
   // Normal mode
   if(!btShutterEnabled)return;
-  const isShutter=e.key==='Enter'||e.keyCode===13||e.key==='Camera'||e.keyCode===27||e.keyCode===66||e.key==='VolumeUp'||e.keyCode===24;
+  const isShutter=e.key==='Enter'||e.keyCode===13||e.key==='Camera'||e.keyCode===66;
   if(!isShutter)return;
   const active=document.activeElement;
   if(active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT'))return;
@@ -1350,6 +1357,10 @@ async function unifiedRecognize(base64,imgSrc,isLensHint){
       document.getElementById('result-confirm-btn').textContent='← 返回';
       document.getElementById('result-confirm-btn').onclick=()=>goBack();
       document.getElementById('result-cancel-btn').style.display='none';
+      document.getElementById('result-qty-row').style.display='flex';
+      document.getElementById('result-qty').value='1';
+      document.getElementById('result-qty-save').textContent='✓ 追加';
+      document.getElementById('result-qty-save').disabled=false;
       showScreen('s-result');return;
     }
     // Brickognize matched but NOT in DB
@@ -1742,6 +1753,7 @@ async function processResult(item){
   document.getElementById('result-confirm-btn').textContent='✓ 確認儲存';
   document.getElementById('result-confirm-btn').onclick=()=>confirmPart();
   document.getElementById('result-cancel-btn').style.display='';
+  document.getElementById('result-qty-row').style.display='none';
   showScreen('s-result');
 }
 
@@ -1860,6 +1872,20 @@ function jumpToSlotFromResult(){
     return;
   }
   searchDrawer(d);
+}
+async function saveResultQty(){
+  const qty=parseInt(document.getElementById('result-qty').value)||0;
+  if(qty<=0){showToast('數量為 0，未追加');return}
+  if(!pendingPart||!pendingPart.matchedId){showToast('找不到對應零件','error');return}
+  const item=allItems.find(i=>i.id===pendingPart.matchedId);
+  if(!item){showToast('找不到零件','error');return}
+  item.quantity=(item.quantity||1)+qty;
+  item.updatedAt=Date.now();
+  markDirty(item.id);
+  try{await fbSaveItem(item)}catch(e){}
+  document.getElementById('result-qty-save').textContent='✓ 已追加 +'+qty;
+  document.getElementById('result-qty-save').disabled=true;
+  showToast('已追加 '+qty+' 件，庫存 '+item.quantity+' 件');
 }
 function searchDrawer(d){
   const pad=String(d).padStart(3,'0'), plain=String(d);
