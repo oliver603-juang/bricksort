@@ -184,7 +184,7 @@ tr:hover{background:var(--accent-bg)}
 <!-- ═══ MAIN ═══ -->
 <div id="s-main" class="screen active">
 <div class="content">
-  <input type="file" id="camera-take" accept="image/*" style="display:none" onchange="handleUnifiedPhoto(event)">
+  <input type="file" id="camera-take" accept="image/*" capture="environment" style="display:none" onchange="handleUnifiedPhoto(event)">
   <input type="file" id="camera-pick" accept="image/*" style="display:none" onchange="handleUnifiedGallery(event)">
   <input type="file" id="lens-input" accept="image/*" multiple style="display:none" onchange="handleLensInput(event)">
 
