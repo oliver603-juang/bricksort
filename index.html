@@ -184,7 +184,7 @@ tr:hover{background:var(--accent-bg)}
 <!-- ═══ MAIN ═══ -->
 <div id="s-main" class="screen active">
 <div class="content">
-  <input type="file" id="camera-take" accept="image/*" capture="environment" style="display:none" onchange="handleUnifiedPhoto(event)">
+  <input type="file" id="camera-take" accept="image/*" style="display:none" onchange="handleUnifiedPhoto(event)">
   <input type="file" id="camera-pick" accept="image/*" style="display:none" onchange="handleUnifiedGallery(event)">
   <input type="file" id="lens-input" accept="image/*" multiple style="display:none" onchange="handleLensInput(event)">
 
@@ -1349,14 +1349,18 @@ async function unifiedRecognize(base64,imgSrc,isLensHint){
       document.getElementById('result-cancel-btn').style.display='none';
       showScreen('s-result');return;
     }
-    // Brickognize matched but NOT in DB → treat as new part
-    if(bkId||bkName)setProcessingMsg('✓ '+(bkResult.name||bkId)+' (未建檔)，AI 分類中…');
-    // Fall through to Gemini as "part" (Brickognize recognized it as a part)
-    const item=await smartRecognize(base64,'',bkResult);await processResult(item);return;
+    // Brickognize matched but NOT in DB
+    if(bkResult.score>=70){
+      // High confidence → likely a real part, proceed with new part creation
+      if(bkId||bkName)setProcessingMsg('✓ '+(bkResult.name||bkId)+' (未建檔)，AI 分類中…');
+      const item=await smartRecognize(base64,'',bkResult);await processResult(item);return;
+    }
+    // Low confidence + not in DB → fall through to Gemini classification
+    // This catches set photos, instruction photos that Brickognize misidentified
   }
   // === Brickognize failed → Gemini smart classify ===
   setProcessingMsg('🤖 AI 分析圖片類型…');
-  const classifyPrompt='判斷這張圖片的類型。回應純JSON：{"type":"part 或 instruction 或 set 或 lens","set_num":"如果是套件/成品則填Rebrickable編號如42115-1否則空","set_name":"套件名稱","confidence":"high/medium/low"}。\n類型說明：\n- part：單一樂高零件的照片\n- instruction：樂高說明書頁面（有零件清單或組裝步驟圖）\n- set：樂高套件盒子、產品照、或已組裝好的完成品\n- lens：Google Lens 搜尋結果截圖';
+  const classifyPrompt='判斷這張圖片的類型。回應純JSON：{"type":"part 或 instruction 或 set 或 lens","set_num":"如果是套件/成品則填Rebrickable編號如42137-1否則空","set_name":"套件繁體中文名稱","confidence":"high/medium/low"}。\n類型說明：\n- part：單一樂高零件（一個零散的積木塊）\n- instruction：樂高說明書頁面（有零件清單或組裝步驟圖）\n- set：樂高套件的盒子照片、產品宣傳照、已組裝完成的成品模型、或 Google Lens 搜尋結果中顯示的套件資訊（含型號）\n- lens：Google Lens 搜尋結果截圖，但內容是單一零件（非套件）\n注意：如果 Google Lens 截圖中提到套件型號（如42137、75192），請判定為 set 並填入 set_num。';
   const classifyResp=await callGeminiAPI(classifyPrompt,base64,0);
   const classify=safeParseJSON(classifyResp);
   const imgType=classify.type||'part';
@@ -1394,7 +1398,7 @@ async function unifiedRecognize(base64,imgSrc,isLensHint){
     return;
   }
   
-  if(imgType==='lens'||isLensHint){
+  if((imgType==='lens'||isLensHint)&&imgType!=='set'&&imgType!=='instruction'){
     // Route to Lens handler
     setProcessingMsg('📱 解析 Lens 截圖…');
     const existingList=await buildExistingList();
