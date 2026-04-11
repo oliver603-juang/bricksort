@@ -549,7 +549,7 @@ const DRAWER_ML=SLOT_ML*2; // ~248
 const LARGE_W=108,LARGE_L=136,LARGE_H=53;
 const LARGE_ML=LARGE_W*LARGE_L*LARGE_H/1000; // ~778
 const LARGE_COUNT=27;
-const BAG_ML_DEFAULT=800,BAG_ML_LARGE=1000,BAG_THRESHOLD=100;
+const BAG_ML_DEFAULT=714,BAG_ML_MAX=714,BAG_ML_LARGE=1000,BAG_THRESHOLD=100;
 const MERGE_LIMIT=62,MERGE_MAX_ITEMS=4;
 const BASE_DRAWERS=450,EXPAND_SIZE=180;
 
@@ -937,8 +937,8 @@ function getSlotCap(slot,type){
 }
 function getBagVol(bagSlot){return allItems.reduce((s,i)=>{let v=0;if(i.slot===bagSlot&&i.slotType==='bag')v+=(i.estimateVolumeMl||0)*(i.quantity||1);if(i.overflowSlot===bagSlot)v+=(i.estimateVolumeMl||0)*(i.overflowQty||0);return s+v},0)}
 function findBagForOverflow(vol){
-  const cap=slotConfig.bagCapacity||BAG_ML_DEFAULT;const lastBag=slotConfig.nextBagSlot||'B01';const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
-  for(let n=lastNum-1;n>=1;n--){const label='B'+String(n).padStart(2,'0');if(getBagVol(label)+vol<=cap)return label}
+  const cap=BAG_ML_MAX;const lastBag=slotConfig.nextBagSlot||'B01';const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
+  for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');if(getBagVol(label)+vol<=cap)return label}
   const newBag=lastBag;slotConfig.nextBagSlot=advanceBag(newBag);markDirty('__config__');return newBag;
 }
 
@@ -1118,10 +1118,7 @@ function editorSaveItem(){
   markDirty(i.id);closeModal();renderStats();applyFilter();
 }
 function autoAssign(vt){
-  if(vt<=DRAWER_ML){const needFull=vt>SLOT_ML;const r=advanceSmallSlot(slotConfig.nextSmallSlot,needFull);slotConfig.nextSmallSlot=r.next;markDirty('__config__');return{slot:r.assigned,slotType:'small'}}
-  const bag=slotConfig.nextBagSlot||'B01';const cap=slotConfig.bagCapacity||BAG_ML_DEFAULT;
-  if(getBagVol(bag)+vt<=cap)return{slot:bag,slotType:'bag'};
-  const newBag=advanceBag(bag);slotConfig.nextBagSlot=newBag;markDirty('__config__');return{slot:newBag,slotType:'bag'};
+  return assignToBag(vt);
 }
 function deleteItem(){
   if(!currentItem)return;if(!confirm('確定刪除「'+(currentItem.name||currentItem.nameCN)+'」？'))return;
@@ -1134,7 +1131,7 @@ function deleteItem(){
 // GATEWAY ASSIGN (single-item, pointer-based)
 // ═══════════════════════════════════════════════════
 function assignToBag(vt){
-  const cap=slotConfig.bagCapacity||BAG_ML_DEFAULT;
+  const cap=BAG_ML_MAX;
   const lastBag=slotConfig.nextBagSlot||'B01';
   const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
   // Scan all existing bags for room
@@ -1149,40 +1146,7 @@ function assignToBag(vt){
 
 function gatewayAssign(item){
   const vol=item.estimateVolumeMl||2,qty=item.quantity||1,vt=vol*qty;
-  const tags=item.featureTags||item.feature_tags||[];
-  const isCompleteMF=item.is_complete_minifig||false;
-  const dimTooLarge=!fitsSmallSlot(item);
-  const catBag=isCategoryAlwaysBag(tags);
-  if(isCompleteMF||catBag||dimTooLarge||vt>LARGE_ML){return assignToBag(vt)}
-  if(vt>DRAWER_ML){return assignToBag(vt)}
-  if(vt>SLOT_ML){const r=advanceSmallSlot(slotConfig.nextSmallSlot,true);slotConfig.nextSmallSlot=r.next;return{slot:r.assigned,slotType:'small'}}
-  // Try to pack into existing expansion zone slots (451+) that have room
-  const ptrSlot=slotConfig.nextSmallSlot||'451a';
-  const ptrDrawer=parseInt((ptrSlot.match(/\d+/)||['451'])[0]);
-  const startDrawer=slotConfig.locked?451:ptrDrawer;
-  if(startDrawer<=ptrDrawer){
-    for(let d=startDrawer;d<=ptrDrawer;d++){
-      for(const sub of['a','b']){
-        const s=String(d).padStart(3,'0')+sub;
-        const slotItems=allItems.filter(i=>i.slot===s&&(i.slotType||'small')==='small');
-        if(slotItems.length===0||slotItems.length>=MERGE_MAX_ITEMS)continue;
-        const slotVol=slotItems.reduce((sum,i)=>sum+(i.estimateVolumeMl||0)*(i.quantity||1),0);
-        if(slotVol+vt<=SLOT_ML)return{slot:s,slotType:'small'};
-      }
-    }
-  }
-  // No existing slot has room → use pointer to open new slot
-  let cur=ptrSlot;
-  for(let tries=0;tries<20;tries++){
-    const r=advanceSmallSlot(cur,false);
-    const slotItems=allItems.filter(i=>i.slot===r.assigned&&(i.slotType||'small')==='small');
-    const slotVol=slotItems.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
-    if(slotItems.length<MERGE_MAX_ITEMS&&slotVol+vt<=SLOT_ML){
-      slotConfig.nextSmallSlot=r.next;return{slot:r.assigned,slotType:'small'};
-    }
-    cur=r.next;
-  }
-  const r=advanceSmallSlot(slotConfig.nextSmallSlot,false);slotConfig.nextSmallSlot=r.next;return{slot:r.assigned,slotType:'small'};
+  return assignToBag(vt);
 }
 
 // ═══════════════════════════════════════════════════
