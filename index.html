@@ -1454,7 +1454,7 @@ async function handleInstructionGallery(event){
 
 async function instructionRecognize(base64,imgSrc){
   setProcessingMsg('📋 定位零件清單框…');
-  const bboxPrompt='分析這張樂高說明書頁面（圖片已正向拍攝）。\n\n找出零件清單框（藍色/灰色/米色背景的圓角矩形），以及框內每個零件圖示的位置和大小。\n\n【box 座標規則】box 是彩色背景區域的內邊界，排除框外背景、步驟編號、組裝示意圖。\n\n【零件位置規則】對每個零件圖示，提供：\n- cx, cy：零件圖示的視覺中心（不含數量標記文字）\n- w, h：零件圖示本身的寬度和高度（只包含零件圖，不含周圍空白和數量標記）\n- qty：數量（由零件正下方的"Nx"標記決定）\n\n所有座標和尺寸為 0~1000 整數（圖片寬高千分比）。\n\n回應純JSON：\n{"box":[x1,y1,x2,y2],"parts":[{"cx":中心x,"cy":中心y,"w":寬,"h":高,"qty":數量}]}\n\n範例：框內有1個大零件和2個小零件 →\n{"box":[100,50,850,800],"parts":[{"cx":280,"cy":250,"w":350,"h":200,"qty":1},{"cx":650,"cy":200,"w":120,"h":100,"qty":2},{"cx":400,"cy":650,"w":80,"h":60,"qty":1}]}';
+  const bboxPrompt='分析這張樂高說明書頁面（圖片已正向拍攝）。\n\n找出零件清單框（藍色/灰色/米色背景的圓角矩形），以及框內每個零件圖示的位置和大小。\n\n【box 座標規則】box 是彩色背景區域的內邊界，排除框外背景、步驟編號、組裝示意圖。\n\n【零件位置規則】對每個零件圖示，提供：\n- cx, cy：零件圖示的視覺中心\n- w, h：零件圖示的緊密邊界寬高\n- qty：數量（由零件正下方的"Nx"標記決定）\n\n【重要】cx, cy, w, h 只描述零件圖示本身的像素範圍。完全忽略數量標記文字（"1x","2x"等）— 這些文字不屬於零件圖示，不應影響 cx, cy, w, h 的值。\n\n所有座標和尺寸為 0~1000 整數（圖片寬高千分比）。\n\n回應純JSON：\n{"box":[x1,y1,x2,y2],"parts":[{"cx":中心x,"cy":中心y,"w":寬,"h":高,"qty":數量}]}\n\n範例：框內有1個大零件和2個小零件 →\n{"box":[100,50,850,800],"parts":[{"cx":280,"cy":230,"w":320,"h":170,"qty":1},{"cx":650,"cy":200,"w":100,"h":80,"qty":2},{"cx":400,"cy":640,"w":70,"h":50,"qty":1}]}';
   const bboxResp=await callGeminiAPI(bboxPrompt,base64,0);
   const layout=safeParseJSON(bboxResp);
   const box=layout.box||layout.bbox;
@@ -1477,9 +1477,9 @@ async function instructionRecognize(base64,imgSrc){
         const p=parts[i];
         const cx=Math.round(p.cx/1000*sw);
         const cy=Math.round(p.cy/1000*sh);
-        // Use Gemini's w,h with 25% padding; fallback to box-based estimate
-        const pw=p.w?Math.round(p.w/1000*sw*1.25):Math.round(sw*0.25);
-        const ph=p.h?Math.round(p.h/1000*sh*1.25):Math.round(sh*0.25);
+        // Use Gemini's w,h directly (already tight around part, no padding needed)
+        const pw=p.w?Math.round(p.w/1000*sw):Math.round(sw*0.2);
+        const ph=p.h?Math.round(p.h/1000*sh):Math.round(sh*0.2);
         const halfW=Math.round(pw/2);
         const halfH=Math.round(ph/2);
         
@@ -1544,7 +1544,7 @@ function renderInstructionResults(results,imgSrc){
     html+='<img src="'+r.thumb+'" style="width:44px;height:44px;object-fit:contain;border-radius:6px;background:rgba(255,255,255,0.08)" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2244%22 height=%2244%22><text x=%2210%22 y=%2230%22 font-size=%2224%22>🧱</text></svg>\'">';
     html+='<div style="flex:1;min-width:0">';
     html+='<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+status+' '+nameDisplay+'</div>';
-    html+='<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">'+r.did+(r.qty>1?' × '+r.qty:'')+' '+matchInfo+'</div>';
+    html+='<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">'+r.did+' × '+r.qty+' '+matchInfo+'</div>';
     html+='</div>';
     html+=slotBadge;
     html+='</div></div>';
