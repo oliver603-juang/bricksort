@@ -1454,82 +1454,78 @@ async function handleInstructionGallery(event){
 
 async function instructionRecognize(base64,imgSrc){
   setProcessingMsg('📋 定位零件清單框…');
-  const bboxPrompt='分析這張樂高說明書頁面（圖片已正向拍攝）。\n\n找出零件清單框：有藍色、灰色或米色背景的圓角矩形區域。\n\n【box 座標規則】box 必須是彩色背景區域的內邊界，不包含：\n- 框外的白色/彩色頁面背景\n- 步驟編號數字（如"1","43","252"）\n- 組裝示意圖\n只包含有零件圖示的彩色背景區域。\n\n【零件分行規則】觀察框內零件的垂直位置，將位於相同高度的零件歸為同一行。每個數量標記（如"1x","2x"）位於所屬零件圖示的正下方。\n\n【寬度比例】如果同一行有多個零件且大小明顯不同，提供每個零件佔該行寬度的比例（0~1，總和=1）。大小相同時可省略 ratio。\n\n回應純JSON：\n{"box":[x1,y1,x2,y2],"rows":[{"count":數,"qty":[數量],"ratio":[寬度比例]}]}\n座標為 0~1000 整數（圖片寬高千分比）。\n\n範例1：上排1大1小(大佔65%)、下排1個 →\n{"box":[100,50,850,800],"rows":[{"count":2,"qty":[1,2],"ratio":[0.65,0.35]},{"count":1,"qty":[1]}]}\n範例2：上排3個大小相同 →\n{"box":[50,80,900,900],"rows":[{"count":3,"qty":[3,3,3]}]}';
+  const bboxPrompt='分析這張樂高說明書頁面（圖片已正向拍攝）。\n\n找出零件清單框（藍色/灰色/米色背景的圓角矩形），以及框內每個零件圖示的中心點位置。\n\n【box 座標規則】box 是彩色背景區域的內邊界，排除框外背景、步驟編號、組裝示意圖。\n\n【零件中心點規則】每個零件的 cx,cy 是該零件圖示的視覺中心位置（不含數量標記文字）。\n每個數量標記（如"1x","2x"）位於所屬零件圖示的正下方。\n\n回應純JSON：\n{"box":[x1,y1,x2,y2],"parts":[{"cx":中心x,"cy":中心y,"qty":數量}]}\n所有座標為 0~1000 整數（圖片寬高千分比）。\n\n範例：框內有3個零件 →\n{"box":[100,50,850,800],"parts":[{"cx":300,"cy":200,"qty":1},{"cx":650,"cy":250,"qty":2},{"cx":400,"cy":600,"qty":1}]}';
   const bboxResp=await callGeminiAPI(bboxPrompt,base64,0);
   const layout=safeParseJSON(bboxResp);
   const box=layout.box||layout.bbox;
-  const rowDefs=layout.rows||[];
+  const parts=layout.parts||[];
   
-  if(!box||!rowDefs.length){
+  if(!box||!parts.length){
     if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
     showTab('main');showToast('⚠ 未偵測到零件清單框','error');return;
   }
   
-  const totalParts=rowDefs.reduce((s,r)=>s+(r.count||1),0);
-  setProcessingMsg('✂ 裁切 '+totalParts+' 個零件…');
+  setProcessingMsg('✂ 裁切 '+parts.length+' 個零件…');
   
   const img=new Image();
   const cropResults=await new Promise((resolve)=>{
     img.onload=async()=>{
       const sw=img.width,sh=img.height;
-      const source=img;
-      const bx1=Math.round(box[0]/1000*sw);
-      const by1=Math.round(box[1]/1000*sh);
-      const bx2=Math.round(box[2]/1000*sw);
-      const by2=Math.round(box[3]/1000*sh);
-      const bw=bx2-bx1,bh=by2-by1;
-      const rowH=Math.floor(bh/rowDefs.length);
+      // Convert all centers to pixels
+      const centers=parts.map(p=>({
+        px:Math.round(p.cx/1000*sw),
+        py:Math.round(p.cy/1000*sh),
+        qty:p.qty||1
+      }));
       
-      const results=[];let partIdx=0;
-      for(let ri=0;ri<rowDefs.length;ri++){
-        const row=rowDefs[ri];
-        const nCols=row.count||1;
-        const qtyArr=row.qty||Array(nCols).fill(1);
-        // Use ratios if provided, otherwise equal division
-        const ratios=row.ratio&&row.ratio.length===nCols?row.ratio:Array(nCols).fill(1/nCols);
-        // Normalize ratios
-        const ratioSum=ratios.reduce((s,r)=>s+r,0);
-        const normRatios=ratios.map(r=>r/ratioSum);
-        
-        // Calculate column positions from ratios
-        let colStart=0;
-        for(let ci=0;ci<nCols;ci++){
-          const colW=Math.round(bw*normRatios[ci]);
-          const insetX=Math.round(colW*0.12);
-          const insetY=Math.round(rowH*0.12);
-          const cx=bx1+colStart+insetX;
-          const cy=by1+ri*rowH+insetY;
-          const cw=colW-insetX*2;
-          const ch=rowH-insetY*2;
-          colStart+=colW;
-          if(cw<5||ch<5)continue;
-          
-          const canvas=document.createElement('canvas');
-          canvas.width=cw;canvas.height=ch;
-          const ctx=canvas.getContext('2d');
-          ctx.drawImage(source,cx,cy,cw,ch,0,0,cw,ch);
-          const cropBase64=canvas.toDataURL('image/jpeg',0.9).split(',')[1];
-          const cropDataUrl=canvas.toDataURL('image/png');
-          
-          setProcessingMsg('🔍 Brickognize ('+(partIdx+1)+'/'+totalParts+')…');
-          const bkResult=await brickognizePredict(cropBase64);
-          
-          let match=null,matchMethod='',did='',name='';
-          if(bkResult&&bkResult.score>=30){
-            did=bkResult.id||'';name=bkResult.name||'';
-            const baseId=getBaseDesignId(did);const numBase=getNumericBase(did);
-            if(did){match=allItems.find(it=>(it.designId||'').toLowerCase()===did.toLowerCase());if(match)matchMethod='BK:'+bkResult.score+'%'}
-            if(!match&&baseId){match=allItems.find(it=>getBaseDesignId(it.designId)===baseId);if(match)matchMethod='BK變體:'+bkResult.score+'%'}
-            if(!match&&numBase){match=allItems.find(it=>getNumericBase(it.designId)===numBase);if(match)matchMethod='BK模具:'+bkResult.score+'%'}
-            if(!match&&(bkResult.name||'').length>=3){const bkn=bkResult.name.toLowerCase();match=allItems.find(it=>it.brickognizeName&&it.brickognizeName.toLowerCase()===bkn);if(match)matchMethod='BK名稱'}}
-          if(!match&&bkResult&&bkResult.score>=30)matchMethod='BK:'+bkResult.score+'% (未建檔)';
-          
-          const qty=qtyArr[ci]||1;
-          const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(bkResult?.imgUrl||cropDataUrl);
-          results.push({did:match?(match.designId||did):did,name:match?(match.nameCN||match.name||name):name,qty,match,matchMethod,thumb,bkScore:bkResult?.score||0});
-          partIdx++;
-          if(partIdx<totalParts)await new Promise(r=>setTimeout(r,300));
+      const results=[];
+      for(let i=0;i<centers.length;i++){
+        const c=centers[i];
+        // Calculate crop size: use distance to nearest neighbor × 0.7
+        let minDist=Math.max(sw,sh);
+        for(let j=0;j<centers.length;j++){
+          if(i===j)continue;
+          const d=Math.sqrt(Math.pow(centers[j].px-c.px,2)+Math.pow(centers[j].py-c.py,2));
+          if(d<minDist)minDist=d;
         }
+        // Crop size: 70% of nearest neighbor distance, min 60px, max half image
+        const cropSize=Math.max(60,Math.min(Math.round(minDist*0.7),Math.round(Math.min(sw,sh)*0.5)));
+        const halfW=Math.round(cropSize*0.55);// slightly wider than tall
+        const halfH=Math.round(cropSize*0.45);
+        
+        // Clamp to image bounds
+        const cx1=Math.max(0,c.px-halfW);
+        const cy1=Math.max(0,c.py-halfH);
+        const cx2=Math.min(sw,c.px+halfW);
+        const cy2=Math.min(sh,c.py+halfH);
+        const cw=cx2-cx1,ch=cy2-cy1;
+        if(cw<10||ch<10)continue;
+        
+        const canvas=document.createElement('canvas');
+        canvas.width=cw;canvas.height=ch;
+        const ctx=canvas.getContext('2d');
+        ctx.drawImage(img,cx1,cy1,cw,ch,0,0,cw,ch);
+        const cropBase64=canvas.toDataURL('image/jpeg',0.9).split(',')[1];
+        const cropDataUrl=canvas.toDataURL('image/png');
+        
+        setProcessingMsg('🔍 Brickognize ('+(i+1)+'/'+parts.length+')…');
+        const bkResult=await brickognizePredict(cropBase64);
+        
+        let match=null,matchMethod='',did='',name='';
+        if(bkResult&&bkResult.score>=30){
+          did=bkResult.id||'';name=bkResult.name||'';
+          const baseId=getBaseDesignId(did);const numBase=getNumericBase(did);
+          if(did){match=allItems.find(it=>(it.designId||'').toLowerCase()===did.toLowerCase());if(match)matchMethod='BK:'+bkResult.score+'%'}
+          if(!match&&baseId){match=allItems.find(it=>getBaseDesignId(it.designId)===baseId);if(match)matchMethod='BK變體:'+bkResult.score+'%'}
+          if(!match&&numBase){match=allItems.find(it=>getNumericBase(it.designId)===numBase);if(match)matchMethod='BK模具:'+bkResult.score+'%'}
+          if(!match&&(bkResult.name||'').length>=3){const bkn=bkResult.name.toLowerCase();match=allItems.find(it=>it.brickognizeName&&it.brickognizeName.toLowerCase()===bkn);if(match)matchMethod='BK名稱'}}
+        if(!match&&bkResult&&bkResult.score>=30)matchMethod='BK:'+bkResult.score+'% (未建檔)';
+        
+        const qty=c.qty;
+        const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(bkResult?.imgUrl||cropDataUrl);
+        results.push({did:match?(match.designId||did):did,name:match?(match.nameCN||match.name||name):name,qty,match,matchMethod,thumb,bkScore:bkResult?.score||0});
+        
+        if(i<centers.length-1)await new Promise(r=>setTimeout(r,300));
       }
       resolve(results);
     };
