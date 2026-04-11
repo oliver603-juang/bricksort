@@ -189,8 +189,7 @@ tr:hover{background:var(--accent-bg)}
 <div id="s-main" class="screen active">
 <div class="content">
   <input type="file" id="camera-take" accept="image/*" capture="environment" style="display:none" onchange="handleCameraPhoto(event)">
-  <input type="file" id="gallery-lens" accept="image/*" style="display:none" onchange="handleLensGallery(event)">
-  <input type="file" id="gallery-instruction" accept="image/*" style="display:none" onchange="handleInstructionGallery(event)">
+  <input type="file" id="gallery-pick" accept="image/*" style="display:none" onchange="handleGalleryPick(event)">
 
   <!-- Search -->
   <div class="search-bar">
@@ -202,8 +201,8 @@ tr:hover{background:var(--accent-bg)}
   <!-- Main buttons -->
   <div style="display:flex;gap:8px;margin-bottom:4px">
     <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('camera-take').click()">📷 拍照</button>
-    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="document.getElementById('gallery-lens').click()">🖼 建檔</button>
-    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="document.getElementById('gallery-instruction').click()">📋 說明書</button>
+    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="openGallery('lens')">🖼 建檔</button>
+    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="openGallery('instruction')">📋 說明書</button>
   </div>
   <div style="font-size:10px;color:var(--dim);text-align:center;margin-bottom:10px">拍照：查位置 ｜ 建檔：Lens 截圖 ｜ 說明書：正拍零件清單框</div>
 
@@ -1308,6 +1307,18 @@ async function parseLensScreenshot(dataUrl){
 // ═══════════════════════════════════════════════════
 // UNIFIED PHOTO HANDLER (auto-detect: part / instruction / set)
 // ═══════════════════════════════════════════════════
+// ═══ GALLERY ROUTING ═══
+let _galleryMode='lens';
+function openGallery(mode){
+  _galleryMode=mode;
+  window._galleryMode=mode;
+  document.getElementById('gallery-pick').click();
+}
+function handleGalleryPick(event){
+  if(_galleryMode==='instruction')handleInstructionGallery(event);
+  else handleLensGallery(event);
+}
+
 // ═══ CAMERA: only find location (Brickognize → Gemini fallback) ═══
 async function handleCameraPhoto(event){
   const file=event.target.files[0];if(!file)return;event.target.value='';
