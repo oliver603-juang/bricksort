@@ -1478,26 +1478,35 @@ async function instructionRecognize(base64,imgSrc){
         qty:p.qty||1
       }));
       
+      // Calculate box dimensions for minimum crop size
+      const bx1=Math.round(box[0]/1000*sw),by1=Math.round(box[1]/1000*sh);
+      const bx2=Math.round(box[2]/1000*sw),by2=Math.round(box[3]/1000*sh);
+      const boxW=bx2-bx1,boxH=by2-by1;
+      const minCropSize=Math.round(Math.min(boxW,boxH)/(centers.length+1));
+      
       const results=[];
       for(let i=0;i<centers.length;i++){
         const c=centers[i];
-        // Calculate crop size: use distance to nearest neighbor × 0.7
+        // Calculate crop size: use distance to nearest neighbor × 0.85
         let minDist=Math.max(sw,sh);
         for(let j=0;j<centers.length;j++){
           if(i===j)continue;
           const d=Math.sqrt(Math.pow(centers[j].px-c.px,2)+Math.pow(centers[j].py-c.py,2));
           if(d<minDist)minDist=d;
         }
-        // Crop size: 70% of nearest neighbor distance, min 60px, max half image
-        const cropSize=Math.max(60,Math.min(Math.round(minDist*0.7),Math.round(Math.min(sw,sh)*0.5)));
-        const halfW=Math.round(cropSize*0.55);// slightly wider than tall
-        const halfH=Math.round(cropSize*0.45);
+        // Crop size: 85% of nearest neighbor, min based on box size, max half image
+        const cropSize=Math.max(minCropSize,Math.min(Math.round(minDist*0.85),Math.round(Math.min(sw,sh)*0.5)));
+        const halfW=Math.round(cropSize*0.55);
+        const halfH=Math.round(cropSize*0.50);
+        
+        // Shift center UP by 8% of cropSize (quantity labels are below parts)
+        const adjustedY=c.py-Math.round(cropSize*0.08);
         
         // Clamp to image bounds
         const cx1=Math.max(0,c.px-halfW);
-        const cy1=Math.max(0,c.py-halfH);
+        const cy1=Math.max(0,adjustedY-halfH);
         const cx2=Math.min(sw,c.px+halfW);
-        const cy2=Math.min(sh,c.py+halfH);
+        const cy2=Math.min(sh,adjustedY+halfH);
         const cw=cx2-cx1,ch=cy2-cy1;
         if(cw<10||ch<10)continue;
         
