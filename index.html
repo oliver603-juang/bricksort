@@ -1454,7 +1454,7 @@ async function handleInstructionGallery(event){
 
 async function instructionRecognize(base64,imgSrc){
   setProcessingMsg('📋 定位零件清單框…');
-  const bboxPrompt='分析這張樂高說明書頁面（圖片已正向拍攝）。\n\n找出零件清單框（藍色/灰色/米色背景的圓角矩形），以及框內每個零件圖示的位置和大小。\n\n【box 座標規則】box 是彩色背景區域的內邊界，排除框外背景、步驟編號、組裝示意圖。\n\n【零件位置規則】對每個零件圖示，提供：\n- cx, cy：零件圖示的視覺中心\n- w, h：零件圖示的邊界寬高（含少量留白，確保零件不被切邊）\n- qty：數量（由零件正下方的"Nx"標記決定）\n\n【重要】cx, cy, w, h 只描述零件圖示本身的像素範圍。完全忽略數量標記文字（"1x","2x"等）— 這些文字不屬於零件圖示，不應影響 cx, cy, w, h 的值。\n\n所有座標和尺寸為 0~1000 整數（圖片寬高千分比）。\n\n回應純JSON：\n{"box":[x1,y1,x2,y2],"parts":[{"cx":中心x,"cy":中心y,"w":寬,"h":高,"qty":數量}]}\n\n範例：框內有1個大零件和2個小零件 →\n{"box":[100,50,850,800],"parts":[{"cx":280,"cy":230,"w":320,"h":170,"qty":1},{"cx":650,"cy":200,"w":100,"h":80,"qty":2},{"cx":400,"cy":640,"w":70,"h":50,"qty":1}]}';
+  const bboxPrompt='分析這張樂高說明書頁面（圖片已正向拍攝）。\n\n找出零件清單框（藍色/灰色/米色背景的圓角矩形），以及框內每個零件圖示的位置和大小。\n\n【box 座標規則】box 是彩色背景區域的內邊界，排除框外背景、步驟編號、組裝示意圖。\n\n【零件位置規則】每個零件圖示都有黑色輪廓線包圍，請以黑色輪廓線的外緣作為邊界來估算位置和大小：\n- cx, cy：黑色輪廓線範圍的視覺中心\n- w, h：黑色輪廓線外緣的寬高（即零件圖示含輪廓線的完整佔位面積）\n- qty：數量（由零件正下方的"Nx"標記決定）\n\n【重要】cx, cy, w, h 只描述零件圖示本身的像素範圍。完全忽略數量標記文字（"1x","2x"等）— 這些文字不屬於零件圖示，不應影響 cx, cy, w, h 的值。\n\n所有座標和尺寸為 0~1000 整數（圖片寬高千分比）。\n\n回應純JSON：\n{"box":[x1,y1,x2,y2],"parts":[{"cx":中心x,"cy":中心y,"w":寬,"h":高,"qty":數量}]}\n\n範例：框內有1個大零件和2個小零件 →\n{"box":[100,50,850,800],"parts":[{"cx":280,"cy":230,"w":320,"h":170,"qty":1},{"cx":650,"cy":200,"w":100,"h":80,"qty":2},{"cx":400,"cy":640,"w":70,"h":50,"qty":1}]}';
   const bboxResp=await callGeminiAPI(bboxPrompt,base64,0);
   const layout=safeParseJSON(bboxResp);
   const box=layout.box||layout.bbox;
@@ -1468,7 +1468,7 @@ async function instructionRecognize(base64,imgSrc){
   setProcessingMsg('✂ 裁切 '+parts.length+' 個零件…');
   
   const img=new Image();
-  const cropResults=await new Promise((resolve)=>{
+  const {results:cropResults,sw:imgW,sh:imgH}=await new Promise((resolve)=>{
     img.onload=async()=>{
       const sw=img.width,sh=img.height;
       
@@ -1517,24 +1517,24 @@ async function instructionRecognize(base64,imgSrc){
         
         const qty=p.qty||1;
         const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(bkResult?.imgUrl||cropDataUrl);
-        results.push({did:match?(match.designId||did):did,name:match?(match.nameCN||match.name||name):name,qty,match,matchMethod,thumb,bkScore:bkResult?.score||0});
+        results.push({did:match?(match.designId||did):did,name:match?(match.nameCN||match.name||name):name,qty,match,matchMethod,thumb,bkScore:bkResult?.score||0,_cx:p.cx,_cy:p.cy,_w:p.w,_h:p.h});
         
         if(i<parts.length-1)await new Promise(r=>setTimeout(r,300));
       }
-      resolve(results);
+      resolve({results,sw,sh});
     };
-    img.onerror=()=>resolve([]);
+    img.onerror=()=>resolve({results:[],sw:0,sh:0});
     img.src=imgSrc;
   });
-  renderInstructionResults(cropResults,imgSrc);
+  renderInstructionResults(cropResults,imgSrc,imgW,imgH);
 }
 
-function renderInstructionResults(results,imgSrc){
+function renderInstructionResults(results,imgSrc,imgW,imgH){
   const found=results.filter(r=>r.match).length;
   const total=results.length;
   let html='';
   // Instruction image preview
-  if(imgSrc)html+='<div style="margin-bottom:12px;text-align:center"><img src="'+imgSrc+'" style="max-width:100%;max-height:200px;border-radius:10px;border:1px solid var(--border)" onerror="this.style.display=\'none\'"></div>';
+  if(imgSrc)html+='<div style="margin-bottom:12px;text-align:center"><img src="'+imgSrc+'" style="max-width:100%;max-height:200px;border-radius:10px;border:1px solid var(--border)" onerror="this.style.display=\'none\'"><div style="font-size:10px;color:var(--dim);margin-top:4px">圖片 '+imgW+' × '+imgH+' px</div></div>';
   // Summary
   html+='<div class="stats-row" style="margin-bottom:12px"><div class="stat-card"><div class="stat-num">'+total+'</div><div class="stat-label">零件種類</div></div><div class="stat-card"><div class="stat-num" style="color:var(--green)">'+found+'</div><div class="stat-label">找到</div></div><div class="stat-card"><div class="stat-num" style="color:'+(total-found>0?'var(--red)':'var(--dim)')+'">'+( total-found)+'</div><div class="stat-label">缺少</div></div></div>';
   // Parts list
@@ -1549,6 +1549,7 @@ function renderInstructionResults(results,imgSrc){
     html+='<div style="flex:1;min-width:0">';
     html+='<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+status+' '+nameDisplay+'</div>';
     html+='<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">'+r.did+' × '+r.qty+' '+matchInfo+'</div>';
+    if(r._cx!=null)html+='<div style="font-size:10px;color:var(--dim);font-family:var(--mono)">cx:'+r._cx+' cy:'+r._cy+' w:'+r._w+' h:'+r._h+'</div>';
     html+='</div>';
     html+=slotBadge;
     html+='</div></div>';
