@@ -186,7 +186,6 @@ tr:hover{background:var(--accent-bg)}
 <div class="content">
   <input type="file" id="camera-take" accept="image/*" capture="environment" style="display:none" onchange="handleUnifiedPhoto(event)">
   <input type="file" id="camera-pick" accept="image/*" style="display:none" onchange="handleUnifiedGallery(event)">
-  <input type="file" id="lens-input" accept="image/*" multiple style="display:none" onchange="handleLensInput(event)">
 
   <!-- Search -->
   <div class="search-bar">
@@ -200,27 +199,23 @@ tr:hover{background:var(--accent-bg)}
     <button class="btn" style="flex:1;padding:16px;font-size:15px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('camera-take').click()">📷 拍照</button>
     <button class="btn" style="flex:1;padding:16px;font-size:15px;font-weight:700" onclick="document.getElementById('camera-pick').click()">🖼 圖庫</button>
   </div>
-  <div style="font-size:11px;color:var(--dim);text-align:center;margin-bottom:10px">AI 自動判斷：零件→建檔/查位置 · 說明書→查零件 · 盒子/成品→查庫存</div>
+  <div style="font-size:11px;color:var(--dim);text-align:center;margin-bottom:10px">拍照：零件→查位置/建檔 · 說明書→查零件位置 ｜ 圖庫：Lens 截圖建檔</div>
 
   <!-- Advanced panel -->
   <div style="margin-bottom:10px">
     <button class="btn btn-sm" onclick="togglePanel('adv-panel')" style="width:100%;text-align:left;padding:8px 12px;font-size:12px;color:var(--muted)">▸ 進階功能</button>
     <div id="adv-panel" style="display:none;padding:8px 0">
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <input type="text" id="part-id-input" placeholder="零件編號（如 3001 54200）" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:12px;font-family:var(--mono)" onkeydown="if(event.key==='Enter')handlePartIdBatch()">
+        <input type="text" id="part-id-input" inputmode="numeric" placeholder="零件編號（如 3001 54200）" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:12px;font-family:var(--mono)" onkeydown="if(event.key==='Enter'){event.preventDefault();handlePartIdBatch()}">
         <button class="btn btn-sm" onclick="handlePartIdBatch()">🔍 查詢</button>
       </div>
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <input type="text" id="set-check-input" placeholder="盒組編號（如 42115）查庫存" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:12px;font-family:var(--mono)" onkeydown="if(event.key==='Enter')checkSetInventory()">
+        <input type="text" id="set-check-input" inputmode="numeric" placeholder="盒組編號（如 42115）查庫存" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:12px;font-family:var(--mono)" onkeydown="if(event.key==='Enter'){event.preventDefault();checkSetInventory()}">
         <button class="btn btn-sm" onclick="checkSetInventory()">📦 庫存</button>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <input type="text" id="set-id-input" placeholder="盒組編號（如 42115）匯入建檔" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:12px;font-family:var(--mono)" onkeydown="if(event.key==='Enter')importSet()">
-        <button class="btn btn-sm btn-green" onclick="importSet()">📥 匯入</button>
-      </div>
       <div style="display:flex;gap:6px;align-items:center">
-        <button class="btn btn-sm" style="flex:1" onclick="document.getElementById('lens-input').click()">📷 Lens截圖（批次）</button>
-        <button class="btn btn-sm" style="flex:1;display:none" onclick="openNewItem()">➕ 手動新建檔</button>
+        <input type="text" id="set-id-input" inputmode="numeric" placeholder="盒組編號（如 42115）匯入建檔" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:12px;font-family:var(--mono)" onkeydown="if(event.key==='Enter'){event.preventDefault();importSet()}">
+        <button class="btn btn-sm btn-green" onclick="importSet()">📥 匯入</button>
       </div>
     </div>
   </div>
@@ -1299,24 +1294,17 @@ async function handleUnifiedGallery(event){
   const file=event.target.files[0];if(!file)return;event.target.value='';
   const reader=new FileReader();reader.onload=async e=>{
     const dataUrl=e.target.result;
-    // Detect Lens screenshot (check dimensions: tall narrow screenshot with search UI)
-    const img=new Image();img.onload=async()=>{
-      const ratio=img.height/img.width;
-      const isLens=ratio>1.6; // Lens screenshots are tall phone screenshots
-      if(isLens){
-        // Try as Lens screenshot first
-        currentImageData=await cropLensThumb(dataUrl);
-        const resized=await resizeImage(dataUrl,800);
-        showScreen('s-processing');
-        try{await unifiedRecognize(resized.split(',')[1],resized,true)}
-        catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}
-      } else {
-        const resized=await resizeImage(dataUrl,800);currentImageData=resized;
-        showScreen('s-processing');
-        try{await unifiedRecognize(resized.split(',')[1],resized)}
-        catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}
-      }
-    };img.src=dataUrl;
+    currentImageData=await cropLensThumb(dataUrl).catch(()=>dataUrl);
+    const resized=await resizeImage(dataUrl,800);
+    showScreen('s-processing');
+    try{
+      setProcessingMsg('📱 解析 Lens 截圖…');
+      const base64=resized.split(',')[1];
+      const existingList=await buildExistingList();
+      const prompt='【重要】先判斷圖中是「完整組裝人偶」(有頭+身體+腿)還是「單一零件」。完整人偶：design_id填BrickLink人偶編號(如njo788,sw0001)，is_complete_minifig=true，bricklink_category="Minifigure"。單一零件：design_id填數字Design ID，is_complete_minifig=false。讀取截圖中的積木。回應純JSON：{"design_id":"編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型零件id或null。已有:'+existingList+'"}';
+      const textResp=await callGeminiAPI(prompt,base64,0,GEMINI_LEGO_SYSTEM);
+      const item=safeParseJSON(textResp);await processResult(item);
+    }catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}
   };reader.readAsDataURL(file);
 }
 
@@ -1373,7 +1361,7 @@ async function unifiedRecognize(base64,imgSrc,isLensHint){
   }
   // === Brickognize failed → Gemini smart classify ===
   setProcessingMsg('🤖 AI 分析圖片類型…');
-  const classifyPrompt='判斷這張圖片的類型。回應純JSON：{"type":"part 或 instruction 或 set 或 lens","set_num":"如果是套件/成品則填Rebrickable編號如42137-1否則空","set_name":"套件繁體中文名稱","confidence":"high/medium/low"}。\n類型說明：\n- part：單一樂高零件（一個零散的積木塊）\n- instruction：樂高說明書頁面（有零件清單或組裝步驟圖）\n- set：樂高套件的盒子照片、產品宣傳照、已組裝完成的成品模型、或 Google Lens 搜尋結果中顯示的套件資訊（含型號）\n- lens：Google Lens 搜尋結果截圖，但內容是單一零件（非套件）\n注意：如果 Google Lens 截圖中提到套件型號（如42137、75192），請判定為 set 並填入 set_num。';
+  const classifyPrompt='判斷這張圖片的類型。回應純JSON：{"type":"part 或 instruction","confidence":"high/medium/low"}。\n類型說明：\n- part：單一樂高零件（一個零散的積木塊）\n- instruction：樂高說明書頁面（有零件清單框或組裝步驟圖）';
   const classifyResp=await callGeminiAPI(classifyPrompt,base64,0);
   const classify=safeParseJSON(classifyResp);
   const imgType=classify.type||'part';
@@ -1400,62 +1388,8 @@ async function unifiedRecognize(base64,imgSrc,isLensHint){
     renderInstructionResults(results,imgSrc);return;
   }
   
-  if(imgType==='set'){
-    // Route to set handler
-    const setNum=classify.set_num||'';const setName=classify.set_name||classify.name_cn||'';
-    if(!setNum){showTab('main');showToast('無法辨識套件編號','error');return}
-    if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
-    const yes=confirm('辨識結果：\n\n'+(setName||'')+'\nSet: '+setNum+'\n\n確定檢查此套件的庫存？');
-    if(yes){document.getElementById('set-check-input').value=setNum;await checkSetInventory()}
-    else{showTab('main')}
-    return;
-  }
-  
-  if((imgType==='lens'||isLensHint)&&imgType!=='set'&&imgType!=='instruction'){
-    // Route to Lens handler
-    setProcessingMsg('📱 解析 Lens 截圖…');
-    const existingList=await buildExistingList();
-    const prompt='【重要】先判斷圖中是「完整組裝人偶」(有頭+身體+腿)還是「單一零件」。完整人偶：design_id填BrickLink人偶編號(如njo788,sw0001)，is_complete_minifig=true，bricklink_category="Minifigure"。單一零件：design_id填數字Design ID，is_complete_minifig=false。讀取截圖中的積木。回應純JSON：{"design_id":"編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型零件id或null。已有:'+existingList+'"}';
-    const textResp=await callGeminiAPI(prompt,base64,0,GEMINI_LEGO_SYSTEM);
-    const item=safeParseJSON(textResp);await processResult(item);return;
-  }
-  
   // Default: treat as part → smartRecognize
   const item=await smartRecognize(base64,'',bkResult);await processResult(item);
-}
-
-async function handleInstructionPhoto(event){
-  const file=event.target.files[0];if(!file)return;event.target.value='';
-  const reader=new FileReader();reader.onload=async e=>{
-    const resized=await resizeImage(e.target.result,1200);
-    const base64=resized.split(',')[1];
-    showScreen('s-processing');setProcessingMsg('📋 分析說明書零件清單…');
-    try{
-      const prompt='分析這張樂高說明書頁面。找出左上角（或頁面中）的零件清單框，提取每個零件的資訊。如果沒有清單框，則分析組裝示意圖中可見的所有零件。回應純JSON陣列：[{"design_id":"零件Design ID數字","name":"英文名稱","qty":數量}]。注意：只提取零件編號和數量，不需要顏色資訊。';
-      const textResp=await callGeminiAPI(prompt,base64,0,GEMINI_LEGO_SYSTEM);
-      const parts=safeParseJSON(textResp);
-      const partsList=Array.isArray(parts)?parts:(parts.parts||parts.items||[parts]);
-      setProcessingMsg('比對倉庫資料…');
-      // Match each part against allItems
-      const results=partsList.map(p=>{
-        const did=(p.design_id||p.designId||'').toString();
-        const qty=p.qty||p.quantity||1;
-        const name=p.name||'';
-        let match=null,matchMethod='';
-        // Exact ID
-        if(did){match=allItems.find(i=>(i.designId||'').toLowerCase()===did.toLowerCase());if(match)matchMethod='ID精確'}
-        // Base ID (strip print suffix)
-        if(!match&&did){const base=getBaseDesignId(did);if(base)match=allItems.find(i=>getBaseDesignId(i.designId)===base);if(match)matchMethod='印刷變體'}
-        // Numeric base (strip mold variant)
-        if(!match&&did){const num=getNumericBase(did);if(num){const c=allItems.find(i=>getNumericBase(i.designId)===num&&(i.designId||'')!==did);if(c){match=c;matchMethod='模具變體'}}}
-        // Name fuzzy
-        if(!match&&name.length>=4){const nl=name.toLowerCase();match=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=4&&(n.includes(nl)||nl.includes(n))});if(match)matchMethod='名稱相似'}
-        const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(did?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(did)+'.png':'');
-        return{did,name,qty,match,matchMethod,thumb};
-      });
-      renderInstructionResults(results,resized);
-    }catch(err){showTab('main');showToast('說明書分析失敗：'+err.message,'error')}
-  };reader.readAsDataURL(file);
 }
 
 function renderInstructionResults(results,imgSrc){
@@ -1493,34 +1427,6 @@ function renderInstructionResults(results,imgSrc){
   document.getElementById('instruction-results').innerHTML=html;
   showScreen('s-instruction');
   if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
-}
-
-async function handleSetBoxPhoto(event){
-  const file=event.target.files[0];if(!file)return;event.target.value='';
-  const reader=new FileReader();reader.onload=async e=>{
-    const resized=await resizeImage(e.target.result,800);
-    const base64=resized.split(',')[1];
-    showScreen('s-processing');setProcessingMsg('📷 辨識樂高套組…');
-    try{
-      const prompt='辨識圖片中的樂高 (LEGO) 套組。找出套組的 Set Number（Rebrickable 格式，如 42115-1、75192-1、10300-1）。如果圖片中有盒子、產品編號、或可辨識的套組特徵，請回應。回應純JSON：{"set_num":"套組編號（含-1後綴）","name":"套組英文名稱","name_cn":"繁體中文名稱","confidence":"high/medium/low"}';
-      const textResp=await callGeminiAPI(prompt,base64,0);
-      const parsed=safeParseJSON(textResp);
-      if(!parsed.set_num){throw new Error('無法辨識套組編號')}
-      // Show result and ask user to confirm
-      if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
-      const conf=parsed.confidence==='high'?'✅ 高信心':'⚠️ '+parsed.confidence;
-      const yes=confirm('辨識結果：\n\n'+(parsed.name_cn||parsed.name||'')+'\nSet: '+parsed.set_num+'\n信心度: '+conf+'\n\n確定檢查此套組的庫存？');
-      if(yes){
-        document.getElementById('set-check-input').value=parsed.set_num;
-        await checkSetInventory();
-      } else {
-        showTab('main');
-      }
-    }catch(err){
-      if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
-      showTab('main');showToast('套組辨識失敗：'+err.message,'error');
-    }
-  };reader.readAsDataURL(file);
 }
 
 async function checkSetInventory(){
