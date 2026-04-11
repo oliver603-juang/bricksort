@@ -1358,7 +1358,7 @@ async function handleUnifiedGallery(event){
       setProcessingMsg('📱 解析 Lens 截圖…');
       const base64=resized.split(',')[1];
       const existingList=await buildExistingList();
-      const prompt='【重要】先判斷圖中是「完整組裝人偶」(有頭+身體+腿)還是「單一零件」。完整人偶：design_id填BrickLink人偶編號(如njo788,sw0001)，is_complete_minifig=true，bricklink_category="Minifigure"。單一零件：design_id填數字Design ID，is_complete_minifig=false。讀取截圖中的積木。回應純JSON：{"design_id":"編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型零件id或null。已有:'+existingList+'"}';
+      const prompt='分析圖片中的樂高/積木物品，建立為新物品。可能是：\n1. 單一零件：design_id填Design ID，dim填零件尺寸\n2. 完整人偶：design_id填人偶編號(如njo788)，is_complete_minifig=true\n3. 套件/盒組成品：design_id填套件編號(如701805或42115)，dim填組裝完成後的整體尺寸(cm轉mm)，is_oversize=true\n\n回應純JSON：{"design_id":"編號","name":"英文名","name_cn":"繁體中文名","bricklink_category":"分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型id或null。已有:'+existingList+'"}';
       const textResp=await callGeminiAPI(prompt,base64,0,GEMINI_LEGO_SYSTEM);
       const item=safeParseJSON(textResp);await processResult(item);
     }catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}
@@ -1407,14 +1407,11 @@ async function unifiedRecognize(base64,imgSrc,isLensHint){
       document.getElementById('result-qty-save').disabled=false;
       showScreen('s-result');return;
     }
-    // Brickognize matched but NOT in DB
-    if(bkResult.score>=70){
-      // High confidence → likely a real part, proceed with new part creation
-      if(bkId||bkName)setProcessingMsg('✓ '+(bkResult.name||bkId)+' (未建檔)，AI 分類中…');
-      const item=await smartRecognize(base64,'',bkResult);await processResult(item);return;
-    }
-    // Low confidence + not in DB → fall through to Gemini classification
-    // This catches set photos, instruction photos that Brickognize misidentified
+    // Brickognize matched but NOT in DB → prompt to use Lens
+    if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+    showTab('main');
+    showToast('⚠ 零件「'+(bkResult.name||bkId)+'」未建檔\n請使用 🖼 圖庫（Lens 截圖）建檔','error',4000);
+    return;
   }
   // === Brickognize failed → Gemini smart classify ===
   setProcessingMsg('🤖 AI 分析圖片類型…');
@@ -1445,8 +1442,57 @@ async function unifiedRecognize(base64,imgSrc,isLensHint){
     renderInstructionResults(results,imgSrc);return;
   }
   
-  // Default: treat as part → smartRecognize
-  const item=await smartRecognize(base64,'',bkResult);await processResult(item);
+  // Default: treat as part → Gemini identify then match DB
+  setProcessingMsg('🤖 AI 辨識零件…');
+  const existingList2=await buildExistingList();
+  const partPrompt='辨識圖中的樂高物品（可能是單一零件或已組裝的套件成品）。回應純JSON：{"design_id":"Design ID或套件編號","name":"英文名","name_cn":"繁體中文名","matched_existing_id":"同外型物品id或null。已有:'+existingList2+'"}';
+  const partResp=await callGeminiAPI(partPrompt,base64,0,GEMINI_LEGO_SYSTEM);
+  const partInfo=safeParseJSON(partResp);
+  // Try to match against DB
+  const geminiId=(partInfo.design_id||partInfo.designId||'').toString();
+  const geminiMatchedId=partInfo.matched_existing_id||'';
+  let dbMatch=null;
+  // Check matched_existing_id first
+  if(geminiMatchedId&&geminiMatchedId!=='null'){dbMatch=allItems.find(i=>i.id===geminiMatchedId)}
+  // Exact ID
+  if(!dbMatch&&geminiId){dbMatch=allItems.find(i=>(i.designId||'').toLowerCase()===geminiId.toLowerCase())}
+  // Base ID
+  if(!dbMatch&&geminiId){const base=getBaseDesignId(geminiId);if(base)dbMatch=allItems.find(i=>getBaseDesignId(i.designId)===base)}
+  // Numeric base
+  if(!dbMatch&&geminiId){const num=getNumericBase(geminiId);if(num)dbMatch=allItems.find(i=>getNumericBase(i.designId)===num)}
+  // Name fuzzy
+  if(!dbMatch){const cn=(partInfo.name_cn||'');const en=(partInfo.name||'');if(en.length>=5){const nl=en.toLowerCase();dbMatch=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(nl)||nl.includes(n))})}}
+  
+  if(dbMatch){
+    // Found in DB → show location
+    if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+    const thumb=dbMatch.thumbnailUrl||(dbMatch.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(dbMatch.designId)+'.png':'');
+    pendingPart={design_id:dbMatch.designId,name:dbMatch.name,name_cn:dbMatch.nameCN||'',designId:dbMatch.designId,slot:dbMatch.slot,slotType:dbMatch.slotType||'small',thumbnailUrl:thumb,estimateVolumeMl:dbMatch.estimateVolumeMl||0,featureTags:dbMatch.featureTags||[],bricklinkCategory:dbMatch.bricklinkCategory||'',description:dbMatch.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:dbMatch.id};
+    document.getElementById('result-img').src=thumb||currentImageData||'';
+    document.getElementById('result-name').textContent=dbMatch.nameCN||dbMatch.name||'';
+    document.getElementById('result-designid').innerHTML='Design ID: '+(dbMatch.designId||'')+' <span style="font-size:10px;padding:2px 6px;background:rgba(76,175,80,0.15);border:1px solid var(--green);color:var(--green);border-radius:4px">🤖 AI 比對</span>';
+    document.getElementById('result-desc').textContent=dbMatch.description||'';
+    document.getElementById('result-tags').innerHTML=(dbMatch.featureTags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
+    document.getElementById('result-volume').textContent='佔位體積 ≈ '+(dbMatch.estimateVolumeMl||0)+'ml';
+    document.getElementById('result-slot').textContent=dbMatch.slot;
+    document.getElementById('result-slot-type').textContent=dbMatch.slotType==='large'?'大抽屜':dbMatch.slotType==='bag'?'收納袋':'小抽屜分格';
+    renderMiniMap(dbMatch.slot);
+    const banner=document.getElementById('match-banner');
+    banner.style.display='block';banner.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--green)">🤖 AI 辨識成功</div><div style="font-size:12px;color:var(--muted)">「'+(dbMatch.nameCN||dbMatch.name)+'」已在 '+dbMatch.slot+'</div>';
+    document.getElementById('result-confirm-btn').textContent='← 返回';
+    document.getElementById('result-confirm-btn').onclick=()=>goBack();
+    document.getElementById('result-cancel-btn').style.display='none';
+    document.getElementById('result-qty-row').style.display='flex';
+    document.getElementById('result-qty').value='1';
+    document.getElementById('result-qty-save').textContent='✓ 追加';
+    document.getElementById('result-qty-save').disabled=false;
+    showScreen('s-result');return;
+  }
+  // NOT in DB → alert
+  if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+  showTab('main');
+  const partName=partInfo.name_cn||partInfo.name||geminiId||'未知零件';
+  showToast('⚠ 零件「'+partName+'」未建檔\n請使用 🖼 圖庫（Lens 截圖）建檔','error',4000);
 }
 
 function renderInstructionResults(results,imgSrc){
@@ -2334,7 +2380,7 @@ function importFullData(event){
   event.target.value='';
 }
 
-function showToast(msg,type){const t=document.getElementById('toast');t.textContent=msg;t.style.background=type==='error'?'var(--red)':'var(--green)';t.style.color=type==='error'?'#fff':'#0a0a0a';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
+function showToast(msg,type,duration){const t=document.getElementById('toast');t.innerHTML=msg.replace(/\n/g,'<br>');t.style.background=type==='error'?'var(--red)':'var(--green)';t.style.color=type==='error'?'#fff':'#0a0a0a';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),duration||2500)}
 
 // ═══════════════════════════════════════════════════
 // START
