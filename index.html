@@ -188,8 +188,9 @@ tr:hover{background:var(--accent-bg)}
 <!-- ═══ MAIN ═══ -->
 <div id="s-main" class="screen active">
 <div class="content">
-  <input type="file" id="camera-take" accept="image/*" capture="environment" style="display:none" onchange="handleUnifiedPhoto(event)">
-  <input type="file" id="camera-pick" accept="image/*" style="display:none" onchange="handleUnifiedGallery(event)">
+  <input type="file" id="camera-take" accept="image/*" capture="environment" style="display:none" onchange="handleCameraPhoto(event)">
+  <input type="file" id="gallery-lens" accept="image/*" style="display:none" onchange="handleLensGallery(event)">
+  <input type="file" id="gallery-instruction" accept="image/*" style="display:none" onchange="handleInstructionGallery(event)">
 
   <!-- Search -->
   <div class="search-bar">
@@ -199,11 +200,12 @@ tr:hover{background:var(--accent-bg)}
   </div>
 
   <!-- Main buttons -->
-  <div style="display:flex;gap:8px;margin-bottom:8px">
-    <button class="btn" style="flex:1;padding:16px;font-size:15px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('camera-take').click()">📷 拍照</button>
-    <button class="btn" style="flex:1;padding:16px;font-size:15px;font-weight:700" onclick="document.getElementById('camera-pick').click()">🖼 圖庫</button>
+  <div style="display:flex;gap:8px;margin-bottom:4px">
+    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('camera-take').click()">📷 拍照</button>
+    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="document.getElementById('gallery-lens').click()">🖼 建檔</button>
+    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="document.getElementById('gallery-instruction').click()">📋 說明書</button>
   </div>
-  <div style="font-size:11px;color:var(--dim);text-align:center;margin-bottom:10px">拍照：零件→查位置/建檔 · 說明書→查零件位置（請正拍） ｜ 圖庫：Lens 截圖建檔</div>
+  <div style="font-size:10px;color:var(--dim);text-align:center;margin-bottom:10px">拍照：查位置 ｜ 建檔：Lens 截圖 ｜ 說明書：正拍零件清單框</div>
 
   <!-- Advanced panel -->
   <div style="margin-bottom:10px">
@@ -1306,35 +1308,19 @@ async function parseLensScreenshot(dataUrl){
 // ═══════════════════════════════════════════════════
 // UNIFIED PHOTO HANDLER (auto-detect: part / instruction / set)
 // ═══════════════════════════════════════════════════
-async function handleUnifiedPhoto(event){
+// ═══ CAMERA: only find location (Brickognize → Gemini fallback) ═══
+async function handleCameraPhoto(event){
   const file=event.target.files[0];if(!file)return;event.target.value='';
   const reader=new FileReader();reader.onload=async e=>{
     const resized=await resizeImage(e.target.result,800);currentImageData=resized;
     showScreen('s-processing');
-    try{await unifiedRecognize(resized.split(',')[1],resized)}
+    try{await cameraRecognize(resized.split(',')[1],resized)}
     catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}
   };reader.readAsDataURL(file);
 }
-async function handleUnifiedGallery(event){
-  const file=event.target.files[0];if(!file)return;event.target.value='';
-  const reader=new FileReader();reader.onload=async e=>{
-    const dataUrl=e.target.result;
-    currentImageData=await cropLensThumb(dataUrl).catch(()=>dataUrl);
-    const resized=await resizeImage(dataUrl,800);
-    showScreen('s-processing');
-    try{
-      setProcessingMsg('📱 解析 Lens 截圖…');
-      const base64=resized.split(',')[1];
-      const existingList=await buildExistingList();
-      const prompt='分析圖片中的樂高/積木物品，建立為新物品。可能是：\n1. 單一零件：design_id填Design ID，dim填零件尺寸\n2. 完整人偶：design_id填人偶編號(如njo788)，is_complete_minifig=true\n3. 套件/盒組成品：design_id填套件編號(如701805或42115)，dim填組裝完成後的整體尺寸(cm轉mm)，is_oversize=true\n\n回應純JSON：{"design_id":"編號","name":"英文名","name_cn":"繁體中文名","bricklink_category":"分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型id或null。已有:'+existingList+'"}';
-      const textResp=await callGeminiAPI(prompt,base64,0,GEMINI_LEGO_SYSTEM);
-      const item=safeParseJSON(textResp);await processResult(item);
-    }catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}
-  };reader.readAsDataURL(file);
-}
 
-async function unifiedRecognize(base64,imgSrc,isLensHint){
-  // === FAST PATH: Brickognize → match DB ===
+async function cameraRecognize(base64,imgSrc){
+  // Brickognize fast path
   setProcessingMsg('🔍 Brickognize 辨識中…');
   const bkResult=await brickognizePredict(base64);
   if(bkResult&&bkResult.score>=40){
@@ -1349,7 +1335,6 @@ async function unifiedRecognize(base64,imgSrc,isLensHint){
     if(!match&&bkName.length>=3){const found=allItems.find(i=>i.brickognizeName&&i.brickognizeName.toLowerCase()===bkName);if(found){match=found;matchType='bk-name'}}
     if(!match&&bkName.length>=5){const found=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(bkName)||bkName.includes(n))});if(found){match=found;matchType='name-fuzzy'}}
     if(match){
-      // FOUND in DB → show location
       setProcessingMsg('✓ '+bkResult.name+' → '+match.slot);
       const thumbnailUrl=match.thumbnailUrl||bkResult.imgUrl||(bkId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'');
       pendingPart={design_id:bkId||match.designId,name:match.name||bkResult.name,name_cn:match.nameCN||'',designId:bkId||match.designId,slot:match.slot,slotType:match.slotType||'small',thumbnailUrl,estimateVolumeMl:match.estimateVolumeMl||0,featureTags:match.featureTags||[],bricklinkCategory:match.bricklinkCategory||'',description:match.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:match.id,_brickognize:{score:bkResult.score,id:bkId,name:bkResult.name}};
@@ -1375,122 +1360,27 @@ async function unifiedRecognize(base64,imgSrc,isLensHint){
       document.getElementById('result-qty-save').disabled=false;
       showScreen('s-result');return;
     }
-    // Brickognize matched but NOT in DB → prompt to use Lens
+    // Brickognize matched but NOT in DB
     if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
     showTab('main');
-    showToast('⚠ 零件「'+(bkResult.name||bkId)+'」未建檔\n請使用 🖼 圖庫（Lens 截圖）建檔','error',4000);
+    showToast('⚠ 零件「'+(bkResult.name||bkId)+'」未建檔\n請使用 🖼 建檔（Lens 截圖）','error',4000);
     return;
   }
-  // === Brickognize failed → Gemini smart classify ===
-  setProcessingMsg('🤖 AI 分析圖片類型…');
-  const classifyPrompt='判斷這張圖片的類型。回應純JSON：{"type":"part 或 instruction","confidence":"high/medium/low"}。\n類型說明：\n- part：單一樂高零件（一個零散的積木塊）\n- instruction：樂高說明書頁面（有零件清單框或組裝步驟圖）';
-  const classifyResp=await callGeminiAPI(classifyPrompt,base64,0);
-  const classify=safeParseJSON(classifyResp);
-  const imgType=classify.type||'part';
-  
-  if(imgType==='instruction'){
-    // Step 1: Gemini finds the parts list box + per-row layout
-    setProcessingMsg('📋 定位零件清單框…');
-    const bboxPrompt='分析這張樂高說明書頁面（圖片已正向拍攝，步驟編號數字為正）。\n\n找出零件清單框（藍色/灰色/米色背景的圓角矩形方框）。分析框內零件的排列方式：逐行描述每行有幾個零件。\n\n【重要規則】每個數量標記（如"1x","2x","6x"）位於所屬零件圖示的正下方。利用這個上下對應關係來判斷哪個數量屬於哪個零件，以及如何分行分列。\n\n回應純JSON：\n{"box":[x1,y1,x2,y2],"rows":[{"count":該行零件數,"qty":[每個零件的數量]}]}\n座標為 0~1000 整數（圖片寬高千分比）。box 是整個清單框的外框座標。\n\n範例1：框內上排2個(各1x)、下排1個(3x) →\n{"box":[100,50,600,900],"rows":[{"count":2,"qty":[1,1]},{"count":1,"qty":[3]}]}\n範例2：上排3個(各3x)、中排2個(3x,3x)、下排1個(3x) →\n{"box":[50,80,750,920],"rows":[{"count":3,"qty":[3,3,3]},{"count":2,"qty":[3,3]},{"count":1,"qty":[3]}]}';
-    const bboxResp=await callGeminiAPI(bboxPrompt,base64,0);
-    const layout=safeParseJSON(bboxResp);
-    const box=layout.box||layout.bbox;
-    const rowDefs=layout.rows||[];
-    
-    if(!box||!rowDefs.length){
-      if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
-      showTab('main');showToast('⚠ 未偵測到零件清單框','error');return;
-    }
-    
-    const totalParts=rowDefs.reduce((s,r)=>s+(r.count||1),0);
-    setProcessingMsg('✂ 裁切 '+totalParts+' 個零件…');
-    
-    const img=new Image();
-    const cropResults=await new Promise((resolve)=>{
-      img.onload=async()=>{
-        const sw=img.width,sh=img.height;
-        const source=img;
-        const bx1=Math.round(box[0]/1000*sw);
-        const by1=Math.round(box[1]/1000*sh);
-        const bx2=Math.round(box[2]/1000*sw);
-        const by2=Math.round(box[3]/1000*sh);
-        const bw=bx2-bx1,bh=by2-by1;
-        const rowH=Math.floor(bh/rowDefs.length);
-        
-        const results=[];let partIdx=0;
-        for(let ri=0;ri<rowDefs.length;ri++){
-          const row=rowDefs[ri];
-          const nCols=row.count||1;
-          const colW=Math.floor(bw/nCols);
-          const qtyArr=row.qty||Array(nCols).fill(1);
-          
-          for(let ci=0;ci<nCols;ci++){
-            const insetX=Math.round(colW*0.08);
-            const insetY=Math.round(rowH*0.08);
-            const cx=bx1+ci*colW+insetX;
-            const cy=by1+ri*rowH+insetY;
-            const cw=colW-insetX*2;
-            const ch=rowH-insetY*2;
-            if(cw<5||ch<5)continue;
-            
-            const canvas=document.createElement('canvas');
-            canvas.width=cw;canvas.height=ch;
-            const ctx=canvas.getContext('2d');
-            ctx.drawImage(source,cx,cy,cw,ch,0,0,cw,ch);
-            const cropBase64=canvas.toDataURL('image/jpeg',0.9).split(',')[1];
-            const cropDataUrl=canvas.toDataURL('image/png');
-            
-            setProcessingMsg('🔍 Brickognize ('+(partIdx+1)+'/'+totalParts+')…');
-            const bkResult=await brickognizePredict(cropBase64);
-            
-            let match=null,matchMethod='',did='',name='';
-            if(bkResult&&bkResult.score>=30){
-              did=bkResult.id||'';name=bkResult.name||'';
-              const baseId=getBaseDesignId(did);const numBase=getNumericBase(did);
-              if(did){match=allItems.find(it=>(it.designId||'').toLowerCase()===did.toLowerCase());if(match)matchMethod='BK:'+bkResult.score+'%'}
-              if(!match&&baseId){match=allItems.find(it=>getBaseDesignId(it.designId)===baseId);if(match)matchMethod='BK變體:'+bkResult.score+'%'}
-              if(!match&&numBase){match=allItems.find(it=>getNumericBase(it.designId)===numBase);if(match)matchMethod='BK模具:'+bkResult.score+'%'}
-              if(!match&&(bkResult.name||'').length>=3){const bkn=bkResult.name.toLowerCase();match=allItems.find(it=>it.brickognizeName&&it.brickognizeName.toLowerCase()===bkn);if(match)matchMethod='BK名稱'}}
-            if(!match&&bkResult&&bkResult.score>=30)matchMethod='BK:'+bkResult.score+'% (未建檔)';
-            
-            const qty=qtyArr[ci]||1;
-            const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(bkResult?.imgUrl||cropDataUrl);
-            results.push({did:match?(match.designId||did):did,name:match?(match.nameCN||match.name||name):name,qty,match,matchMethod,thumb,bkScore:bkResult?.score||0});
-            partIdx++;
-            if(partIdx<totalParts)await new Promise(r=>setTimeout(r,300));
-          }
-        }
-        resolve(results);
-      };
-      img.onerror=()=>resolve([]);
-      img.src=imgSrc;
-    });
-    renderInstructionResults(cropResults,imgSrc);return;
-  }
-  
-  // Default: treat as part → Gemini identify then match DB
+  // Brickognize failed → Gemini fallback (part only, no instruction)
   setProcessingMsg('🤖 AI 辨識零件…');
-  const existingList2=await buildExistingList();
-  const partPrompt='辨識圖中的樂高物品（可能是單一零件或已組裝的套件成品）。回應純JSON：{"design_id":"Design ID或套件編號","name":"英文名","name_cn":"繁體中文名","matched_existing_id":"同外型物品id或null。已有:'+existingList2+'"}';
+  const existingList=await buildExistingList();
+  const partPrompt='辨識圖中的樂高物品（可能是單一零件或已組裝的套件成品）。回應純JSON：{"design_id":"Design ID或套件編號","name":"英文名","name_cn":"繁體中文名","matched_existing_id":"同外型物品id或null。已有:'+existingList+'"}';
   const partResp=await callGeminiAPI(partPrompt,base64,0,GEMINI_LEGO_SYSTEM);
   const partInfo=safeParseJSON(partResp);
-  // Try to match against DB
   const geminiId=(partInfo.design_id||partInfo.designId||'').toString();
   const geminiMatchedId=partInfo.matched_existing_id||'';
   let dbMatch=null;
-  // Check matched_existing_id first
   if(geminiMatchedId&&geminiMatchedId!=='null'){dbMatch=allItems.find(i=>i.id===geminiMatchedId)}
-  // Exact ID
   if(!dbMatch&&geminiId){dbMatch=allItems.find(i=>(i.designId||'').toLowerCase()===geminiId.toLowerCase())}
-  // Base ID
   if(!dbMatch&&geminiId){const base=getBaseDesignId(geminiId);if(base)dbMatch=allItems.find(i=>getBaseDesignId(i.designId)===base)}
-  // Numeric base
   if(!dbMatch&&geminiId){const num=getNumericBase(geminiId);if(num)dbMatch=allItems.find(i=>getNumericBase(i.designId)===num)}
-  // Name fuzzy
-  if(!dbMatch){const cn=(partInfo.name_cn||'');const en=(partInfo.name||'');if(en.length>=5){const nl=en.toLowerCase();dbMatch=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(nl)||nl.includes(n))})}}
-  
+  if(!dbMatch){const en=(partInfo.name||'');if(en.length>=5){const nl=en.toLowerCase();dbMatch=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(nl)||nl.includes(n))})}}
   if(dbMatch){
-    // Found in DB → show location
     if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
     const thumb=dbMatch.thumbnailUrl||(dbMatch.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(dbMatch.designId)+'.png':'');
     pendingPart={design_id:dbMatch.designId,name:dbMatch.name,name_cn:dbMatch.nameCN||'',designId:dbMatch.designId,slot:dbMatch.slot,slotType:dbMatch.slotType||'small',thumbnailUrl:thumb,estimateVolumeMl:dbMatch.estimateVolumeMl||0,featureTags:dbMatch.featureTags||[],bricklinkCategory:dbMatch.bricklinkCategory||'',description:dbMatch.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:dbMatch.id};
@@ -1514,11 +1404,120 @@ async function unifiedRecognize(base64,imgSrc,isLensHint){
     document.getElementById('result-qty-save').disabled=false;
     showScreen('s-result');return;
   }
-  // NOT in DB → alert
   if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
   showTab('main');
-  const partName=partInfo.name_cn||partInfo.name||geminiId||'未知零件';
-  showToast('⚠ 零件「'+partName+'」未建檔\n請使用 🖼 圖庫（Lens 截圖）建檔','error',4000);
+  showToast('⚠ 零件「'+(partInfo.name_cn||partInfo.name||geminiId||'未知')+'」未建檔\n請使用 🖼 建檔（Lens 截圖）','error',4000);
+}
+
+// ═══ LENS GALLERY: build new item ═══
+async function handleLensGallery(event){
+  const file=event.target.files[0];if(!file)return;event.target.value='';
+  const reader=new FileReader();reader.onload=async e=>{
+    const dataUrl=e.target.result;
+    currentImageData=await cropLensThumb(dataUrl).catch(()=>dataUrl);
+    const resized=await resizeImage(dataUrl,800);
+    showScreen('s-processing');
+    try{
+      setProcessingMsg('📱 解析 Lens 截圖…');
+      const base64=resized.split(',')[1];
+      const existingList=await buildExistingList();
+      const prompt='分析圖片中的樂高/積木物品，建立為新物品。可能是：\n1. 單一零件：design_id填Design ID，dim填零件尺寸\n2. 完整人偶：design_id填人偶編號(如njo788)，is_complete_minifig=true\n3. 套件/盒組成品：design_id填套件編號(如701805或42115)，dim填組裝完成後的整體尺寸(cm轉mm)，is_oversize=true\n\n回應純JSON：{"design_id":"編號","name":"英文名","name_cn":"繁體中文名","bricklink_category":"分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型id或null。已有:'+existingList+'"}';
+      const textResp=await callGeminiAPI(prompt,base64,0,GEMINI_LEGO_SYSTEM);
+      const item=safeParseJSON(textResp);await processResult(item);
+    }catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}
+  };reader.readAsDataURL(file);
+}
+
+// ═══ INSTRUCTION GALLERY: crop + Brickognize → find locations ═══
+async function handleInstructionGallery(event){
+  const file=event.target.files[0];if(!file)return;event.target.value='';
+  const reader=new FileReader();reader.onload=async e=>{
+    const resized=await resizeImage(e.target.result,1200);
+    const base64=resized.split(',')[1];
+    showScreen('s-processing');
+    try{
+      await instructionRecognize(base64,resized);
+    }catch(err){showTab('main');showToast('說明書分析失敗：'+err.message,'error')}
+  };reader.readAsDataURL(file);
+}
+
+async function instructionRecognize(base64,imgSrc){
+  setProcessingMsg('📋 定位零件清單框…');
+  const bboxPrompt='分析這張樂高說明書頁面（圖片已正向拍攝）。\n\n找出零件清單框：有藍色、灰色或米色背景的圓角矩形區域。\n\n【box 座標規則】box 必須是彩色背景區域的內邊界，不包含：\n- 框外的白色/彩色頁面背景\n- 步驟編號數字（如"1","43","252"）\n- 組裝示意圖\n只包含有零件圖示的彩色背景區域。\n\n【零件分行規則】觀察框內零件的垂直位置，將位於相同高度的零件歸為同一行。每個數量標記（如"1x","2x"）位於所屬零件圖示的正下方。\n\n回應純JSON：\n{"box":[x1,y1,x2,y2],"rows":[{"count":該行零件數,"qty":[每個零件的數量]}]}\n座標為 0~1000 整數（圖片寬高千分比）。\n\n範例：框內上排1個(2x)、下排2個(各1x) →\n{"box":[150,50,850,750],"rows":[{"count":1,"qty":[2]},{"count":2,"qty":[1,1]}]}';
+  const bboxResp=await callGeminiAPI(bboxPrompt,base64,0);
+  const layout=safeParseJSON(bboxResp);
+  const box=layout.box||layout.bbox;
+  const rowDefs=layout.rows||[];
+  
+  if(!box||!rowDefs.length){
+    if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+    showTab('main');showToast('⚠ 未偵測到零件清單框','error');return;
+  }
+  
+  const totalParts=rowDefs.reduce((s,r)=>s+(r.count||1),0);
+  setProcessingMsg('✂ 裁切 '+totalParts+' 個零件…');
+  
+  const img=new Image();
+  const cropResults=await new Promise((resolve)=>{
+    img.onload=async()=>{
+      const sw=img.width,sh=img.height;
+      const source=img;
+      const bx1=Math.round(box[0]/1000*sw);
+      const by1=Math.round(box[1]/1000*sh);
+      const bx2=Math.round(box[2]/1000*sw);
+      const by2=Math.round(box[3]/1000*sh);
+      const bw=bx2-bx1,bh=by2-by1;
+      const rowH=Math.floor(bh/rowDefs.length);
+      
+      const results=[];let partIdx=0;
+      for(let ri=0;ri<rowDefs.length;ri++){
+        const row=rowDefs[ri];
+        const nCols=row.count||1;
+        const colW=Math.floor(bw/nCols);
+        const qtyArr=row.qty||Array(nCols).fill(1);
+        
+        for(let ci=0;ci<nCols;ci++){
+          const insetX=Math.round(colW*0.12);
+          const insetY=Math.round(rowH*0.12);
+          const cx=bx1+ci*colW+insetX;
+          const cy=by1+ri*rowH+insetY;
+          const cw=colW-insetX*2;
+          const ch=rowH-insetY*2;
+          if(cw<5||ch<5)continue;
+          
+          const canvas=document.createElement('canvas');
+          canvas.width=cw;canvas.height=ch;
+          const ctx=canvas.getContext('2d');
+          ctx.drawImage(source,cx,cy,cw,ch,0,0,cw,ch);
+          const cropBase64=canvas.toDataURL('image/jpeg',0.9).split(',')[1];
+          const cropDataUrl=canvas.toDataURL('image/png');
+          
+          setProcessingMsg('🔍 Brickognize ('+(partIdx+1)+'/'+totalParts+')…');
+          const bkResult=await brickognizePredict(cropBase64);
+          
+          let match=null,matchMethod='',did='',name='';
+          if(bkResult&&bkResult.score>=30){
+            did=bkResult.id||'';name=bkResult.name||'';
+            const baseId=getBaseDesignId(did);const numBase=getNumericBase(did);
+            if(did){match=allItems.find(it=>(it.designId||'').toLowerCase()===did.toLowerCase());if(match)matchMethod='BK:'+bkResult.score+'%'}
+            if(!match&&baseId){match=allItems.find(it=>getBaseDesignId(it.designId)===baseId);if(match)matchMethod='BK變體:'+bkResult.score+'%'}
+            if(!match&&numBase){match=allItems.find(it=>getNumericBase(it.designId)===numBase);if(match)matchMethod='BK模具:'+bkResult.score+'%'}
+            if(!match&&(bkResult.name||'').length>=3){const bkn=bkResult.name.toLowerCase();match=allItems.find(it=>it.brickognizeName&&it.brickognizeName.toLowerCase()===bkn);if(match)matchMethod='BK名稱'}}
+          if(!match&&bkResult&&bkResult.score>=30)matchMethod='BK:'+bkResult.score+'% (未建檔)';
+          
+          const qty=qtyArr[ci]||1;
+          const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(bkResult?.imgUrl||cropDataUrl);
+          results.push({did:match?(match.designId||did):did,name:match?(match.nameCN||match.name||name):name,qty,match,matchMethod,thumb,bkScore:bkResult?.score||0});
+          partIdx++;
+          if(partIdx<totalParts)await new Promise(r=>setTimeout(r,300));
+        }
+      }
+      resolve(results);
+    };
+    img.onerror=()=>resolve([]);
+    img.src=imgSrc;
+  });
+  renderInstructionResults(cropResults,imgSrc);
 }
 
 function renderInstructionResults(results,imgSrc){
