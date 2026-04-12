@@ -1540,12 +1540,27 @@ async function instructionRecognize(base64,imgSrc){
   // 策略 A prompt：允許框進文字，程式端削切
   const bboxPrompt='你是一個精確的樂高零件偵測系統。請分析圖像，找出每一個獨立的樂高零件。\n\n【規則】：\n1. 每個零件一個獨立邊界框，不能把兩個相鄰零件框在一起。\n2. 邊界框應包含零件本體及其正下方的數量標籤（如 1x, 2x）。\n3. 不要框選沒有零件的純文字或裝飾圖案。\n\n回傳純 JSON，包含 objects 列表，每個物件有：\n- box_2d: [ymin, xmin, ymax, xmax]（0-1000 標準化座標）\n- label: "part"';
   const bboxResp=await callGeminiAPI(bboxPrompt,base64,0);
-  const layout=safeParseJSON(bboxResp);
-  let objects=layout.objects||[];
+  console.log('[說明書] Gemini raw response:',bboxResp);
+  let layout;
+  try{layout=safeParseJSON(bboxResp)}catch(e){console.error('[說明書] JSON parse failed:',e);layout={}}
+  // Robust extraction: handle {objects:[...]}, [{box_2d:...}], {parts:[...]}, etc.
+  let objects=[];
+  if(Array.isArray(layout)){objects=layout}
+  else if(Array.isArray(layout.objects)){objects=layout.objects}
+  else if(Array.isArray(layout.parts)){objects=layout.parts}
+  else{
+    // Try to find any array of objects with box_2d
+    for(const k of Object.keys(layout||{})){
+      if(Array.isArray(layout[k])&&layout[k].length>0&&layout[k][0].box_2d){objects=layout[k];break}
+    }
+  }
+  // Filter out entries without valid box_2d
+  objects=objects.filter(o=>o.box_2d&&Array.isArray(o.box_2d)&&o.box_2d.length>=4);
+  console.log('[說明書] Parsed objects:',objects.length,objects);
   
   if(!objects.length){
     if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
-    showTab('main');showToast('⚠ 未偵測到零件','error');return;
+    showTab('main');showToast('⚠ 未偵測到零件\n回傳:'+String(bboxResp).substring(0,200),'error');return;
   }
   
   // 防線 1~3：幾何過濾
