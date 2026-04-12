@@ -1477,13 +1477,15 @@ async function instructionRecognize(base64,imgSrc){
         const p=parts[i];
         const cx=Math.round(p.cx/1000*sw);
         const cy=Math.round(p.cy/1000*sh);
-        // Gemini's w,h is tight-fit; add 1.5× padding so slight center drift doesn't cut the part
-        const PAD=1.5;
+        // Adaptive padding: small parts need more context for Brickognize
+        // w,h < 120 → PAD=2.5; 120~200 → PAD=2.0; > 200 → PAD=1.5
+        const partSize=Math.max(p.w||0,p.h||0);
+        const PAD=partSize<120?2.5:partSize<200?2.0:1.5;
         const rawW=p.w?Math.round(p.w/1000*sw*PAD):Math.round(sw*0.2);
         const rawH=p.h?Math.round(p.h/1000*sh*PAD):Math.round(sh*0.2);
-        // Minimum crop 60px so tiny parts still have enough context for Brickognize
-        const pw=Math.max(60,rawW);
-        const ph=Math.max(60,rawH);
+        // Minimum crop = 12% of image dimension, ensures enough pixels for recognition
+        const pw=Math.max(Math.round(sw*0.12),rawW);
+        const ph=Math.max(Math.round(sh*0.12),rawH);
         const halfW=Math.round(pw/2);
         const halfH=Math.round(ph/2);
         
