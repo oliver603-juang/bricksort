@@ -1453,19 +1453,18 @@ async function handleInstructionGallery(event){
 }
 
 async function instructionRecognize(base64,imgSrc){
-  setProcessingMsg('📋 定位零件清單框…');
-  const bboxPrompt='分析這張樂高說明書頁面（圖片已正向拍攝）。\n\n找出零件清單框（藍色/灰色/米色背景的圓角矩形），以及框內每個零件圖示的位置和大小。\n\n【box 座標規則】box 是彩色背景區域的內邊界，排除框外背景、步驟編號、組裝示意圖。\n\n【零件位置規則】每個零件圖示都有黑色輪廓線包圍，請以黑色輪廓線的外緣作為邊界來估算位置和大小：\n- cx, cy：黑色輪廓線範圍的視覺中心\n- w, h：黑色輪廓線外緣的寬高（即零件圖示含輪廓線的完整佔位面積）\n- qty：數量（由零件正下方的"Nx"標記決定）\n\n【重要】cx, cy, w, h 只描述零件圖示本身的像素範圍。完全忽略數量標記文字（"1x","2x"等）— 這些文字不屬於零件圖示，不應影響 cx, cy, w, h 的值。\n\n所有座標和尺寸為 0~1000 整數（圖片寬高千分比）。\n\n回應純JSON：\n{"box":[x1,y1,x2,y2],"parts":[{"cx":中心x,"cy":中心y,"w":寬,"h":高,"qty":數量}]}\n\n範例：框內有1個大零件和2個小零件 →\n{"box":[100,50,850,800],"parts":[{"cx":280,"cy":230,"w":320,"h":170,"qty":1},{"cx":650,"cy":200,"w":100,"h":80,"qty":2},{"cx":400,"cy":640,"w":70,"h":50,"qty":1}]}';
+  setProcessingMsg('📋 偵測零件位置…');
+  const bboxPrompt='你是一個精確的物件偵測專家。你的任務是分析提供的圖像，依序找出其中的每一個樂高零件。請忽略圖像中的任何數字或文字。對於偵測到的每一個零件，提供一個最小外接矩形（bounding box）。請依序（由左到右，由上到下）輸出偵測結果，並以嚴謹的 JSON 格式回傳。\n\nJSON 格式應包含一個名為 objects 的列表。列表中的每個物件應包含以下欄位：\n- label: 物件的類別名稱（固定為 "lego_part"）。\n- box_2d: 一個包含四個整數的列表，格式為 [ymin, xmin, ymax, xmax]。這些是標準化的座標，數值介於 0 到 1000 之間。\n\n確保輸出的 JSON 結構嚴謹且可被解析。只回應純 JSON，不要加任何說明文字或 markdown。';
   const bboxResp=await callGeminiAPI(bboxPrompt,base64,0);
   const layout=safeParseJSON(bboxResp);
-  const box=layout.box||layout.bbox;
-  const parts=layout.parts||[];
+  const objects=layout.objects||[];
   
-  if(!box||!parts.length){
+  if(!objects.length){
     if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
-    showTab('main');showToast('⚠ 未偵測到零件清單框','error');return;
+    showTab('main');showToast('⚠ 未偵測到零件','error');return;
   }
   
-  setProcessingMsg('✂ 裁切 '+parts.length+' 個零件…');
+  setProcessingMsg('✂ 裁切 '+objects.length+' 個零件…');
   
   const img=new Image();
   const {results:cropResults,sw:imgW,sh:imgH}=await new Promise((resolve)=>{
@@ -1473,38 +1472,39 @@ async function instructionRecognize(base64,imgSrc){
       const sw=img.width,sh=img.height;
       
       const results=[];
-      for(let i=0;i<parts.length;i++){
-        const p=parts[i];
-        const cx=Math.round(p.cx/1000*sw);
-        const cy=Math.round(p.cy/1000*sh);
-        // Adaptive padding: small parts need more context for Brickognize
-        // w,h < 120 → PAD=2.5; 120~200 → PAD=2.0; > 200 → PAD=1.5
-        const partSize=Math.max(p.w||0,p.h||0);
-        const PAD=partSize<120?2.5:partSize<200?2.0:1.5;
-        const rawW=p.w?Math.round(p.w/1000*sw*PAD):Math.round(sw*0.2);
-        const rawH=p.h?Math.round(p.h/1000*sh*PAD):Math.round(sh*0.2);
-        // Minimum crop = 12% of image dimension, ensures enough pixels for recognition
-        const pw=Math.max(Math.round(sw*0.12),rawW);
-        const ph=Math.max(Math.round(sh*0.12),rawH);
-        const halfW=Math.round(pw/2);
-        const halfH=Math.round(ph/2);
+      for(let i=0;i<objects.length;i++){
+        const obj=objects[i];
+        const b=obj.box_2d;
+        if(!b||b.length<4)continue;
+        // box_2d = [ymin, xmin, ymax, xmax], values 0~1000
+        const ymin=b[0],xmin=b[1],ymax=b[2],xmax=b[3];
         
-        // Clamp to image bounds
-        const cx1=Math.max(0,cx-halfW);
-        const cy1=Math.max(0,cy-halfH);
-        const cx2=Math.min(sw,cx+halfW);
-        const cy2=Math.min(sh,cy+halfH);
-        const cw=cx2-cx1,ch=cy2-cy1;
+        // Convert to pixel coords
+        let x1=Math.round(xmin/1000*sw);
+        let y1=Math.round(ymin/1000*sh);
+        let x2=Math.round(xmax/1000*sw);
+        let y2=Math.round(ymax/1000*sh);
+        
+        // Add 10% padding for Brickognize context
+        const bw=x2-x1,bh=y2-y1;
+        const padX=Math.round(bw*0.1);
+        const padY=Math.round(bh*0.1);
+        x1=Math.max(0,x1-padX);
+        y1=Math.max(0,y1-padY);
+        x2=Math.min(sw,x2+padX);
+        y2=Math.min(sh,y2+padY);
+        
+        const cw=x2-x1,ch=y2-y1;
         if(cw<10||ch<10)continue;
         
         const canvas=document.createElement('canvas');
         canvas.width=cw;canvas.height=ch;
         const ctx=canvas.getContext('2d');
-        ctx.drawImage(img,cx1,cy1,cw,ch,0,0,cw,ch);
+        ctx.drawImage(img,x1,y1,cw,ch,0,0,cw,ch);
         const cropBase64=canvas.toDataURL('image/jpeg',0.9).split(',')[1];
         const cropDataUrl=canvas.toDataURL('image/png');
         
-        setProcessingMsg('🔍 Brickognize ('+(i+1)+'/'+parts.length+')…');
+        setProcessingMsg('🔍 Brickognize ('+(i+1)+'/'+objects.length+')…');
         const bkResult=await brickognizePredict(cropBase64);
         
         let match=null,matchMethod='',did='',name='';
@@ -1517,11 +1517,10 @@ async function instructionRecognize(base64,imgSrc){
           if(!match&&(bkResult.name||'').length>=3){const bkn=bkResult.name.toLowerCase();match=allItems.find(it=>it.brickognizeName&&it.brickognizeName.toLowerCase()===bkn);if(match)matchMethod='BK名稱'}}
         if(!match&&bkResult&&bkResult.score>=30)matchMethod='BK:'+bkResult.score+'% (未建檔)';
         
-        const qty=p.qty||1;
         const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(bkResult?.imgUrl||cropDataUrl);
-        results.push({did:match?(match.designId||did):did,name:match?(match.nameCN||match.name||name):name,qty,match,matchMethod,thumb,bkScore:bkResult?.score||0,_cx:p.cx,_cy:p.cy,_w:p.w,_h:p.h});
+        results.push({did:match?(match.designId||did):did,name:match?(match.nameCN||match.name||name):name,qty:1,match,matchMethod,thumb,bkScore:bkResult?.score||0,_box:[ymin,xmin,ymax,xmax]});
         
-        if(i<parts.length-1)await new Promise(r=>setTimeout(r,300));
+        if(i<objects.length-1)await new Promise(r=>setTimeout(r,300));
       }
       resolve({results,sw,sh});
     };
@@ -1550,8 +1549,8 @@ function renderInstructionResults(results,imgSrc,imgW,imgH){
     html+='<img src="'+r.thumb+'" style="width:44px;height:44px;object-fit:contain;border-radius:6px;background:rgba(255,255,255,0.08)" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2244%22 height=%2244%22><text x=%2210%22 y=%2230%22 font-size=%2224%22>🧱</text></svg>\'">';
     html+='<div style="flex:1;min-width:0">';
     html+='<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+status+' '+nameDisplay+'</div>';
-    html+='<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">'+r.did+' × '+r.qty+' '+matchInfo+'</div>';
-    if(r._cx!=null)html+='<div style="font-size:10px;color:var(--dim);font-family:var(--mono)">cx:'+r._cx+' cy:'+r._cy+' w:'+r._w+' h:'+r._h+'</div>';
+    html+='<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">'+r.did+' '+matchInfo+'</div>';
+    if(r._box)html+='<div style="font-size:10px;color:var(--dim);font-family:var(--mono)">box:['+r._box.join(',')+']</div>';
     html+='</div>';
     html+=slotBadge;
     html+='</div></div>';
@@ -1561,7 +1560,7 @@ function renderInstructionResults(results,imgSrc,imgW,imgH){
   if(missing.length){
     html+='<div style="margin-top:12px;padding:12px;background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:10px">';
     html+='<div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:6px">⚠ 缺少 '+missing.length+' 種零件</div>';
-    html+='<div style="font-size:12px;color:var(--muted)">'+missing.map(r=>r.did+' '+r.name+(r.qty>1?' ×'+r.qty:'')).join('<br>')+'</div>';
+    html+='<div style="font-size:12px;color:var(--muted)">'+missing.map(r=>r.did+' '+r.name).join('<br>')+'</div>';
     html+='</div>';
   }
   document.getElementById('instruction-results').innerHTML=html;
