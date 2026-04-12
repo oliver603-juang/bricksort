@@ -1504,13 +1504,19 @@ function filterOverlap(boxes){
   return boxes.filter((_,i)=>keep[i]);
 }
 
-// 防線 4：底部削切 25% + 左右內縮 2%
+// 防線 4：混合式底部削切 + 上左右加 padding（BK 看中心，寬裁無妨）
 function trimBox(box_2d){
   let [y1,x1,y2,x2]=box_2d;
   const h=y2-y1,w=x2-x1;
-  y2=Math.round(y2-h*0.25);
-  x1=Math.round(x1+w*0.02);
-  x2=Math.round(x2-w*0.02);
+  // 底部：固定至少削 65（覆蓋 1x 文字高度），大零件用 20%
+  const trimBottom=Math.max(Math.round(h*0.20),65);
+  y2=y2-trimBottom;
+  // 上左右：各擴 15% padding，讓零件置中，BK 更好辨識
+  const padV=Math.round(h*0.15);
+  const padH=Math.round(w*0.15);
+  y1=Math.max(0,y1-padV);
+  x1=Math.max(0,x1-padH);
+  x2=Math.min(1000,x2+padH);
   return [y1,x1,y2,x2];
 }
 
@@ -1624,6 +1630,24 @@ async function instructionRecognize(base64,imgSrc){
           if(!match&&numBase){match=allItems.find(it=>getNumericBase(it.designId)===numBase);if(match)matchMethod='BK模具:'+bkResult.score+'%'}
           if(!match&&(bkResult.name||'').length>=3){const bkn=bkResult.name.toLowerCase();match=allItems.find(it=>it.brickognizeName&&it.brickognizeName.toLowerCase()===bkn);if(match)matchMethod='BK名稱'}}
         if(!match&&bkResult&&bkResult.score>=30)matchMethod='BK:'+bkResult.score+'% (未建檔)';
+        
+        // ★ BK 失敗 fallback：送 Gemini 辨識零件型號
+        if(!match&&(!bkResult||bkResult.score<30)){
+          try{
+            setProcessingMsg('🤖 AI 辨識 ('+(i+1)+'/'+objects.length+')…');
+            const fbPrompt='這是一個樂高零件的裁切圖。請辨識這個零件的 Design ID（數字編號）和名稱。回應純JSON：{"design_id":"編號","name":"英文名","name_cn":"中文名"}';
+            const fbResp=await callGeminiAPI(fbPrompt,cropBase64,0);
+            const fbParsed=safeParseJSON(fbResp);
+            if(fbParsed.design_id){
+              did=fbParsed.design_id;name=fbParsed.name_cn||fbParsed.name||'';
+              const baseId=getBaseDesignId(did);const numBase=getNumericBase(did);
+              if(did){match=allItems.find(it=>(it.designId||'').toLowerCase()===did.toLowerCase());if(match)matchMethod='AI:'+did}
+              if(!match&&baseId){match=allItems.find(it=>getBaseDesignId(it.designId)===baseId);if(match)matchMethod='AI變體:'+did}
+              if(!match&&numBase){match=allItems.find(it=>getNumericBase(it.designId)===numBase);if(match)matchMethod='AI模具:'+did}
+              if(!match)matchMethod='AI:'+did+' (未建檔)';
+            }
+          }catch(e){console.log('[說明書] Gemini fallback failed:',e)}
+        }
         
         const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(bkResult?.imgUrl||cropDataUrl);
         results.push({did:match?(match.designId||did):did,name:match?(match.nameCN||match.name||name):name,qty:1,match,matchMethod,thumb,bkScore:bkResult?.score||0,_box:rawBox,_trimBox:[ymin,xmin,ymax,xmax],_bright:avgBright});
