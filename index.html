@@ -583,7 +583,15 @@ const LARGE_W=108,LARGE_L=136,LARGE_H=53;
 const LARGE_ML=LARGE_W*LARGE_L*LARGE_H/1000; // ~778
 const LARGE_COUNT=27;
 const BAG_ML_DEFAULT=714,BAG_ML_MAX=714,BAG_ML_LARGE=1000,BAG_THRESHOLD=100;
-const MERGE_LIMIT=62,MERGE_MAX_ITEMS=4;
+const MERGE_LIMIT=62;
+// 動態融合上限：極小零件可以多裝
+function getMergeMaxItems(binItems){
+  if(!binItems||!binItems.length)return 8;
+  var maxVol=Math.max.apply(null,binItems.map(function(it){return it._vt||it.estimateVolumeMl||0}));
+  if(maxVol<5)return 8;   // 極小零件（<5ml）最多 8 個
+  if(maxVol<20)return 6;  // 小零件（<20ml）最多 6 個
+  return 4;               // 一般零件 最多 4 個
+}
 const BASE_DRAWERS=450,EXPAND_SIZE=180;
 
 const STUD_PITCH=8,PLATE_H=3.2,BRICK_H=9.6;
@@ -2437,9 +2445,9 @@ function assignMergeStep(){
   const candidates=assignBuckets.merge;if(!candidates.length){assignLog('無融合候選','info');return}
   const catGroups={};candidates.forEach(item=>{const g=item._catGroup;if(!catGroups[g])catGroups[g]=[];catGroups[g].push(item)});
   const bins=[];
-  Object.entries(catGroups).forEach(([group,items])=>{items.sort((a,b)=>b._vt-a._vt);items.forEach(item=>{let placed=false;for(const bin of bins){if(bin.catGroup!==group||bin.items.length>=MERGE_MAX_ITEMS)continue;if(bin.totalVt+item._vt<=SLOT_ML){bin.items.push(item);bin.totalVt+=item._vt;placed=true;break}}if(!placed)bins.push({items:[item],totalVt:item._vt,catGroup:group,tier:getTier(group)})})});
-  bins.filter(b=>b.items.length===1).forEach(single=>{for(const bin of bins){if(bin===single||bin.tier!==single.tier||bin.items.length>=MERGE_MAX_ITEMS)continue;if(bin.totalVt+single.totalVt<=SLOT_ML){bin.items.push(...single.items);bin.totalVt+=single.totalVt;single.items=[];single.totalVt=0;break}}});
-  bins.filter(b=>b.items.length===1).forEach(single=>{for(const bin of bins){if(bin===single||bin.items.length>=MERGE_MAX_ITEMS)continue;if(bin.totalVt+single.totalVt<=SLOT_ML){bin.items.push(...single.items);bin.totalVt+=single.totalVt;single.items=[];single.totalVt=0;break}}});
+  Object.entries(catGroups).forEach(([group,items])=>{items.sort((a,b)=>b._vt-a._vt);items.forEach(item=>{let placed=false;for(const bin of bins){if(bin.catGroup!==group||bin.items.length>=getMergeMaxItems(bin.items))continue;if(bin.totalVt+item._vt<=SLOT_ML){bin.items.push(item);bin.totalVt+=item._vt;placed=true;break}}if(!placed)bins.push({items:[item],totalVt:item._vt,catGroup:group,tier:getTier(group)})})});
+  bins.filter(b=>b.items.length===1).forEach(single=>{for(const bin of bins){if(bin===single||bin.tier!==single.tier||bin.items.length>=getMergeMaxItems(bin.items))continue;if(bin.totalVt+single.totalVt<=SLOT_ML){bin.items.push(...single.items);bin.totalVt+=single.totalVt;single.items=[];single.totalVt=0;break}}});
+  bins.filter(b=>b.items.length===1).forEach(single=>{for(const bin of bins){if(bin===single||bin.items.length>=getMergeMaxItems(bin.items))continue;if(bin.totalVt+single.totalVt<=SLOT_ML){bin.items.push(...single.items);bin.totalVt+=single.totalVt;single.items=[];single.totalVt=0;break}}});
   const finalBins=bins.filter(b=>b.items.length>0);finalBins.sort((a,b)=>{if(a.tier!==b.tier)return b.tier-a.tier;return a.catGroup.localeCompare(b.catGroup)});
   let nextDrawer=window._nextDrawerForMerge||1;
   for(let i=0;i<finalBins.length;i+=2){ensureDrawerCapAssign(nextDrawer);const label=drawerNumToLabel(nextDrawer);const binA=finalBins[i];
