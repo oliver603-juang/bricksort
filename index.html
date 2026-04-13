@@ -597,7 +597,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14b';
+const APP_VERSION = '2026.04.14c';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1511,6 +1511,34 @@ async function rebrickableLookup(inputId){
   }catch(e){return null}
 }
 
+// ═══ CORS-free thumbnail finder (uses img.onload, works in APK WebView) ═══
+function testImageUrl(url,timeout){
+  return new Promise(resolve=>{
+    const img=new Image();
+    const t=setTimeout(()=>{img.src='';resolve(false)},timeout||3000);
+    img.onload=()=>{clearTimeout(t);resolve(img.naturalWidth>1)};
+    img.onerror=()=>{clearTimeout(t);resolve(false)};
+    img.src=url;
+  });
+}
+async function findWorkingThumb(designId){
+  if(!designId)return'';
+  const base=designId.replace(/[a-e]\d*$/i,'');
+  // 1. Try Rebrickable API first (works in Chrome, may fail in APK)
+  try{
+    const rb=await rebrickableLookup(designId);
+    if(rb&&rb.imgUrl){const ok=await testImageUrl(rb.imgUrl,2000);if(ok)return rb.imgUrl}
+  }catch(e){}
+  // 2. BrickLink image URLs (predictable pattern, no API needed)
+  const blColors=['86','11','1','85','0'];// Light Bluish Gray, Black, White, Dark Bluish Gray, no color
+  for(const c of blColors){
+    const url='https://img.bricklink.com/ItemImage/PN/'+c+'/'+base+'.png';
+    const ok=await testImageUrl(url,2000);
+    if(ok)return url;
+  }
+  return'';
+}
+
 // ═══ MOLD VARIANT LOOKUP (Rebrickable) ═══
 const _moldCache={};
 async function getMoldVariants(designId){
@@ -1709,12 +1737,10 @@ async function parseLensScreenshot(dataUrl){
     if(lensName)item.name=lensName;
     if(lensNameCN)item.name_cn=lensNameCN;
 
-    // Step 3.5: Fetch correct thumbnail from Rebrickable API
+    // Step 3.5: Find working thumbnail (no CORS needed - uses img.onload)
     if(lensId){
-      try{
-        const rbData=await rebrickableLookup(lensId);
-        if(rbData&&rbData.imgUrl)window._pendingRbImgUrl=rbData.imgUrl;
-      }catch(e){}
+      const thumbUrl=await findWorkingThumb(lensId);
+      if(thumbUrl)window._pendingRbImgUrl=thumbUrl;
     }
 
     await processResult(item);
@@ -2458,9 +2484,9 @@ async function startBatch(files){
       if(lensName)parsed.name=lensName;
       if(lensNameCN)parsed.name_cn=lensNameCN;
 
-      // Fetch correct thumbnail from Rebrickable
+      // Fetch correct thumbnail (CORS-free, works in APK)
       let rbImgUrl='';
-      if(lensId){try{const rb=await rebrickableLookup(lensId);if(rb&&rb.imgUrl)rbImgUrl=rb.imgUrl}catch(e){}}
+      if(lensId){try{rbImgUrl=await findWorkingThumb(lensId)}catch(e){}}
 
       const designId=parsed.design_id||'',baseId=getBaseDesignId(designId);
       const vol=calcVolFromAI(parsed.name||'',parsed);
