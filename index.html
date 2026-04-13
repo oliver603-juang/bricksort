@@ -978,9 +978,71 @@ function findBagForOverflow(vol){
 // ═══════════════════════════════════════════════════
 // CLASSIFICATION HELPERS
 // ═══════════════════════════════════════════════════
+
+// 分類名稱標準化映射（解決 Gemini 命名飄移）
+const CATEGORY_NORMALIZE={
+  // 武器
+  'minifigure weapon':'Minifigure, Weapon','minifig weapon':'Minifigure, Weapon','minifig, weapon':'Minifigure, Weapon','weapon':'Minifigure, Weapon',
+  // 工具
+  'minifigure utensil':'Minifigure, Utensil','minifig utensil':'Minifigure, Utensil','minifig, utensil':'Minifigure, Utensil',
+  // 頭飾（統一到 Headwear）
+  'minifigure headwear':'Minifigure, Headwear','minifig headwear':'Minifigure, Headwear','minifig, headwear':'Minifigure, Headwear',
+  'minifigure headgear':'Minifigure, Headwear','minifig headgear':'Minifigure, Headwear','minifig, headgear':'Minifigure, Headwear',
+  'headwear accessory':'Minifigure, Headwear Accessory','minifigure headwear accessory':'Minifigure, Headwear Accessory',
+  // 頭
+  'minifig head':'Minifigure, Head','minifig, head':'Minifigure, Head','minifigure head':'Minifigure, Head',
+  // 盾牌
+  'minifigure shield':'Minifigure, Shield','minifig shield':'Minifigure, Shield','minifig, shield':'Minifigure, Shield',
+  // 頸飾
+  'minifigure neckwear':'Minifigure, Neckwear','minifig neckwear':'Minifigure, Neckwear','minifig, neckwear':'Minifigure, Neckwear',
+  // 身體
+  'minifigure body part':'Minifigure, Body Part','minifig body part':'Minifigure, Body Part','minifig, body part':'Minifigure, Body Part',
+  'minifigure body wear':'Minifigure, Body Wear','minifig body wear':'Minifigure, Body Wear','minifig, body wear':'Minifigure, Body Wear',
+  // 頭髮
+  'minifigure hair':'Minifigure, Hair','minifig hair':'Minifigure, Hair','minifig, hair':'Minifigure, Hair',
+  // 腿
+  'minifigure leg':'Minifigure, Leg','minifig leg':'Minifigure, Leg','minifig, leg':'Minifigure, Leg',
+  // 科技類
+  'technic connector':'Technic, Connector','technic gear':'Technic, Gear','technic axle':'Technic, Axle',
+  'technic panel':'Technic, Panel','technic pin':'Technic, Pin','technic bush':'Technic, Bush',
+  'technic brick':'Technic, Brick','technic brick modified':'Technic, Brick Modified',
+  'technic liftarm':'Technic, Liftarm','technic liftarm thin':'Technic, Liftarm Thin',
+  'technic beam':'Technic, Beam','technic link':'Technic, Link',
+  'technic pin connector':'Technic, Pin Connector','technic plate':'Technic, Plate',
+  'technic ball joint':'Technic, Ball Joint','technic gearbox':'Technic, Gearbox',
+  'technic steering':'Technic, Steering',
+  // 動物
+  'animal body part':'Animal, Body Part','animal land':'Animal, Land',
+  // 車輛
+  'vehicle mudguard':'Vehicle, Mudguard','vehicle':'Vehicle',
+  // 楔形
+  'wedge plate':'Wedge, Plate','wedge curved':'Wedge, Curved',
+  // 圓磚
+  'brick round':'Brick, Round',
+  // 坡
+  'slope inverted':'Slope, Inverted','slope curved':'Slope, Curved','slope wedge':'Slope, Wedge',
+  // 板
+  'plate modified':'Plate, Modified','plate modified round':'Plate, Modified Round',
+  'plate modified hinge':'Plate, Modified Hinge','plate modified wedge':'Plate, Modified Wedge',
+  'plate round':'Plate, Round',
+  // 磚
+  'brick modified':'Brick, Modified','brick arch':'Brick, Arch',
+  // 磚片
+  'tile modified':'Tile, Modified','tile round':'Tile, Round',
+  // 軟管
+  'hose flexible':'Hose, Flexible',
+  // 輪胎
+  'wheel tire':'Wheel, Tire',
+};
+function normalizeCategory(cat){
+  if(!cat)return'';
+  const key=cat.trim().toLowerCase().replace(/\s+/g,' ');
+  return CATEGORY_NORMALIZE[key]||cat.trim();
+}
+
 function getCatGroup(tags,blCat){
   // Check bricklinkCategory first for minifig body part sub-categories
-  if(blCat){const mfGroup=MINIFIG_CAT_MAP[blCat.toLowerCase()];if(mfGroup)return mfGroup}
+  if(blCat){const norm=normalizeCategory(blCat);const mfGroup=MINIFIG_CAT_MAP[norm.toLowerCase()];if(mfGroup)return mfGroup}
   if(!tags||!tags.length)return'未分類';
   for(const t of tags){if(CATEGORY_GROUPS[t])return CATEGORY_GROUPS[t]}
   return tags[0]||'未分類';
@@ -1140,7 +1202,7 @@ function editorSaveItem(){
   i.quantity=parseInt(document.getElementById('m-qty').value)||1;
   i.dimW=w>0?w/10:(i.dimW||0);i.dimL=l>0?l/10:(i.dimL||0);i.dimH=h>0?h/10:(i.dimH||0);
   if(w>0&&l>0&&h>0)i.estimateVolumeMl=Math.round(w*l*h/1000*10)/10;
-  i.bricklinkCategory=document.getElementById('m-blcat').value.trim();
+  i.bricklinkCategory=normalizeCategory(document.getElementById('m-blcat').value.trim());
   i.featureTags=document.getElementById('m-tags').value.split(/[,，]/).map(s=>s.trim()).filter(Boolean);
   i.description=document.getElementById('m-desc').value.trim();
   i.name=document.getElementById('m-nameEN').value.trim();
@@ -1880,7 +1942,7 @@ async function handlePartIdBatch(){
       if(!match&&baseId)match=allItems.find(i=>getBaseDesignId(i.designId)===baseId);
       let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...parsed,estimateVolumeMl:vol,quantity:1,featureTags:parsed.feature_tags||[]});
       const now=Date.now();
-      const savedItem={name:parsed.name||'',nameCN:parsed.name_cn||'',designId,description:parsed.description||'',featureTags:parsed.feature_tags||[],bricklinkCategory:parsed.bricklink_category||'',estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:1,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,id:match?match.id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),createdAt:match?(match.createdAt||now):now,updatedAt:now};
+      const savedItem={name:parsed.name||'',nameCN:parsed.name_cn||'',designId,description:parsed.description||'',featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:1,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,id:match?match.id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),createdAt:match?(match.createdAt||now):now,updatedAt:now};
       if(match){Object.assign(match,savedItem);markDirty(match.id)}else{allItems.unshift(savedItem);markDirty(savedItem.id)}
       await fbSaveItem(savedItem);item.result=savedItem;item.status='done';done++;
     }catch(err){item.error=err.message;item.status='error';errors++}
@@ -1950,7 +2012,7 @@ async function processResult(item){
 async function confirmPart(){
   if(!pendingPart)return;
   const now=Date.now();
-  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:pendingPart.bricklinkCategory||'',estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:'',quantity:1,updatedAt:now};
+  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:'',quantity:1,updatedAt:now};
   if(pendingPart.isUpdate&&pendingPart.matchedId){item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;if(existing)Object.assign(existing,item);showToast('已更新：'+item.slot+'（數量 +1）')}
   else{item.id='lego_'+now+'_'+Math.random().toString(36).slice(2,5);item.createdAt=now;allItems.unshift(item);showToast('已儲存到 '+item.slot)}
   markDirty(item.id);await fbSaveItem(item);
@@ -1995,7 +2057,7 @@ async function importSet(){
         const vol=calcVolFromAI(p.name,parsed);
         const slotInfo=gatewayAssign({estimateVolumeMl:vol,quantity:p.quantity,featureTags:parsed.feature_tags||[],name:p.name});
         const now=Date.now();
-        const savedItem={id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),name:p.name,nameCN:parsed.name_cn||'',designId:p.designId,description:parsed.description||'',dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,featureTags:parsed.feature_tags||[],bricklinkCategory:parsed.bricklink_category||'',estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:p.quantity,createdAt:now,updatedAt:now,setSource:setNum};
+        const savedItem={id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),name:p.name,nameCN:parsed.name_cn||'',designId:p.designId,description:parsed.description||'',dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:p.quantity,createdAt:now,updatedAt:now,setSource:setNum};
         allItems.unshift(savedItem);markDirty(savedItem.id);await fbSaveItem(savedItem);item.result=savedItem;item.status='done';done++;
       }catch(err){item.error=err.message;item.status='error';errors++}
       renderBatchList();updateBatchProgress(done+errors,newParts.length);if(!batchCancelled)await new Promise(r=>setTimeout(r,200));
@@ -2029,7 +2091,7 @@ async function startBatch(files){
       if(!match&&baseId)match=allItems.find(i=>getBaseDesignId(i.designId)===baseId);
       let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...parsed,estimateVolumeMl:vol,quantity:1,featureTags:parsed.feature_tags||[]});
       const now=Date.now();
-      const savedItem={name:parsed.name||'',nameCN:parsed.name_cn||'',designId,description:parsed.description||'',featureTags:parsed.feature_tags||[],bricklinkCategory:parsed.bricklink_category||'',estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:1,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,id:match?match.id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),createdAt:match?(match.createdAt||now):now,updatedAt:now};
+      const savedItem={name:parsed.name||'',nameCN:parsed.name_cn||'',designId,description:parsed.description||'',featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:1,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,id:match?match.id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),createdAt:match?(match.createdAt||now):now,updatedAt:now};
       if(match)Object.assign(match,savedItem);else allItems.unshift(savedItem);
       markDirty(savedItem.id);await fbSaveItem(savedItem);item.result=savedItem;item.status='done';done++;
     }catch(err){item.error=err.message;item.status='error';errors++}
