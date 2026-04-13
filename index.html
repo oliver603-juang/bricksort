@@ -416,7 +416,7 @@ tr:hover{background:var(--accent-bg)}
 
 <!-- ═══ SETTINGS ═══ -->
 <div id="s-settings" class="screen">
-<div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:8px">設定</span></div>
+<div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:8px">設定</span> <span id="app-version" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:8px"></span></div>
 <div class="content">
   <div class="card">
     <div class="card-title">API Keys</div>
@@ -591,9 +591,13 @@ tr:hover{background:var(--accent-bg)}
 <div id="toast" class="toast"></div>
 
 <script>
+// ═══ Force clear any cached service workers / PWA cache ═══
+if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(regs=>{regs.forEach(r=>r.unregister())})}
+if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete(n))})}
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
+const APP_VERSION = '2026.04.14';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -669,6 +673,7 @@ function init(){
   try{db=firebase.initializeApp(FB_CONFIG,'bs').firestore()}catch(e){try{db=firebase.app('bs').firestore()}catch(e2){}}
   if(document.getElementById('inp-apikey'))document.getElementById('inp-apikey').value=cfg.apiKey||'';
   if(document.getElementById('inp-rbkey'))document.getElementById('inp-rbkey').value=cfg.rbKey||DEFAULT_RB_KEY;
+  if(document.getElementById('app-version'))document.getElementById('app-version').textContent='v'+APP_VERSION;
   initPxMmUI();
   _loadPromise=loadData();
   // Bluetooth shutter listener (calibrated click + Enter/Camera key)
