@@ -443,6 +443,26 @@ tr:hover{background:var(--accent-bg)}
     <div id="import-status" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
   </div>
   <div class="card">
+    <div class="card-title">📏 螢幕像素校正</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">校正後可在零件詳情頁點擊縮圖，顯示 1:1 實體尺寸的立體線框圖來比對實品。</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <label style="font-size:13px;flex-shrink:0">px/mm</label>
+      <input type="number" id="inp-pxmm" step="0.01" placeholder="如 3.96" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px 8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center">
+      <button class="btn btn-sm" style="white-space:nowrap" onclick="autoDetectPxMm()">自動偵測</button>
+    </div>
+    <div id="pxmm-ruler" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px">
+      <div style="font-size:12px;color:var(--accent);margin-bottom:8px">📐 用尺量下方線段的實際長度（mm），輸入後按確認</div>
+      <div id="pxmm-line" style="height:2px;background:var(--accent);border-radius:1px;margin:12px 0"></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:12px;color:var(--muted)">實測長度</label>
+        <input type="number" id="pxmm-measured" step="0.1" placeholder="mm" style="width:70px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px;font-size:13px;text-align:center">
+        <span style="font-size:12px;color:var(--muted)">mm</span>
+        <button class="btn btn-sm btn-primary" onclick="confirmPxMm()">確認</button>
+      </div>
+    </div>
+    <div id="pxmm-status" style="font-size:12px;color:var(--muted)"></div>
+  </div>
+  <div class="card">
     <div class="card-title">🎮 藍牙快拍</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">連接藍牙自拍棒後，半按拍照鍵即可在任何頁面觸發收納模式拍照。</div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -520,7 +540,7 @@ tr:hover{background:var(--accent-bg)}
 <div class="modal" onclick="event.stopPropagation()">
   <div class="modal-drag"></div>
   <div class="modal-head">
-    <img id="m-img" src="">
+    <img id="m-img" src="" onclick="show1to1Box()" style="cursor:zoom-in" title="點擊顯示 1:1 尺寸線框圖">
     <div class="modal-head-info"><h2 id="m-name"></h2><div class="sub" id="m-ids"></div></div>
   </div>
   <div class="modal-body">
@@ -630,7 +650,7 @@ let db=null, allItems=[], filtered=[], currentItem=null, isNewItem=false;
 let currentSort={key:'createdAt',dir:'desc'};
 let dirty=new Set();
 let slotConfig={nextSmallSlot:'001a',nextBagSlot:'B01',totalSmallDrawers:450,bagCapacity:800,locked:false};
-let cfg={apiKey:'',rbKey:DEFAULT_RB_KEY};
+let cfg={apiKey:'',rbKey:DEFAULT_RB_KEY,pxPerMm:0};
 let pendingPart=null, currentImageData=null, currentMode='storage';
 let batchQueue=[], batchCancelled=false, batchRunning=false;
 let _lastWorkingModel=null;
@@ -646,6 +666,7 @@ function init(){
   try{db=firebase.initializeApp(FB_CONFIG,'bs').firestore()}catch(e){try{db=firebase.app('bs').firestore()}catch(e2){}}
   if(document.getElementById('inp-apikey'))document.getElementById('inp-apikey').value=cfg.apiKey||'';
   if(document.getElementById('inp-rbkey'))document.getElementById('inp-rbkey').value=cfg.rbKey||DEFAULT_RB_KEY;
+  initPxMmUI();
   _loadPromise=loadData();
   // Bluetooth shutter listener (calibrated click + Enter/Camera key)
   initBtShutter();
@@ -765,9 +786,88 @@ function stopBtDetect(){
 function saveSettings(){
   cfg.apiKey=(document.getElementById('inp-apikey').value||'').trim();
   cfg.rbKey=(document.getElementById('inp-rbkey').value||'').trim()||DEFAULT_RB_KEY;
+  cfg.pxPerMm=parseFloat(document.getElementById('inp-pxmm').value)||cfg.pxPerMm||0;
   localStorage.setItem('bricksort_cfg',JSON.stringify(cfg));
   showToast('設定已儲存');
   showTab('main');
+}
+
+// ═══ Screen Calibration ═══
+function autoDetectPxMm(){
+  const dpr=window.devicePixelRatio||1;
+  // Show a 200px CSS-pixel line for user to measure
+  const ruler=document.getElementById('pxmm-ruler');
+  ruler.style.display='block';
+  document.getElementById('pxmm-line').style.width='200px';
+  document.getElementById('pxmm-status').textContent='DPR: '+dpr+' | 線段寬度: 200 CSS px';
+  document.getElementById('pxmm-measured').value='';
+  document.getElementById('pxmm-measured').focus();
+}
+function confirmPxMm(){
+  const measured=parseFloat(document.getElementById('pxmm-measured').value);
+  if(!measured||measured<=0){showToast('請輸入實測長度','error');return}
+  const pxPerMm=200/measured;
+  cfg.pxPerMm=Math.round(pxPerMm*100)/100;
+  document.getElementById('inp-pxmm').value=cfg.pxPerMm;
+  document.getElementById('pxmm-ruler').style.display='none';
+  document.getElementById('pxmm-status').innerHTML='✅ <b>'+cfg.pxPerMm+' px/mm</b> | 1mm = '+cfg.pxPerMm.toFixed(1)+' CSS像素';
+  localStorage.setItem('bricksort_cfg',JSON.stringify(cfg));
+  showToast('校正完成: '+cfg.pxPerMm+' px/mm');
+}
+function initPxMmUI(){
+  if(document.getElementById('inp-pxmm'))document.getElementById('inp-pxmm').value=cfg.pxPerMm||'';
+  const st=document.getElementById('pxmm-status');
+  if(st){if(cfg.pxPerMm)st.innerHTML='✅ <b>'+cfg.pxPerMm+' px/mm</b>';else st.textContent='尚未校正'}
+}
+
+// ═══ 1:1 Wireframe 3D Box ═══
+function show1to1Box(){
+  if(!currentItem)return;
+  const w=(currentItem.dimW||0)*10,l=(currentItem.dimL||0)*10,h=(currentItem.dimH||0)*10;
+  if(w<=0||l<=0||h<=0){showToast('此零件無尺寸資料','error');return}
+  if(!cfg.pxPerMm||cfg.pxPerMm<=0){showToast('請先在設定中校正螢幕像素','error');return}
+  const ppm=cfg.pxPerMm;
+  // Convert mm to CSS pixels
+  const pw=w*ppm,pl=l*ppm,ph=h*ppm;
+  // Oblique projection: depth at 30° angle, 50% foreshortening
+  const dScale=0.5,dAngle=30*Math.PI/180;
+  const dx=pl*dScale*Math.cos(dAngle),dy=pl*dScale*Math.sin(dAngle);
+  // SVG size with padding
+  const pad=40;
+  const svgW=pw+dx+pad*2,svgH=ph+dy+pad*2;
+  // Origin: bottom-left of front face
+  const ox=pad,oy=pad+dy+ph;
+  // 8 vertices of the box
+  const pts={
+    flb:[ox,oy],frb:[ox+pw,oy],flt:[ox,oy-ph],frt:[ox+pw,oy-ph],
+    blb:[ox+dx,oy-dy],brb:[ox+pw+dx,oy-dy],blt:[ox+dx,oy-dy-ph],brt:[ox+pw+dx,oy-dy-ph]
+  };
+  const line=(a,b,dash)=>'<line x1="'+a[0]+'" y1="'+a[1]+'" x2="'+b[0]+'" y2="'+b[1]+'" stroke="'+(dash?'#555':'#F5A623')+'" stroke-width="'+(dash?'1':'1.5')+'"'+(dash?' stroke-dasharray="4,3"':'')+'/>';
+  // Dimension labels
+  const mid=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+  const dimLabel=(x,y,text,anchor)=>'<text x="'+x+'" y="'+y+'" fill="#F5A623" font-size="13" font-family="monospace" font-weight="700" text-anchor="'+(anchor||'middle')+'">'+text+'</text>';
+  let svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+svgW+'" height="'+svgH+'" viewBox="0 0 '+svgW+' '+svgH+'">';
+  // Back edges (dashed)
+  svg+=line(pts.blb,pts.brb,1)+line(pts.blb,pts.blt,1)+line(pts.blb,pts.flb,1);
+  // Front face
+  svg+=line(pts.flb,pts.frb)+line(pts.frb,pts.frt)+line(pts.frt,pts.flt)+line(pts.flt,pts.flb);
+  // Top face
+  svg+=line(pts.flt,pts.blt)+line(pts.blt,pts.brt)+line(pts.brt,pts.frt);
+  // Right face
+  svg+=line(pts.frb,pts.brb)+line(pts.brb,pts.brt);
+  // Dimension labels: W (bottom), H (left), L (top-right)
+  const mW=mid(pts.flb,pts.frb);svg+=dimLabel(mW[0],mW[1]+16,w+'mm');
+  const mH=mid(pts.flb,pts.flt);svg+=dimLabel(mH[0]-8,mH[1],h+'mm','end');
+  const mL=mid(pts.frt,pts.brt);svg+=dimLabel(mL[0]+8,mL[1]-4,l+'mm','start');
+  // Volume info
+  svg+=dimLabel(svgW/2,svgH-8,Math.round(w*l*h/1000*10)/10+'ml','middle');
+  svg+='</svg>';
+  // Show overlay
+  let ov=document.getElementById('wireframe-overlay');
+  if(!ov){ov=document.createElement('div');ov.id='wireframe-overlay';document.body.appendChild(ov)}
+  ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
+  ov.onclick=()=>{ov.style.display='none'};
+  ov.innerHTML='<div style="color:var(--accent);font-size:14px;font-weight:700;margin-bottom:12px">📏 1:1 實體尺寸（點擊任意處關閉）</div><div style="color:var(--muted);font-size:12px;margin-bottom:16px">'+(currentItem.nameCN||currentItem.name||'')+' · '+w+'×'+l+'×'+h+' mm</div><div style="overflow:auto;max-width:100%;max-height:70vh">'+svg+'</div><div style="color:#555;font-size:11px;margin-top:12px">'+cfg.pxPerMm+' px/mm · 將零件放在螢幕上比對</div>';
 }
 
 // ═══════════════════════════════════════════════════
@@ -1493,6 +1593,8 @@ function safeParseJSON(text){text=text.replace(/^```json\s*/i,'').replace(/```\s
 async function buildExistingList(){if(!allItems.length)return'';const grouped={};allItems.forEach(i=>{const s=i.slot||'?';if(!grouped[s])grouped[s]=[];if(grouped[s].length<3)grouped[s].push('['+i.id+'] '+(i.designId||'')+' '+(i.nameCN||i.name))});let list='';for(const[slot,arr]of Object.entries(grouped))list+=slot+':'+arr.join(';')+'\n';return list}
 async function resizeImage(dataUrl,maxDim){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const scale=Math.min(1,maxDim/Math.max(img.width,img.height));const w=Math.round(img.width*scale),h=Math.round(img.height*scale);const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);resolve(c.toDataURL('image/jpeg',0.85))};img.src=dataUrl})}
 async function cropLensThumb(dataUrl){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const W=img.width,H=img.height,cx=Math.floor(W*0.6),cy=Math.floor(H*0.1),cw=Math.floor(W*0.38),ch=Math.floor(H*0.25);const c=document.createElement('canvas');c.width=cw;c.height=ch;c.getContext('2d').drawImage(img,cx,cy,cw,ch,0,0,cw,ch);resolve(c.toDataURL('image/jpeg',0.9))};img.src=dataUrl})}
+// Crop Lens text area (lower 55% of screenshot, below tabs and thumbnail)
+async function cropLensText(dataUrl){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const W=img.width,H=img.height;const cy=Math.floor(H*0.35),ch=Math.floor(H*0.57);const c=document.createElement('canvas');c.width=W;c.height=ch;c.getContext('2d').drawImage(img,0,cy,W,ch,0,0,W,ch);resolve(c.toDataURL('image/jpeg',0.85))};img.src=dataUrl})}
 function calcVolFromAI(name,parsed){const mw=parseFloat(parsed.dim_mm_w),ml=parseFloat(parsed.dim_mm_l),mh=parseFloat(parsed.dim_mm_h);if(mw>0&&ml>0&&mh>0){parsed._dimW=Math.round(mw)/10;parsed._dimL=Math.round(ml)/10;parsed._dimH=Math.round(mh)/10;return Math.max(0.3,Math.round(mw*ml*mh/1000*10)/10)}return parseInt(parsed.estimate_volume_ml)||2}
 
 function renderMiniMap(slot){
@@ -1570,10 +1672,44 @@ function renderMiniMap(slot){
 async function handleLensInput(event){const files=Array.from(event.target.files||[]);event.target.value='';if(!files.length)return;if(files.length===1){const reader=new FileReader();reader.onload=async e=>{await parseLensScreenshot(e.target.result)};reader.readAsDataURL(files[0]);return}await startBatch(files)}
 async function parseLensScreenshot(dataUrl){
   showScreen('s-processing');setProcessingMsg('解析 Lens 截圖…');
-  try{const resized=await resizeImage(dataUrl,800),base64=resized.split(',')[1];currentImageData=await cropLensThumb(dataUrl);
+  try{
+    // Step 1: Crop two regions
+    currentImageData=await cropLensThumb(dataUrl);
+    const thumbBase64=currentImageData.split(',')[1];
+    const textCropDataUrl=await cropLensText(dataUrl);
+    const textBase64=textCropDataUrl.split(',')[1];
+
+    // Step 2: OCR — Gemini reads the text area
+    setProcessingMsg('📖 讀取 Lens 文字…');
+    const ocrPrompt='讀取截圖中 Google Lens 的 AI 摘要文字。提取零件編號（Design ID，通常是4~6位數字）和零件名稱（中英文）。如果文字中有尺寸資訊也一併提取。回應純JSON：{"design_id":"零件編號(純數字)","name":"英文名","name_cn":"中文名","lens_summary":"完整文字摘要(150字以內)"}';
+    const ocrResp=await callGeminiAPI(ocrPrompt,textBase64,0);
+    const ocr=safeParseJSON(ocrResp);
+    const lensId=(ocr.design_id||'').replace(/[^a-zA-Z0-9]/g,'');
+    const lensName=ocr.name||'';
+    const lensNameCN=ocr.name_cn||'';
+    const lensSummary=ocr.lens_summary||'';
+
+    // Step 3: Classify — Gemini sees the clean thumbnail + Lens text + existing list
+    setProcessingMsg('🤖 AI 分類中…');
     const existingList=await buildExistingList();
-    const prompt='【重要】先判斷圖中是「完整組裝人偶」(有頭+身體+腿)還是「單一零件」。完整人偶：design_id填BrickLink人偶編號(如njo788,sw0001)，is_complete_minifig=true，bricklink_category="Minifigure"。單一零件：design_id填數字Design ID，is_complete_minifig=false。讀取截圖中的積木。回應純JSON：{"design_id":"編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型零件id或null。已有:'+existingList+'"}';
-    setProcessingMsg('AI 辨識中…');const textResp=await callGeminiAPI(prompt,base64,0,GEMINI_LEGO_SYSTEM);const item=safeParseJSON(textResp);await processResult(item);
+    const classifyPrompt='分析這個零件圖片，結合 Google Lens 辨識結果進行分類。\n\n【Lens 辨識結果】\nDesign ID: '+lensId+'\n名稱: '+lensName+' ('+lensNameCN+')\n摘要: '+lensSummary+'\n\n【重要】design_id 和 name/name_cn 請直接使用上方 Lens 辨識結果，不要自己猜。你只需要判斷：bricklink_category、feature_tags、尺寸dim、is_oversize、is_complete_minifig、matched_existing_id。\n\n回應純JSON：{"design_id":"'+lensId+'","name":"'+(lensName||'').replace(/"/g,'\\"')+'","name_cn":"'+(lensNameCN||'').replace(/"/g,'\\"')+'","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型零件id或null。已有:'+existingList+'"}';
+    const classifyResp=await callGeminiAPI(classifyPrompt,thumbBase64,0,GEMINI_LEGO_SYSTEM);
+    const item=safeParseJSON(classifyResp);
+
+    // Lens-derived fields always take priority
+    if(lensId)item.design_id=lensId;
+    if(lensName)item.name=lensName;
+    if(lensNameCN)item.name_cn=lensNameCN;
+
+    // Step 3.5: Fetch correct thumbnail from Rebrickable API
+    if(lensId){
+      try{
+        const rbData=await rebrickableLookup(lensId);
+        if(rbData&&rbData.imgUrl)window._pendingRbImgUrl=rbData.imgUrl;
+      }catch(e){}
+    }
+
+    await processResult(item);
   }catch(err){showTab('main');showToast('解析失敗：'+err.message,'error')}
 }
 // ═══════════════════════════════════════════════════
@@ -1705,16 +1841,10 @@ async function handleLensGallery(event){
   const file=event.target.files[0];if(!file)return;event.target.value='';
   const reader=new FileReader();reader.onload=async e=>{
     const dataUrl=e.target.result;
-    currentImageData=await cropLensThumb(dataUrl).catch(()=>dataUrl);
-    const resized=await resizeImage(dataUrl,800);
     showScreen('s-processing');
     try{
-      setProcessingMsg('📱 解析 Lens 截圖…');
-      const base64=resized.split(',')[1];
-      const existingList=await buildExistingList();
-      const prompt='分析圖片中的樂高/積木物品，建立為新物品。可能是：\n1. 單一零件：design_id填Design ID，dim填零件尺寸\n2. 完整人偶：design_id填人偶編號(如njo788)，is_complete_minifig=true\n3. 套件/盒組成品：design_id填套件編號(如701805或42115)，dim填組裝完成後的整體尺寸(cm轉mm)，is_oversize=true\n\n回應純JSON：{"design_id":"編號","name":"英文名","name_cn":"繁體中文名","bricklink_category":"分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型id或null。已有:'+existingList+'"}';
-      const textResp=await callGeminiAPI(prompt,base64,0,GEMINI_LEGO_SYSTEM);
-      const item=safeParseJSON(textResp);await processResult(item);
+      // Reuse the same 2-step Lens flow
+      await parseLensScreenshot(dataUrl);
     }catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}
   };reader.readAsDataURL(file);
 }
@@ -2134,7 +2264,7 @@ async function handlePartIdBatch(){
       const vol=calcVolFromAI(parsed.name||'',parsed);
       let match=allItems.find(i=>(i.designId||'').toLowerCase()===designId.toLowerCase());
       if(!match&&baseId)match=allItems.find(i=>getBaseDesignId(i.designId)===baseId);
-      let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...parsed,estimateVolumeMl:vol,quantity:1,featureTags:parsed.feature_tags||[]});
+      let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...parsed,estimateVolumeMl:vol,quantity:1,featureTags:parsed.feature_tags||[],dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0});
       const now=Date.now();
       const savedItem={name:parsed.name||'',nameCN:parsed.name_cn||'',designId,description:parsed.description||'',featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:1,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,id:match?match.id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),createdAt:match?(match.createdAt||now):now,updatedAt:now};
       if(match){Object.assign(match,savedItem);markDirty(match.id)}else{allItems.unshift(savedItem);markDirty(savedItem.id)}
@@ -2177,9 +2307,19 @@ async function processResult(item){
       if(yes)match=candidate;
     }
   }}
+  // Mold variant check via Rebrickable (e.g. 4589 → 59900)
+  if(!match&&item.design_id){
+    setProcessingMsg('🔍 模具變體查詢…');
+    const moldMatch=await findByMoldVariant(item.design_id);
+    if(moldMatch){
+      const newImg=currentImageData||window._pendingRbImgUrl||(item.design_id?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(item.design_id)+'.png':'');
+      const yes=await showVariantConfirm(item.design_id,item.name_cn||item.name||'',newImg,moldMatch);
+      if(yes)match=moldMatch;
+    }
+  }
   const designId=item.design_id||'';const thumbnailUrl=window._pendingRbImgUrl||(designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+designId+'.png':'');window._pendingRbImgUrl='';
   const vol=calcVolFromAI(item.name||item.name_cn||'',item);
-  let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...item,estimateVolumeMl:vol,quantity:1,featureTags:item.feature_tags||[]});
+  let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...item,estimateVolumeMl:vol,quantity:1,featureTags:item.feature_tags||[],dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0});
   pendingPart={...item,...slotInfo,designId,thumbnailUrl,dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0,featureTags:item.feature_tags||[],bricklinkCategory:item.bricklink_category||'',estimateVolumeMl:vol,imageData:currentImageData||'',nameCN:item.name_cn||'',isUpdate:!!match,matchedId:match?match.id:null};
   // Render
   document.getElementById('result-img').src=thumbnailUrl||currentImageData||'';
@@ -2206,7 +2346,7 @@ async function processResult(item){
 async function confirmPart(){
   if(!pendingPart)return;
   const now=Date.now();
-  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:'',quantity:1,updatedAt:now};
+  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:(pendingPart.thumbnailUrl&&pendingPart.thumbnailUrl.includes('/elements/'))?'':(pendingPart.imageData||''),quantity:1,updatedAt:now};
   if(pendingPart.isUpdate&&pendingPart.matchedId){item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;if(existing)Object.assign(existing,item);showToast('已更新：'+item.slot+'（數量 +1）')}
   else{item.id='lego_'+now+'_'+Math.random().toString(36).slice(2,5);item.createdAt=now;allItems.unshift(item);showToast('已儲存到 '+item.slot)}
   markDirty(item.id);await fbSaveItem(item);
@@ -2249,7 +2389,7 @@ async function importSet(){
         const textResp=await callGeminiAPI(prompt,null,0,GEMINI_LEGO_SYSTEM);const parsed=safeParseJSON(textResp);
         const baseId=getBaseDesignId(p.designId)||p.designId,thumbnailUrl=p.imgUrl||(baseId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'');
         const vol=calcVolFromAI(p.name,parsed);
-        const slotInfo=gatewayAssign({estimateVolumeMl:vol,quantity:p.quantity,featureTags:parsed.feature_tags||[],name:p.name});
+        const slotInfo=gatewayAssign({estimateVolumeMl:vol,quantity:p.quantity,featureTags:parsed.feature_tags||[],name:p.name,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0});
         const now=Date.now();
         const savedItem={id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),name:p.name,nameCN:parsed.name_cn||'',designId:p.designId,description:parsed.description||'',dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:p.quantity,createdAt:now,updatedAt:now,setSource:setNum};
         allItems.unshift(savedItem);markDirty(savedItem.id);await fbSaveItem(savedItem);item.result=savedItem;item.status='done';done++;
@@ -2273,17 +2413,40 @@ async function startBatch(files){
     if(batchCancelled)break;const item=batchQueue[idx];item.status='processing';renderBatchList();
     try{
       const dataUrl=await new Promise(r=>{const rd=new FileReader();rd.onload=e=>r(e.target.result);rd.readAsDataURL(item.file)});
-      const resized=await resizeImage(dataUrl,800);const base64=resized.split(',')[1];
+      // Step 1: Crop thumbnail + text area
       currentImageData=await cropLensThumb(dataUrl);
+      const thumbBase64=currentImageData.split(',')[1];
+      const textCropDataUrl=await cropLensText(dataUrl);
+      const textBase64=textCropDataUrl.split(',')[1];
+
+      // Step 2: OCR text area
+      item.name='📖 OCR…';renderBatchList();
+      const ocrPrompt='讀取截圖中 Google Lens 的 AI 摘要文字。提取零件編號和名稱。回應純JSON：{"design_id":"零件編號(純數字)","name":"英文名","name_cn":"中文名","lens_summary":"完整文字摘要(150字以內)"}';
+      const ocrResp=await callGeminiAPI(ocrPrompt,textBase64,0);
+      const ocr=safeParseJSON(ocrResp);
+      const lensId=(ocr.design_id||'').replace(/[^a-zA-Z0-9]/g,'');
+      const lensName=ocr.name||'';
+      const lensNameCN=ocr.name_cn||'';
+      const lensSummary=ocr.lens_summary||'';
+      item.name=lensNameCN||lensName||lensId||'未知';renderBatchList();
+
+      // Step 3: Classify with thumbnail
       const existingList=await buildExistingList();
-      const prompt='讀取截圖中積木零件。回應純JSON：{"design_id":"編號","name":"英文名","name_cn":"中文名","bricklink_category":"BrickLink分類","description":"30字","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"matched_existing_id":"同外型id或null。已有:'+existingList+'"}';
-      const textResp=await callGeminiAPI(prompt,base64,0,GEMINI_LEGO_SYSTEM);const parsed=safeParseJSON(textResp);
+      const classifyPrompt='分析這個零件圖片，結合 Google Lens 辨識結果進行分類。\n\n【Lens 辨識結果】\nDesign ID: '+lensId+'\n名稱: '+lensName+' ('+lensNameCN+')\n摘要: '+lensSummary+'\n\n【重要】design_id 和 name/name_cn 請直接使用上方 Lens 結果。你只需要判斷：bricklink_category、feature_tags、尺寸dim、is_oversize、is_complete_minifig、matched_existing_id。\n\n回應純JSON：{"design_id":"'+lensId+'","name":"'+(lensName||'').replace(/"/g,'\\"')+'","name_cn":"'+(lensNameCN||'').replace(/"/g,'\\"')+'","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型id或null。已有:'+existingList+'"}';
+      const classifyResp=await callGeminiAPI(classifyPrompt,thumbBase64,0,GEMINI_LEGO_SYSTEM);
+      const parsed=safeParseJSON(classifyResp);
+
+      // Lens fields take priority
+      if(lensId)parsed.design_id=lensId;
+      if(lensName)parsed.name=lensName;
+      if(lensNameCN)parsed.name_cn=lensNameCN;
+
       const designId=parsed.design_id||'',baseId=getBaseDesignId(designId);
       const thumbnailUrl=baseId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'';
       const vol=calcVolFromAI(parsed.name||'',parsed);
       let match=allItems.find(i=>(i.designId||'').toLowerCase()===designId.toLowerCase());
       if(!match&&baseId)match=allItems.find(i=>getBaseDesignId(i.designId)===baseId);
-      let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...parsed,estimateVolumeMl:vol,quantity:1,featureTags:parsed.feature_tags||[]});
+      let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...parsed,estimateVolumeMl:vol,quantity:1,featureTags:parsed.feature_tags||[],dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0});
       const now=Date.now();
       const savedItem={name:parsed.name||'',nameCN:parsed.name_cn||'',designId,description:parsed.description||'',featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:1,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,id:match?match.id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),createdAt:match?(match.createdAt||now):now,updatedAt:now};
       if(match)Object.assign(match,savedItem);else allItems.unshift(savedItem);
