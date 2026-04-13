@@ -1403,6 +1403,53 @@ async function rebrickableLookup(inputId){
   }catch(e){return null}
 }
 
+// ═══ MOLD VARIANT LOOKUP (Rebrickable) ═══
+const _moldCache={};
+async function getMoldVariants(designId){
+  if(!designId)return[];
+  if(_moldCache[designId])return _moldCache[designId];
+  const key=cfg.rbKey||DEFAULT_RB_KEY;if(!key)return[];
+  try{
+    const resp=await fetch('https://rebrickable.com/api/v3/lego/parts/'+encodeURIComponent(designId)+'/?key='+key);
+    if(!resp.ok){_moldCache[designId]=[];return[]}
+    const data=await resp.json();
+    const variants=new Set();
+    // Collect mold variants (e.g. 4589 → 59900)
+    (data.molds||[]).forEach(v=>variants.add(v));
+    // Collect all LEGO IDs (e.g. 28701, 64288, 55525)
+    const legoIds=data.external_ids?.LEGO||[];
+    legoIds.forEach(v=>variants.add(String(v)));
+    // Collect BrickLink IDs
+    const blIds=data.external_ids?.BrickLink||[];
+    blIds.forEach(v=>variants.add(String(v)));
+    // Collect Brickset IDs
+    const bsIds=data.external_ids?.Brickset||[];
+    bsIds.forEach(v=>variants.add(String(v)));
+    // Remove self
+    variants.delete(designId);variants.delete(data.part_num);
+    const result=[...variants];
+    _moldCache[designId]=result;
+    // Cache reverse: each variant maps back to this part and siblings
+    result.forEach(v=>{if(!_moldCache[v])_moldCache[v]=[designId,...result.filter(u=>u!==v)]});
+    return result;
+  }catch(e){_moldCache[designId]=[];return[]}
+}
+
+// Find a DB match by checking mold variants of a given designId
+async function findByMoldVariant(designId){
+  if(!designId)return null;
+  const variants=await getMoldVariants(designId);
+  if(!variants.length)return null;
+  for(const v of variants){
+    const match=allItems.find(i=>{
+      const iId=(i.designId||'').toLowerCase();
+      return iId===v.toLowerCase()||getBaseDesignId(i.designId)===getBaseDesignId(v);
+    });
+    if(match)return match;
+  }
+  return null;
+}
+
 async function brickognizePredict(base64Image){
   try{const byteStr=atob(base64Image),ab=new ArrayBuffer(byteStr.length),ia=new Uint8Array(ab);for(let i=0;i<byteStr.length;i++)ia[i]=byteStr.charCodeAt(i);
     const blob=new Blob([ab],{type:'image/jpeg'}),fd=new FormData();fd.append('query_image',blob,'photo.jpg');
@@ -1568,6 +1615,12 @@ async function cameraRecognize(base64,imgSrc){
       const candidate=allItems.find(i=>{const iBase=getNumericBase(i.designId);return iBase===numBase&&(i.designId||'').toLowerCase()!==bkId.toLowerCase()});
       if(candidate){const newImg=currentImageData||bkResult.imgUrl||'';const yes=await showVariantConfirm(bkId,bkResult.name,newImg,candidate);if(yes){match=candidate;matchType='variant-confirmed'}}
     }
+    // Mold variant check via Rebrickable (e.g. 4589 → 59900)
+    if(!match&&bkId){
+      setProcessingMsg('🔍 模具變體查詢…');
+      const moldMatch=await findByMoldVariant(bkId);
+      if(moldMatch){const newImg=currentImageData||bkResult.imgUrl||'';const yes=await showVariantConfirm(bkId,bkResult.name,newImg,moldMatch);if(yes){match=moldMatch;matchType='mold-variant'}}
+    }
     if(!match&&bkName.length>=3){const found=allItems.find(i=>i.brickognizeName&&i.brickognizeName.toLowerCase()===bkName);if(found){match=found;matchType='bk-name'}}
     if(!match&&bkName.length>=5){const found=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(bkName)||bkName.includes(n))});if(found){match=found;matchType='name-fuzzy'}}
     if(match){
@@ -1576,7 +1629,7 @@ async function cameraRecognize(base64,imgSrc){
       pendingPart={design_id:bkId||match.designId,name:match.name||bkResult.name,name_cn:match.nameCN||'',designId:bkId||match.designId,slot:match.slot,slotType:match.slotType||'small',thumbnailUrl,estimateVolumeMl:match.estimateVolumeMl||0,featureTags:match.featureTags||[],bricklinkCategory:match.bricklinkCategory||'',description:match.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:match.id,_brickognize:{score:bkResult.score,id:bkId,name:bkResult.name}};
       document.getElementById('result-img').src=thumbnailUrl||currentImageData||'';
       document.getElementById('result-name').textContent=match.nameCN||match.name||bkResult.name;
-      const matchMethod=matchType==='exact'?'ID: '+bkId:matchType==='variant-confirmed'?'變體: '+bkId+'→'+match.designId:matchType==='bk-name'?'BK名稱':matchType==='name-fuzzy'?'名稱相似':'ID: '+bkId;
+      const matchMethod=matchType==='exact'?'ID: '+bkId:matchType==='variant-confirmed'?'變體: '+bkId+'→'+match.designId:matchType==='mold-variant'?'模具: '+bkId+'→'+match.designId:matchType==='bk-name'?'BK名稱':matchType==='name-fuzzy'?'名稱相似':'ID: '+bkId;
       document.getElementById('result-designid').innerHTML=(match.designId?'Design ID: '+match.designId:'')+' <span style="font-size:10px;padding:2px 6px;background:rgba(76,175,80,0.15);border:1px solid var(--green);color:var(--green);border-radius:4px">⚡ '+bkResult.score+'% '+matchMethod+'</span>';
       document.getElementById('result-desc').textContent=match.description||'';
       document.getElementById('result-tags').innerHTML=(match.featureTags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
@@ -1615,6 +1668,8 @@ async function cameraRecognize(base64,imgSrc){
   if(!dbMatch&&geminiId){dbMatch=allItems.find(i=>(i.designId||'').toLowerCase()===geminiId.toLowerCase())}
   if(!dbMatch&&geminiId){const base=getBaseDesignId(geminiId);if(base)dbMatch=allItems.find(i=>getBaseDesignId(i.designId)===base)}
   if(!dbMatch&&geminiId){const num=getNumericBase(geminiId);if(num)dbMatch=allItems.find(i=>getNumericBase(i.designId)===num)}
+  // Mold variant check via Rebrickable
+  if(!dbMatch&&geminiId){dbMatch=await findByMoldVariant(geminiId)}
   if(!dbMatch){const en=(partInfo.name||'');if(en.length>=5){const nl=en.toLowerCase();dbMatch=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(nl)||nl.includes(n))})}}
   if(dbMatch){
     if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
@@ -1844,6 +1899,8 @@ async function confirmCrops(){
       if(did){match=allItems.find(it=>(it.designId||'').toLowerCase()===did.toLowerCase());if(match)matchMethod='BK:'+bkResult.score+'%'}
       if(!match&&baseId){match=allItems.find(it=>getBaseDesignId(it.designId)===baseId);if(match)matchMethod='BK變體:'+bkResult.score+'%'}
       if(!match&&numBase){match=allItems.find(it=>getNumericBase(it.designId)===numBase);if(match)matchMethod='BK模具:'+bkResult.score+'%'}
+      // Mold variant via Rebrickable
+      if(!match&&did){const mv=await findByMoldVariant(did);if(mv){match=mv;matchMethod='BK模具變體:'+bkResult.score+'%'}}
       if(!match&&(bkResult.name||'').length>=3){const bkn=bkResult.name.toLowerCase();match=allItems.find(it=>it.brickognizeName&&it.brickognizeName.toLowerCase()===bkn);if(match)matchMethod='BK名稱'}}
     if(!match&&bkResult&&bkResult.score>=30)matchMethod='BK:'+bkResult.score+'% (未建檔)';
     
@@ -1860,6 +1917,8 @@ async function confirmCrops(){
           if(did){match=allItems.find(it=>(it.designId||'').toLowerCase()===did.toLowerCase());if(match)matchMethod='AI:'+did}
           if(!match&&baseId){match=allItems.find(it=>getBaseDesignId(it.designId)===baseId);if(match)matchMethod='AI變體:'+did}
           if(!match&&numBase){match=allItems.find(it=>getNumericBase(it.designId)===numBase);if(match)matchMethod='AI模具:'+did}
+          // Mold variant via Rebrickable
+          if(!match&&did){const mv=await findByMoldVariant(did);if(mv){match=mv;matchMethod='AI模具變體:'+did}}
           if(!match)matchMethod='AI:'+did+' (未建檔)';
         }
       }catch(e){console.log('[說明書] AI fallback failed:',e)}
