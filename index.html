@@ -191,6 +191,7 @@ tr:hover{background:var(--accent-bg)}
   <input type="file" id="camera-take" accept="image/*" capture="environment" style="display:none" onchange="handleCameraPhoto(event)">
   <input type="file" id="gallery-pick" accept="image/*" style="display:none" onchange="handleGalleryPick(event)">
   <input type="file" id="instruction-camera" accept="image/*" capture="environment" style="display:none" onchange="handleInstructionCamera(event)">
+  <input type="file" id="instruction-gallery" accept="image/*" style="display:none" onchange="handleInstructionCamera(event)">
 
   <!-- Search -->
   <div class="search-bar">
@@ -203,9 +204,15 @@ tr:hover{background:var(--accent-bg)}
   <div style="display:flex;gap:8px;margin-bottom:4px">
     <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700;background:var(--accent-dim);border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('camera-take').click()">📷 拍照</button>
     <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="openGallery('lens')">🖼 建檔</button>
-    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="openInstructionCamera()">📋 說明書</button>
+    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="toggleInstructionMenu()">📋 說明書</button>
   </div>
-  <div style="font-size:10px;color:var(--dim);text-align:center;margin-bottom:10px">拍照：查位置 ｜ 建檔：Lens 截圖 ｜ 說明書：拍照→手動框選</div>
+  <div id="instruction-menu" style="display:none;margin-bottom:6px">
+    <div style="display:flex;gap:8px">
+      <button class="btn" style="flex:1;padding:10px;font-size:13px" onclick="document.getElementById('instruction-camera').click();hideInstructionMenu()">📷 拍照</button>
+      <button class="btn" style="flex:1;padding:10px;font-size:13px" onclick="document.getElementById('instruction-gallery').click();hideInstructionMenu()">🖼 從圖庫選</button>
+    </div>
+  </div>
+  <div style="font-size:10px;color:var(--dim);text-align:center;margin-bottom:10px">拍照：查位置 ｜ 建檔：Lens 截圖 ｜ 說明書：拍照或選圖→手動框選</div>
 
   <!-- Advanced panel -->
   <div style="margin-bottom:10px">
@@ -1462,14 +1469,21 @@ async function handleLensGallery(event){
 
 // ═══ INSTRUCTION: Camera → Manual Crop → BK/AI → Results ═══
 
-// Open camera for instruction mode (web + APK compatible)
+// Open instruction: show camera/gallery menu (web) or APK gallery
 function openInstructionCamera(){
   if(window.BrickSortNative){
     window._galleryMode='instruction';
     BrickSortNative.openGalleryWithMode('instruction');
   }else{
-    document.getElementById('instruction-camera').click();
+    toggleInstructionMenu();
   }
+}
+function toggleInstructionMenu(){
+  const m=document.getElementById('instruction-menu');
+  m.style.display=m.style.display==='none'?'block':'none';
+}
+function hideInstructionMenu(){
+  document.getElementById('instruction-menu').style.display='none';
 }
 
 // Web camera handler
