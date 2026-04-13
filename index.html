@@ -312,7 +312,7 @@ tr:hover{background:var(--accent-bg)}
 <div style="flex:1;overflow-y:auto;padding:0 16px 80px">
   <div class="card">
     <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;cursor:pointer" onclick="openResultItem()" title="點擊查看物品詳情">
-      <img id="result-img" src="" style="width:64px;height:64px;border-radius:8px;object-fit:cover;background:var(--surface)">
+      <img id="result-img" src="" style="width:64px;height:64px;border-radius:8px;object-fit:cover;background:var(--surface)" onerror="if(this.dataset.fb){this.src=this.dataset.fb;this.dataset.fb=''}">
       <div style="flex:1"><div id="result-name" style="font-size:18px;font-weight:700"></div><div id="result-designid" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></div></div>
     </div>
     <div id="result-desc" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
@@ -543,7 +543,7 @@ tr:hover{background:var(--accent-bg)}
 <div class="modal" onclick="event.stopPropagation()">
   <div class="modal-drag"></div>
   <div class="modal-head">
-    <img id="m-img" src="" onclick="show1to1Box()" style="cursor:zoom-in" title="點擊顯示 1:1 尺寸線框圖">
+    <img id="m-img" src="" onclick="show1to1Box()" style="cursor:zoom-in" title="點擊顯示 1:1 尺寸線框圖" onerror="if(this.dataset.fb){this.src=this.dataset.fb;this.dataset.fb=''}else this.style.display='none'">
     <div class="modal-head-info"><h2 id="m-name"></h2><div class="sub" id="m-ids"></div></div>
   </div>
   <div class="modal-body">
@@ -597,7 +597,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14c';
+const APP_VERSION = '2026.04.14d';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1267,8 +1267,11 @@ function openNewItem(){
 }
 function populateModal(i){
   const did=i.designId||'',baseId=did.replace(/(pb|pr|pat)\d+.*$/i,'');
-  const thumb=i.thumbnailUrl||(baseId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'');
-  document.getElementById('m-img').src=thumb;
+  const thumb=i.thumbnailUrl||i.imageData||'';
+  const mImg=document.getElementById('m-img');
+  mImg.style.display='';
+  mImg.dataset.fb=i.imageData||'';
+  mImg.src=thumb;
   document.getElementById('m-name').textContent=i.name||i.nameCN||(isNewItem?'新零件':'未知零件');
   document.getElementById('m-ids').textContent=isNewItem?'新建檔':'Design ID: '+did+' · '+(i.slot||'?')+' · '+(i.slotType||'small');
   document.getElementById('m-qty').value=i.quantity||1;
@@ -1628,7 +1631,7 @@ async function smartRecognize(base64Image,hint,prefetchedBk){
 function safeParseJSON(text){text=text.replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();try{return JSON.parse(text)}catch(e){}const m=text.match(/\{[\s\S]*\}/);if(!m)throw new Error('No JSON found');try{return JSON.parse(m[0])}catch(e){}throw new Error('JSON parse failed')}
 async function buildExistingList(){if(!allItems.length)return'';const grouped={};allItems.forEach(i=>{const s=i.slot||'?';if(!grouped[s])grouped[s]=[];if(grouped[s].length<3)grouped[s].push('['+i.id+'] '+(i.designId||'')+' '+(i.nameCN||i.name))});let list='';for(const[slot,arr]of Object.entries(grouped))list+=slot+':'+arr.join(';')+'\n';return list}
 async function resizeImage(dataUrl,maxDim){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const scale=Math.min(1,maxDim/Math.max(img.width,img.height));const w=Math.round(img.width*scale),h=Math.round(img.height*scale);const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);resolve(c.toDataURL('image/jpeg',0.85))};img.src=dataUrl})}
-async function cropLensThumb(dataUrl){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const W=img.width,H=img.height,cx=Math.floor(W*0.6),cy=Math.floor(H*0.1),cw=Math.floor(W*0.38),ch=Math.floor(H*0.25);const c=document.createElement('canvas');c.width=cw;c.height=ch;c.getContext('2d').drawImage(img,cx,cy,cw,ch,0,0,cw,ch);resolve(c.toDataURL('image/jpeg',0.9))};img.src=dataUrl})}
+async function cropLensThumb(dataUrl){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const W=img.width,H=img.height,cx=Math.floor(W*0.6),cy=Math.floor(H*0.1),cw=Math.floor(W*0.38),ch=Math.floor(H*0.25);const c=document.createElement('canvas');const maxDim=120;const scale=Math.min(1,maxDim/Math.max(cw,ch));c.width=Math.round(cw*scale);c.height=Math.round(ch*scale);c.getContext('2d').drawImage(img,cx,cy,cw,ch,0,0,c.width,c.height);resolve(c.toDataURL('image/jpeg',0.6))};img.src=dataUrl})}
 // Crop Lens text area (lower 55% of screenshot, below tabs and thumbnail)
 async function cropLensText(dataUrl){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const W=img.width,H=img.height;const cy=Math.floor(H*0.35),ch=Math.floor(H*0.57);const c=document.createElement('canvas');c.width=W;c.height=ch;c.getContext('2d').drawImage(img,0,cy,W,ch,0,0,W,ch);resolve(c.toDataURL('image/jpeg',0.85))};img.src=dataUrl})}
 function calcVolFromAI(name,parsed){const mw=parseFloat(parsed.dim_mm_w),ml=parseFloat(parsed.dim_mm_l),mh=parseFloat(parsed.dim_mm_h);if(mw>0&&ml>0&&mh>0){parsed._dimW=Math.round(mw)/10;parsed._dimL=Math.round(ml)/10;parsed._dimH=Math.round(mh)/10;return Math.max(0.3,Math.round(mw*ml*mh/1000*10)/10)}return parseInt(parsed.estimate_volume_ml)||2}
@@ -1737,10 +1740,18 @@ async function parseLensScreenshot(dataUrl){
     if(lensName)item.name=lensName;
     if(lensNameCN)item.name_cn=lensNameCN;
 
-    // Step 3.5: Find working thumbnail (no CORS needed - uses img.onload)
+    // Step 3.5: Construct thumbnail URL (no network test needed)
     if(lensId){
-      const thumbUrl=await findWorkingThumb(lensId);
-      if(thumbUrl)window._pendingRbImgUrl=thumbUrl;
+      // Try Rebrickable API (works in Chrome, may fail in APK)
+      try{
+        const rb=await rebrickableLookup(lensId);
+        if(rb&&rb.imgUrl)window._pendingRbImgUrl=rb.imgUrl;
+      }catch(e){}
+      // Fallback: BrickLink URL (predictable pattern)
+      if(!window._pendingRbImgUrl){
+        const base=lensId.replace(/[a-e]\d*$/i,'');
+        window._pendingRbImgUrl='https://img.bricklink.com/ItemImage/PN/86/'+base+'.png';
+      }
     }
 
     await processResult(item);
@@ -2358,7 +2369,9 @@ async function processResult(item){
   let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...item,estimateVolumeMl:vol,quantity:1,featureTags:item.feature_tags||[],dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0});
   pendingPart={...item,...slotInfo,designId,thumbnailUrl,dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0,featureTags:item.feature_tags||[],bricklinkCategory:item.bricklink_category||'',estimateVolumeMl:vol,imageData:currentImageData||'',nameCN:item.name_cn||'',isUpdate:!!match,matchedId:match?match.id:null};
   // Render — use Lens crop as visual fallback if no thumbnail URL
-  document.getElementById('result-img').src=thumbnailUrl||currentImageData||'';
+  const resultImg=document.getElementById('result-img');
+  resultImg.dataset.fb=currentImageData||'';
+  resultImg.src=thumbnailUrl||currentImageData||'';
   document.getElementById('result-name').textContent=item.name_cn||item.name||'未知零件';
   document.getElementById('result-designid').textContent=designId?'Design ID: '+designId:'';
   document.getElementById('result-desc').textContent=item.description||'';
@@ -2382,7 +2395,7 @@ async function processResult(item){
 async function confirmPart(){
   if(!pendingPart)return;
   const now=Date.now();
-  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:(pendingPart.thumbnailUrl&&pendingPart.thumbnailUrl.includes('/elements/'))?'':(pendingPart.imageData||''),quantity:1,updatedAt:now};
+  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',quantity:1,updatedAt:now};
   if(pendingPart.isUpdate&&pendingPart.matchedId){item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;if(existing)Object.assign(existing,item);showToast('已更新：'+item.slot+'（數量 +1）')}
   else{item.id='lego_'+now+'_'+Math.random().toString(36).slice(2,5);item.createdAt=now;allItems.unshift(item);showToast('已儲存到 '+item.slot)}
   markDirty(item.id);await fbSaveItem(item);
@@ -2484,9 +2497,12 @@ async function startBatch(files){
       if(lensName)parsed.name=lensName;
       if(lensNameCN)parsed.name_cn=lensNameCN;
 
-      // Fetch correct thumbnail (CORS-free, works in APK)
+      // Fetch correct thumbnail
       let rbImgUrl='';
-      if(lensId){try{rbImgUrl=await findWorkingThumb(lensId)}catch(e){}}
+      if(lensId){
+        try{const rb=await rebrickableLookup(lensId);if(rb&&rb.imgUrl)rbImgUrl=rb.imgUrl}catch(e){}
+        if(!rbImgUrl){const base=lensId.replace(/[a-e]\d*$/i,'');rbImgUrl='https://img.bricklink.com/ItemImage/PN/86/'+base+'.png'}
+      }
 
       const designId=parsed.design_id||'',baseId=getBaseDesignId(designId);
       const vol=calcVolFromAI(parsed.name||'',parsed);
