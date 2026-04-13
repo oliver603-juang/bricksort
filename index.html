@@ -1237,19 +1237,146 @@ function assignToBag(vt){
   const cap=BAG_ML_MAX;
   const lastBag=slotConfig.nextBagSlot||'B01';
   const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
-  // Scan all existing bags for room
   for(let n=1;n<=lastNum;n++){
     const label='B'+String(n).padStart(2,'0');
     if(getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'};
   }
-  // All bags full → advance to new bag
   slotConfig.nextBagSlot=advanceBag(lastBag);
+  markDirty('__config__');
   return{slot:slotConfig.nextBagSlot,slotType:'bag'};
+}
+
+// ═══ 智慧分流：小抽屜優先，滿了才進袋 ═══
+
+// 取得某個格子的已用體積
+function getSlotVol(slot){
+  return allItems.reduce((s,i)=>s+((i.slot===slot)?(i.estimateVolumeMl||0)*(i.quantity||1):0),0);
+}
+// 取得某個格子的零件數
+function getSlotItemCount(slot){
+  return allItems.filter(i=>i.slot===slot).length;
+}
+// 取得某個格子裡最大零件的體積（用於動態 merge max）
+function getSlotMaxVol(slot){
+  return allItems.reduce((mx,i)=>{
+    if(i.slot!==slot)return mx;
+    const v=(i.estimateVolumeMl||0)*(i.quantity||1);
+    return v>mx?v:mx;
+  },0);
 }
 
 function gatewayAssign(item){
   const vol=item.estimateVolumeMl||2,qty=item.quantity||1,vt=vol*qty;
+  const catGroup=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
+  
+  // 1. 人偶/超大/不合尺寸 → 收納袋
+  if(isMinifigure(item)||!fitsSmallSlot(item)||vt>DRAWER_ML){
+    return assignToBag(vt);
+  }
+  
+  // 2. 體積 ≤ MERGE_LIMIT → 嘗試融合到現有格子
+  if(vt<=MERGE_LIMIT){
+    // Phase A: 找同分類格子
+    const mergeSlot=findMergeSlot(vt,catGroup,true);
+    if(mergeSlot)return{slot:mergeSlot,slotType:'small'};
+    // Phase B: 找任何有空間的融合格
+    const anySlot=findMergeSlot(vt,catGroup,false);
+    if(anySlot)return{slot:anySlot,slotType:'small'};
+    // Phase C: 開新格子
+    const newSlot=allocateNewSmallSlot();
+    if(newSlot)return{slot:newSlot+'a',slotType:'small'};
+    // 小抽屜全滿 → 收納袋
+    return assignToBag(vt);
+  }
+  
+  // 3. 體積 MERGE_LIMIT~SLOT_ML → 獨佔半格(a/b)
+  if(vt<=SLOT_ML){
+    // 找同分類抽屜的空 b 格
+    const halfSlot=findEmptyHalf(catGroup);
+    if(halfSlot)return{slot:halfSlot,slotType:'small'};
+    // 開新格子
+    const newSlot=allocateNewSmallSlot();
+    if(newSlot)return{slot:newSlot+'a',slotType:'small'};
+    return assignToBag(vt);
+  }
+  
+  // 4. 體積 SLOT_ML~DRAWER_ML → 獨佔整抽屜
+  if(vt<=DRAWER_ML){
+    const newSlot=allocateNewSmallSlot();
+    if(newSlot)return{slot:newSlot,slotType:'small'};
+    return assignToBag(vt);
+  }
+  
   return assignToBag(vt);
+}
+
+// 找有空間的融合格子
+function findMergeSlot(newVt,catGroup,sameCategory){
+  const maxDrawer=parseInt((slotConfig.nextSmallSlot||'450a').replace(/[a-z]/g,''));
+  for(let d=1;d<maxDrawer;d++){
+    for(const suffix of['a','b']){
+      const slot=String(d).padStart(3,'0')+suffix;
+      const vol=getSlotVol(slot);
+      const count=getSlotItemCount(slot);
+      if(count===0)continue; // 空格不算融合
+      if(vol+newVt>SLOT_ML)continue; // 放不下
+      // 檢查動態上限
+      const maxVol=Math.max(getSlotMaxVol(slot),newVt);
+      const maxItems=maxVol<5?8:maxVol<20?6:4;
+      if(count>=maxItems)continue;
+      // 分類檢查
+      if(sameCategory){
+        const slotCat=allItems.find(i=>i.slot===slot);
+        if(!slotCat)continue;
+        const sCatGroup=getCatGroup(slotCat.featureTags||[],normalizeCategory(slotCat.bricklinkCategory||''));
+        if(sCatGroup!==catGroup)continue;
+      }
+      return slot;
+    }
+  }
+  return null;
+}
+
+// 找同分類抽屜中空的 b 格
+function findEmptyHalf(catGroup){
+  const maxDrawer=parseInt((slotConfig.nextSmallSlot||'450a').replace(/[a-z]/g,''));
+  for(let d=1;d<maxDrawer;d++){
+    const slotA=String(d).padStart(3,'0')+'a';
+    const slotB=String(d).padStart(3,'0')+'b';
+    const countA=getSlotItemCount(slotA);
+    const countB=getSlotItemCount(slotB);
+    if(countA>0&&countB===0){
+      // a 有東西但 b 空的 → 檢查分類
+      const aItem=allItems.find(i=>i.slot===slotA);
+      if(aItem){
+        const aCat=getCatGroup(aItem.featureTags||[],normalizeCategory(aItem.bricklinkCategory||''));
+        if(aCat===catGroup)return slotB;
+      }
+    }
+  }
+  // 沒找到同分類的 → 任何空 b 格
+  for(let d=1;d<maxDrawer;d++){
+    const slotB=String(d).padStart(3,'0')+'b';
+    if(getSlotItemCount(slotB)===0){
+      const slotA=String(d).padStart(3,'0')+'a';
+      if(getSlotItemCount(slotA)>0)return slotB;
+    }
+  }
+  return null;
+}
+
+// 分配新的空抽屜（從 nextSmallSlot 遞增）
+function allocateNewSmallSlot(){
+  const next=slotConfig.nextSmallSlot||'434a';
+  const num=parseInt(next.replace(/[a-z]/g,''));
+  const maxDrawers=slotConfig.totalSmallDrawers||450;
+  if(num>maxDrawers)return null; // 全滿
+  const label=String(num).padStart(3,'0');
+  // 推進 pointer 並標記需要同步
+  slotConfig.nextSmallSlot=String(num+1).padStart(3,'0')+'a';
+  ensureCap(num+1);
+  markDirty('__config__');
+  return label;
 }
 
 // ═══════════════════════════════════════════════════
