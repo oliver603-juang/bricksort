@@ -308,7 +308,7 @@ tr:hover{background:var(--accent-bg)}
 </div>
 <div style="flex:1;overflow-y:auto;padding:0 16px 80px">
   <div class="card">
-    <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;cursor:pointer" onclick="openResultItem()" title="點擊查看物品詳情">
       <img id="result-img" src="" style="width:64px;height:64px;border-radius:8px;object-fit:cover;background:var(--surface)">
       <div style="flex:1"><div id="result-name" style="font-size:18px;font-weight:700"></div><div id="result-designid" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></div></div>
     </div>
@@ -326,7 +326,7 @@ tr:hover{background:var(--accent-bg)}
   <div id="result-qty-row" style="display:none;margin-bottom:12px;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
     <label style="font-size:13px;color:var(--muted);white-space:nowrap">追加數量</label>
     <button onclick="var el=document.getElementById('result-qty');el.value=Math.max(0,(parseInt(el.value)||0)-1)" style="width:36px;height:36px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:18px;cursor:pointer">−</button>
-    <input type="number" id="result-qty" value="1" min="0" max="999" style="width:60px;text-align:center;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:8px;border-radius:8px;font-size:18px;font-weight:700;font-family:var(--mono)" onfocus="if(this.value==='1'||this.value==='0')this.value=''" onblur="if(!this.value)this.value='0'">
+    <input type="number" id="result-qty" value="1" min="0" max="999" inputmode="numeric" pattern="[0-9]*" style="width:60px;text-align:center;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:8px;border-radius:8px;font-size:18px;font-weight:700;font-family:var(--mono)" onfocus="if(this.value==='1'||this.value==='0')this.value=''" onblur="if(!this.value)this.value='0'">
     <button onclick="var el=document.getElementById('result-qty');el.value=(parseInt(el.value)||0)+1" style="width:36px;height:36px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:18px;cursor:pointer">+</button>
     <button id="result-qty-save" class="btn btn-green" style="flex:1;padding:8px;font-size:13px" onclick="saveResultQty()">✓ 追加</button>
   </div>
@@ -546,13 +546,13 @@ tr:hover{background:var(--accent-bg)}
   <div class="modal-body">
     <div id="m-overflow-warn"></div>
     <div id="m-overflow-info" class="overflow-info" style="display:none"></div>
-    <div class="field"><label>數量（件）</label><input type="number" id="m-qty" min="0" step="1" oninput="recalcVol()"></div>
+    <div class="field"><label>數量（件）</label><input type="number" id="m-qty" min="0" step="1" inputmode="numeric" pattern="[0-9]*" oninput="recalcVol()"></div>
     <div class="vol-display" id="m-vol-display"></div>
     <div class="field"><label>尺寸 (mm)</label>
       <div class="dim-row">
-        <input type="number" id="m-dimW" step="0.1" placeholder="寬" oninput="recalcVol()"><span>×</span>
-        <input type="number" id="m-dimL" step="0.1" placeholder="長" oninput="recalcVol()"><span>×</span>
-        <input type="number" id="m-dimH" step="0.1" placeholder="高" oninput="recalcVol()"><span>mm</span>
+        <input type="number" id="m-dimW" step="0.1" inputmode="decimal" placeholder="寬" oninput="recalcVol()"><span>×</span>
+        <input type="number" id="m-dimL" step="0.1" inputmode="decimal" placeholder="長" oninput="recalcVol()"><span>×</span>
+        <input type="number" id="m-dimH" step="0.1" inputmode="decimal" placeholder="高" oninput="recalcVol()"><span>mm</span>
       </div>
       <div class="paste-hint" onclick="pasteFromClipboard()">📋 貼上尺寸（從 BrickLink 複製 W x L x H cm，自動轉 mm）</div>
     </div>
@@ -2351,6 +2351,13 @@ async function confirmPart(){
   else{item.id='lego_'+now+'_'+Math.random().toString(36).slice(2,5);item.createdAt=now;allItems.unshift(item);showToast('已儲存到 '+item.slot)}
   markDirty(item.id);await fbSaveItem(item);
   pendingPart=null;currentImageData=null;showTab('main');renderStats();applyFilter();
+}
+function openResultItem(){
+  if(pendingPart&&pendingPart.matchedId){
+    openItem(pendingPart.matchedId);
+  }else{
+    showToast('新零件，儲存後才能查看詳情');
+  }
 }
 function cancelResult(){pendingPart=null;currentImageData=null;if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}goBack()}
 function cancelBatch(){if(batchRunning){batchCancelled=true}else showTab('main')}
