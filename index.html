@@ -597,7 +597,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14';
+const APP_VERSION = '2026.04.14b';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -2325,11 +2325,13 @@ async function processResult(item){
       if(yes)match=moldMatch;
     }
   }
-  const designId=item.design_id||'';const thumbnailUrl=window._pendingRbImgUrl||(designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+designId+'.png':'');window._pendingRbImgUrl='';
+  const designId=item.design_id||'';
+  // Thumbnail priority: Rebrickable API → matched item's existing thumbnail → Lens crop → empty
+  const thumbnailUrl=window._pendingRbImgUrl||(match?match.thumbnailUrl:'')||'';window._pendingRbImgUrl='';
   const vol=calcVolFromAI(item.name||item.name_cn||'',item);
   let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...item,estimateVolumeMl:vol,quantity:1,featureTags:item.feature_tags||[],dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0});
   pendingPart={...item,...slotInfo,designId,thumbnailUrl,dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0,featureTags:item.feature_tags||[],bricklinkCategory:item.bricklink_category||'',estimateVolumeMl:vol,imageData:currentImageData||'',nameCN:item.name_cn||'',isUpdate:!!match,matchedId:match?match.id:null};
-  // Render
+  // Render — use Lens crop as visual fallback if no thumbnail URL
   document.getElementById('result-img').src=thumbnailUrl||currentImageData||'';
   document.getElementById('result-name').textContent=item.name_cn||item.name||'未知零件';
   document.getElementById('result-designid').textContent=designId?'Design ID: '+designId:'';
@@ -2456,14 +2458,19 @@ async function startBatch(files){
       if(lensName)parsed.name=lensName;
       if(lensNameCN)parsed.name_cn=lensNameCN;
 
+      // Fetch correct thumbnail from Rebrickable
+      let rbImgUrl='';
+      if(lensId){try{const rb=await rebrickableLookup(lensId);if(rb&&rb.imgUrl)rbImgUrl=rb.imgUrl}catch(e){}}
+
       const designId=parsed.design_id||'',baseId=getBaseDesignId(designId);
-      const thumbnailUrl=baseId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'';
       const vol=calcVolFromAI(parsed.name||'',parsed);
       let match=allItems.find(i=>(i.designId||'').toLowerCase()===designId.toLowerCase());
       if(!match&&baseId)match=allItems.find(i=>getBaseDesignId(i.designId)===baseId);
+      // Thumbnail: Rebrickable → match's existing → Lens crop → empty
+      const thumbnailUrl=rbImgUrl||(match?match.thumbnailUrl:'')||'';
       let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...parsed,estimateVolumeMl:vol,quantity:1,featureTags:parsed.feature_tags||[],dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0});
       const now=Date.now();
-      const savedItem={name:parsed.name||'',nameCN:parsed.name_cn||'',designId,description:parsed.description||'',featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:1,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,id:match?match.id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),createdAt:match?(match.createdAt||now):now,updatedAt:now};
+      const savedItem={name:parsed.name||'',nameCN:parsed.name_cn||'',designId,description:parsed.description||'',featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:thumbnailUrl?'':(currentImageData||''),quantity:1,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,id:match?match.id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),createdAt:match?(match.createdAt||now):now,updatedAt:now};
       if(match)Object.assign(match,savedItem);else allItems.unshift(savedItem);
       markDirty(savedItem.id);await fbSaveItem(savedItem);item.result=savedItem;item.status='done';done++;
     }catch(err){item.error=err.message;item.status='error';errors++}
