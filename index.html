@@ -639,8 +639,8 @@ tr:hover{background:var(--accent-bg)}
       <div class="paste-hint" onclick="pasteFromClipboard()">📋 貼上尺寸（從 BrickLink 複製 W x L x H cm，自動轉 mm）</div>
     </div>
     <div class="link-row">
-      <a id="m-bl-link" href="#" target="_blank">🔍 查 BrickLink</a>
-      <a id="m-rb-link" href="#" target="_blank">🔍 查 Rebrickable</a>
+      <a id="m-bl-link" href="#" onclick="openExternalLink(this.href);return false">🔍 查 BrickLink</a>
+      <a id="m-rb-link" href="#" onclick="openExternalLink(this.href);return false">🔍 查 Rebrickable</a>
     </div>
     <div class="field"><label>BrickLink 分類</label><input type="text" id="m-blcat" placeholder="如 Minifigure, Body Wear"></div>
     <div class="field"><label>外型標籤</label><input type="text" id="m-tags" placeholder="多個用逗號分隔"></div>
@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14t';
+const APP_VERSION = '2026.04.14u';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1431,7 +1431,35 @@ function forceOverflow(){
   doOverflow(fq,oq);
 }
 
-function pasteFromClipboard(){navigator.clipboard.readText().then(text=>{const m=text.match(/([\d.]+)\s*[x×X]\s*([\d.]+)\s*[x×X]\s*([\d.]+)\s*(cm|mm|in)?/i);if(m){let w=parseFloat(m[1]),l=parseFloat(m[2]),h=parseFloat(m[3]);const u=(m[4]||'cm').toLowerCase();if(u==='cm'){w*=10;l*=10;h*=10}else if(u==='in'){w*=25.4;l*=25.4;h*=25.4}document.getElementById('m-dimW').value=Math.round(w*10)/10;document.getElementById('m-dimL').value=Math.round(l*10)/10;document.getElementById('m-dimH').value=Math.round(h*10)/10;recalcVol();showToast('已貼上尺寸（'+u+'→mm）')}else showToast('無法解析尺寸格式','error')}).catch(()=>showToast('無法讀取剪貼簿','error'))}
+function pasteFromClipboard(){
+  function parseDimText(text){
+    if(!text)return;
+    const m=text.match(/([\d.]+)\s*[x×X]\s*([\d.]+)\s*[x×X]\s*([\d.]+)\s*(cm|mm|in)?/i);
+    if(m){let w=parseFloat(m[1]),l=parseFloat(m[2]),h=parseFloat(m[3]);const u=(m[4]||'cm').toLowerCase();if(u==='cm'){w*=10;l*=10;h*=10}else if(u==='in'){w*=25.4;l*=25.4;h*=25.4}document.getElementById('m-dimW').value=Math.round(w*10)/10;document.getElementById('m-dimL').value=Math.round(l*10)/10;document.getElementById('m-dimH').value=Math.round(h*10)/10;recalcVol();showToast('已貼上尺寸（'+u+'→mm）')}
+    else showToast('無法解析尺寸格式','error');
+  }
+  // APK or no clipboard API → prompt fallback
+  if(window._isAPK||!navigator.clipboard||!navigator.clipboard.readText){
+    const text=prompt('請貼上尺寸（如 1.6 x 1.6 x 0.3 cm）');
+    parseDimText(text);return;
+  }
+  navigator.clipboard.readText().then(parseDimText).catch(()=>{
+    // Clipboard failed → prompt fallback
+    const text=prompt('請貼上尺寸（如 1.6 x 1.6 x 0.3 cm）');
+    parseDimText(text);
+  });
+}
+
+function openExternalLink(url){
+  if(!url||url==='#')return;
+  if(window._isAPK){
+    // APK: open in system browser via intent scheme
+    try{window.location='intent://'+url.replace(/^https?:\/\//,'')+'#Intent;scheme=https;action=android.intent.action.VIEW;end'}
+    catch(e){window.open(url)}
+  }else{
+    window.open(url,'_blank');
+  }
+}
 
 function editorSaveItem(){
   if(!currentItem)return;const i=currentItem;
