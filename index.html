@@ -597,7 +597,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14d';
+const APP_VERSION = '2026.04.14e';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1577,7 +1577,17 @@ async function getMoldVariants(designId){
 // Find a DB match by checking mold variants of a given designId
 async function findByMoldVariant(designId){
   if(!designId)return null;
-  const variants=await getMoldVariants(designId);
+  // Try original ID first
+  let variants=await getMoldVariants(designId);
+  // If not found, retry with stripped suffix (4589b → 4589)
+  if(!variants.length){
+    const base=getBaseDesignId(designId);
+    if(base&&base!==designId)variants=await getMoldVariants(base);
+  }
+  if(!variants.length){
+    const num=getNumericBase(designId);
+    if(num&&num!==designId)variants=await getMoldVariants(num);
+  }
   if(!variants.length)return null;
   for(const v of variants){
     const match=allItems.find(i=>{
@@ -2179,7 +2189,8 @@ async function checkSetInventory(){
     const uniqueParts=Object.values(partMap);
     const totalPieces=uniqueParts.reduce((s,p)=>s+p.quantity,0);
     // Match each part against allItems
-    const results=uniqueParts.map(p=>{
+    const results=[];
+    for(const p of uniqueParts){
       const did=p.designId;const numBase=getNumericBase(did);
       let match=null,matchMethod='',inStock=0;
       // Exact ID
@@ -2189,14 +2200,16 @@ async function checkSetInventory(){
       if(!match){match=allItems.find(i=>{const b=getBaseDesignId(i.designId);return b&&b.toLowerCase()===did.toLowerCase()});if(match)matchMethod='印刷變體'}
       // Numeric base
       if(!match&&numBase){match=allItems.find(i=>getNumericBase(i.designId)===numBase);if(match)matchMethod='模具變體'}
+      // Mold variant via Rebrickable
+      if(!match){const mv=await findByMoldVariant(did);if(mv){match=mv;matchMethod='模具變體(RB)'}}
       // Name fuzzy
       if(!match&&p.name.length>=5){const nl=p.name.toLowerCase();match=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(nl)||nl.includes(n))});if(match)matchMethod='名稱相似'}
       if(match)inStock=match.quantity||1;
       const needed=p.quantity;
       const enough=inStock>=needed;
       const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(p.imgUrl||(did?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+did+'.png':''));
-      return{did,name:p.name,needed,inStock,enough,match,matchMethod,thumb,nameCN:match?(match.nameCN||''):''};
-    });
+      results.push({did,name:p.name,needed,inStock,enough,match,matchMethod,thumb,nameCN:match?(match.nameCN||''):''});
+    }
     // Sort: missing first, then insufficient, then OK
     results.sort((a,b)=>{
       if(!a.match&&b.match)return -1;if(a.match&&!b.match)return 1;
