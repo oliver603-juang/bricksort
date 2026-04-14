@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14x';
+const APP_VERSION = '2026.04.14z';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1886,9 +1886,13 @@ async function smartRecognize(base64Image,hint,prefetchedBk){
 function safeParseJSON(text){text=text.replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();try{return JSON.parse(text)}catch(e){}const m=text.match(/\{[\s\S]*\}/);if(!m)throw new Error('No JSON found');try{return JSON.parse(m[0])}catch(e){}throw new Error('JSON parse failed')}
 async function buildExistingList(){if(!allItems.length)return'';const grouped={};allItems.forEach(i=>{const s=i.slot||'?';if(!grouped[s])grouped[s]=[];if(grouped[s].length<3)grouped[s].push('['+i.id+'] '+(i.designId||'')+' '+(i.nameCN||i.name))});let list='';for(const[slot,arr]of Object.entries(grouped))list+=slot+':'+arr.join(';')+'\n';return list}
 async function resizeImage(dataUrl,maxDim){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const scale=Math.min(1,maxDim/Math.max(img.width,img.height));const w=Math.round(img.width*scale),h=Math.round(img.height*scale);const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);resolve(c.toDataURL('image/jpeg',0.85))};img.src=dataUrl})}
-async function cropLensThumb(dataUrl){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const W=img.width,H=img.height,cx=Math.floor(W*0.6),cy=Math.floor(H*0.1),cw=Math.floor(W*0.38),ch=Math.floor(H*0.25);const c=document.createElement('canvas');const maxDim=120;const scale=Math.min(1,maxDim/Math.max(cw,ch));c.width=Math.round(cw*scale);c.height=Math.round(ch*scale);c.getContext('2d').drawImage(img,cx,cy,cw,ch,0,0,c.width,c.height);resolve(c.toDataURL('image/jpeg',0.6))};img.src=dataUrl})}
+async function cropLensThumb(dataUrl){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const W=img.width,H=img.height;
+  const cx=Math.floor(W*0.1),cy=Math.floor(H*0.08),cw=Math.floor(W*0.8),ch=Math.floor(H*0.30);
+  const c=document.createElement('canvas');const maxDim=160;const scale=Math.min(1,maxDim/Math.max(cw,ch));c.width=Math.round(cw*scale);c.height=Math.round(ch*scale);c.getContext('2d').drawImage(img,cx,cy,cw,ch,0,0,c.width,c.height);resolve(c.toDataURL('image/jpeg',0.6))};img.src=dataUrl})}
 // Crop Lens text area (lower 55% of screenshot, below tabs and thumbnail)
-async function cropLensText(dataUrl){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const W=img.width,H=img.height;const cy=Math.floor(H*0.35),ch=Math.floor(H*0.57);const c=document.createElement('canvas');c.width=W;c.height=ch;c.getContext('2d').drawImage(img,0,cy,W,ch,0,0,W,ch);resolve(c.toDataURL('image/jpeg',0.85))};img.src=dataUrl})}
+async function cropLensText(dataUrl){return new Promise(resolve=>{const img=new Image();img.onload=()=>{const W=img.width,H=img.height;
+  const cy=Math.floor(H*0.45),ch=Math.floor(H*0.50);
+  const c=document.createElement('canvas');c.width=W;c.height=ch;c.getContext('2d').drawImage(img,0,cy,W,ch,0,0,W,ch);resolve(c.toDataURL('image/jpeg',0.85))};img.src=dataUrl})}
 function calcVolFromAI(name,parsed){const mw=parseFloat(parsed.dim_mm_w),ml=parseFloat(parsed.dim_mm_l),mh=parseFloat(parsed.dim_mm_h);if(mw>0&&ml>0&&mh>0){parsed._dimW=Math.round(mw)/10;parsed._dimL=Math.round(ml)/10;parsed._dimH=Math.round(mh)/10;return Math.max(0.3,Math.round(mw*ml*mh/1000*10)/10)}return parseInt(parsed.estimate_volume_ml)||2}
 
 function renderMiniMap(slot){
@@ -2092,10 +2096,24 @@ async function cameraRecognize(base64,imgSrc){
       document.getElementById('result-qty-save').disabled=false;
       showScreen('s-result');return;
     }
-    // Brickognize matched but NOT in DB
-    if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
-    showTab('main');
-    showToast('⚠ 零件「'+(bkResult.name||bkId)+'」未建檔\n請使用 🖼 建檔（Lens 截圖）','error',4000);
+    // Brickognize matched but NOT in DB → auto-register with Gemini enrichment
+    setProcessingMsg('🤖 補充零件資訊…');
+    try{
+      const rbResult=cfg.rbKey?await rebrickableLookup(bkId):null;
+      const rbDid=rbResult?.designId||bkId;
+      const rbHint=rbResult?'此零件已確認為「'+rbResult.name+'」Design ID='+rbDid+'。':'';
+      const thumbnailUrl=(rbResult?.imgUrl)||(bkResult.imgUrl)||(bkId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(bkId)+'.png':'');
+      window._pendingRbImgUrl=thumbnailUrl;
+      const regPrompt='你是LEGO零件專家。'+rbHint+'Brickognize辨識為「'+bkResult.name+'」('+bkId+'，信心'+bkResult.score+'%)。回應純JSON：{"design_id":"'+rbDid+'","name":"英文名","name_cn":"繁體中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool}';
+      const regResp=await callGeminiAPI(regPrompt,base64,0,GEMINI_LEGO_SYSTEM);
+      const regItem=safeParseJSON(regResp);
+      regItem.design_id=regItem.design_id||rbDid;
+      regItem.brickognizeName=bkResult.name||'';
+      await processResult(regItem);
+    }catch(e){
+      if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+      showTab('main');showToast('建檔失敗：'+e.message,'error');
+    }
     return;
   }
   // Brickognize failed → Gemini fallback (part only, no instruction)
