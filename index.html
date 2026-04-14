@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14r';
+const APP_VERSION = '2026.04.14t';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1251,11 +1251,13 @@ function normalizeCategory(cat){
   return CATEGORY_NORMALIZE[key]||cat.trim();
 }
 
+// Specificity priority: higher number = checked first (more specific wins)
+const CAT_PRIORITY={'Wedge Plate':90,'Wedge':85,'Wing':85,'Slope Curved':80,'Slope Inverted':80,'Brick Modified':70,'Brick Round':70,'Plate Modified':70,'Plate Round':70,'Tile Modified':70,'Tile Round':70,'Technic Axle':60,'Technic Pin':60,'Technic Connector':60,'Technic Gear':60,'Technic Liftarm':60,'Technic Link':60,'Technic Panel':60,'Technic Plate':60,'Brick':10,'Plate':10,'Tile':10,'Slope':10,'Technic':10};
 function getCatGroup(tags,blCat){
-  // Check bricklinkCategory first for minifig body part sub-categories
   if(blCat){const norm=normalizeCategory(blCat);const mfGroup=MINIFIG_CAT_MAP[norm.toLowerCase()];if(mfGroup)return mfGroup}
   if(!tags||!tags.length)return'未分類';
-  for(const t of tags){if(CATEGORY_GROUPS[t])return CATEGORY_GROUPS[t]}
+  const sorted=[...tags].sort((a,b)=>(CAT_PRIORITY[b]||50)-(CAT_PRIORITY[a]||50));
+  for(const t of sorted){if(CATEGORY_GROUPS[t])return CATEGORY_GROUPS[t]}
   return tags[0]||'未分類';
 }
 function getTier(group){if(TIER1_GROUPS.has(group))return 1;if(TIER2_GROUPS.has(group))return 2;if(TIER3_GROUPS.has(group))return 3;return 3}
@@ -3225,7 +3227,100 @@ async function startPipeline(){
   document.getElementById('assign-content').innerHTML='<div class="loading"><div class="spinner"></div>從 Firebase 載入中…</div>';
   try{const snap=await db.collection(FB_COL).get();allItems=[];snap.docs.forEach(d=>{if(d.id===FB_CONFIG_DOC)slotConfig={...slotConfig,...d.data()};else allItems.push({id:d.id,...d.data()})});assignLog('載入完成：'+allItems.length+' 個零件','ok')}catch(e){document.getElementById('assign-content').innerHTML='<div class="card" style="color:var(--red)">❌ '+e.message+'</div>';return}
   allItems.forEach(item=>{const v=item.estimateVolumeMl||0,q=item.quantity||1;item._vt=Math.round(v*q*10)/10;item._catGroup=getCatGroup(item.featureTags,item.bricklinkCategory);item._tier=getTier(item._catGroup);item._isMinifig=isMinifigure(item);item._fitsSmall=fitsSmallSlot(item)});
-  classifyAssign();assignLargeDrawers();assignSmallDrawers();assignMergeStep();assignBagsStep();showAssignReport();
+  classifyAssign();mergeCompanionParts();assignLargeDrawers();assignSmallDrawers();assignMergeStep();assignBagsStep();showAssignReport();
+}
+
+// ═══ COMPANION PARTS (鏡像 + 鉸鏈配對) ═══
+// Groups: items sharing a group array will be assigned to the same slot
+const COMPANION_GROUPS=[
+  // Hinge Brick 1x4 Swivel (Base/Top)
+  ['3831','3830'],
+  // Hinge Plate 1x2 with Fingers (2 Fingers / 3 Fingers, all mold variants)
+  ['4276','4276a','4276b','4275','4275a','4275b'],
+  // Hinge Plate 1x4 Swivel (Base/Top)
+  ['2429','2430'],
+  // Hinge Plate 2x4 Articulated Joint (Female/Male)
+  ['3640','3639'],
+  // Hinge Plate 2x4 with Pin Hole (43045 Top / 98285 Bottom / 98286 Top)
+  ['43045','98285','98286'],
+];
+
+function getMirrorKey(name){
+  if(!name)return'';
+  return name.replace(/\b(Left|Right|左|右)\b/gi,'').replace(/\s+/g,' ').trim().toLowerCase();
+}
+
+function mergeCompanionParts(){
+  // Build lookup: designId → group index
+  const idToGroup={};
+  COMPANION_GROUPS.forEach((grp,gi)=>{
+    grp.forEach(id=>{idToGroup[id.toLowerCase()]=gi;idToGroup[getBaseDesignId(id).toLowerCase()]=gi;idToGroup[getNumericBase(id).toLowerCase()]=gi});
+  });
+  
+  // Phase 1: Table-based companion groups
+  const groupMap={};// groupKey → [items]
+  allItems.forEach(item=>{
+    const did=(item.designId||'').toLowerCase();
+    const base=getBaseDesignId(item.designId).toLowerCase();
+    const num=getNumericBase(item.designId).toLowerCase();
+    const gi=idToGroup[did]??idToGroup[base]??idToGroup[num];
+    if(gi!==undefined){
+      const key='companion_'+gi;
+      if(!groupMap[key])groupMap[key]=[];
+      groupMap[key].push(item);
+    }
+  });
+  
+  // Phase 2: Mirror name detection (Left/Right)
+  const mirrorMap={};// mirrorKey → [items]
+  allItems.forEach(item=>{
+    const n=item.name||item.nameCN||'';
+    if(!/\b(Left|Right|左|右)\b/i.test(n))return;
+    // Skip if already in a companion group
+    if(item._companionOf||item._isCompanionMaster)return;
+    const mk=getMirrorKey(n);
+    if(!mk)return;
+    if(!mirrorMap[mk])mirrorMap[mk]=[];
+    mirrorMap[mk].push(item);
+  });
+  // Only keep groups with 2+ items
+  Object.entries(mirrorMap).forEach(([mk,items])=>{
+    if(items.length>=2){groupMap['mirror_'+mk]=items}
+  });
+  
+  // Phase 3: For each group, pick master (largest _vt) and mark companions
+  let companionCount=0,mirrorCount=0;
+  Object.entries(groupMap).forEach(([key,items])=>{
+    if(items.length<2)return;
+    items.sort((a,b)=>b._vt-a._vt);
+    const master=items[0];
+    master._isCompanionMaster=true;
+    master._companions=[];
+    for(let i=1;i<items.length;i++){
+      const comp=items[i];
+      comp._companionOf=master.id;
+      master._vt+=comp._vt; // Merge volume into master
+      master._companions.push(comp.id);
+      // Remove companion from all buckets
+      ['merge','slot','drawer','large','bag'].forEach(bk=>{
+        const arr=assignBuckets[bk];
+        const idx=arr.indexOf(comp);
+        if(idx>=0)arr.splice(idx,1);
+      });
+    }
+    // Reclassify master with merged volume
+    const oldBuckets=['merge','slot','drawer','large'];
+    oldBuckets.forEach(bk=>{const arr=assignBuckets[bk];const idx=arr.indexOf(master);if(idx>=0)arr.splice(idx,1)});
+    const vt=master._vt;
+    if(vt>LARGE_ML){master._reason='配對合併'+vt+'ml→收納袋';assignBuckets.bag.push(master)}
+    else if(vt>DRAWER_ML){master._reason='配對合併'+vt+'ml→大抽屜';assignBuckets.large.push(master)}
+    else if(vt>SLOT_ML){master._reason='配對合併'+vt+'ml→小抽屜(a+b)';assignBuckets.drawer.push(master)}
+    else if(vt>MERGE_LIMIT){master._reason='配對合併'+vt+'ml→獨佔格子';assignBuckets.slot.push(master)}
+    else{master._reason='配對合併'+vt+'ml→融合';assignBuckets.merge.push(master)}
+    if(key.startsWith('mirror_'))mirrorCount++;else companionCount++;
+  });
+  
+  assignLog('配對：'+mirrorCount+' 組鏡像 + '+companionCount+' 組鉸鏈/子件','ok');
 }
 
 function classifyAssign(){
@@ -3248,34 +3343,92 @@ function assignLargeDrawers(){
   assignLog('大抽屜：'+assigned.length+'/'+LARGE_COUNT,'ok');
 }
 function assignSmallDrawers(){
+  // ═══ UNIFIED: drawer + slot + merge by catGroup ═══
+  // Collect all items by catGroup
   const catItems={};
-  assignBuckets.drawer.forEach(item=>{const g=item._catGroup;if(!catItems[g])catItems[g]={drawers:[],slots:[]};catItems[g].drawers.push(item)});
-  assignBuckets.slot.forEach(item=>{const g=item._catGroup;if(!catItems[g])catItems[g]={drawers:[],slots:[]};catItems[g].slots.push(item)});
-  Object.values(catItems).forEach(g=>{g.drawers.sort((a,b)=>a._vt-b._vt);g.slots.sort((a,b)=>a._vt-b._vt)});
-  const groupOrder=Object.keys(catItems).sort((a,b)=>{const ta=getTier(a),tb=getTier(b);if(ta!==tb)return tb-ta;return a.localeCompare(b)});
+  function addToCat(item,bucket){const g=item._catGroup;if(!catItems[g])catItems[g]={drawers:[],slots:[],merges:[]};catItems[g][bucket].push(item)}
+  assignBuckets.drawer.forEach(item=>addToCat(item,'drawers'));
+  assignBuckets.slot.forEach(item=>addToCat(item,'slots'));
+  assignBuckets.merge.forEach(item=>addToCat(item,'merges'));
+
+  // Sort within each catGroup
+  Object.values(catItems).forEach(g=>{
+    g.drawers.sort((a,b)=>a._vt-b._vt);
+    g.slots.sort((a,b)=>a._vt-b._vt);
+    g.merges.sort((a,b)=>b._vt-a._vt);// desc for FFD
+  });
+
+  // FFD bin-packing for merge items within each catGroup
+  Object.entries(catItems).forEach(([group,g])=>{
+    const bins=[];
+    g.merges.forEach(item=>{
+      let placed=false;
+      for(const bin of bins){
+        if(bin.items.length>=getMergeMaxItems(bin.items))continue;
+        if(bin.totalVt+item._vt<=SLOT_ML){bin.items.push(item);bin.totalVt+=item._vt;placed=true;break}
+      }
+      if(!placed)bins.push({items:[item],totalVt:item._vt,catGroup:group});
+    });
+    g.mergeBins=bins;
+  });
+
+  // Order catGroups: Tier3 → Tier2 → Tier1, then alphabetical
+  const groupOrder=Object.keys(catItems).sort((a,b)=>{
+    const ta=getTier(a),tb=getTier(b);
+    if(ta!==tb)return tb-ta;
+    return a.localeCompare(b);
+  });
+
+  // Assign drawers sequentially, all types within same catGroup together
   let nextDrawer=1;
-  groupOrder.forEach(group=>{const g=catItems[group];
-    g.drawers.forEach(item=>{ensureDrawerCapAssign(nextDrawer);const label=drawerNumToLabel(nextDrawer);assignAssignments.push({item,slot:label,slotType:'small',mergedWith:[]});nextDrawer++});
-    for(let i=0;i<g.slots.length;i+=2){ensureDrawerCapAssign(nextDrawer);const label=drawerNumToLabel(nextDrawer);
+  groupOrder.forEach(group=>{
+    const g=catItems[group];
+
+    // Phase 1: drawer items (each needs whole drawer a+b)
+    g.drawers.forEach(item=>{
+      ensureDrawerCapAssign(nextDrawer);
+      const label=drawerNumToLabel(nextDrawer);
+      assignAssignments.push({item,slot:label,slotType:'small',mergedWith:[]});
+      nextDrawer++;
+    });
+
+    // Phase 2: slot items (pair into a/b)
+    for(let i=0;i<g.slots.length;i+=2){
+      ensureDrawerCapAssign(nextDrawer);
+      const label=drawerNumToLabel(nextDrawer);
       assignAssignments.push({item:g.slots[i],slot:label+'a',slotType:'small',mergedWith:[]});
-      if(i+1<g.slots.length)assignAssignments.push({item:g.slots[i+1],slot:label+'b',slotType:'small',mergedWith:[]});
-      nextDrawer++}});
-  window._nextDrawerForMerge=nextDrawer;assignLog('小抽屜：使用 '+(nextDrawer-1)+' 個抽屜','ok');
+      if(i+1<g.slots.length){
+        assignAssignments.push({item:g.slots[i+1],slot:label+'b',slotType:'small',mergedWith:[]});
+      }
+      nextDrawer++;
+    }
+
+    // Phase 3: merge bins (pair into a/b)
+    const bins=g.mergeBins||[];
+    for(let i=0;i<bins.length;i+=2){
+      ensureDrawerCapAssign(nextDrawer);
+      const label=drawerNumToLabel(nextDrawer);
+      const binA=bins[i];
+      binA.items.forEach(item=>{
+        assignAssignments.push({item,slot:label+'a',slotType:'small',mergedWith:binA.items.filter(x=>x.id!==item.id).map(x=>x.id)});
+      });
+      if(i+1<bins.length){
+        const binB=bins[i+1];
+        binB.items.forEach(item=>{
+          assignAssignments.push({item,slot:label+'b',slotType:'small',mergedWith:binB.items.filter(x=>x.id!==item.id).map(x=>x.id)});
+        });
+      }
+      nextDrawer++;
+    }
+  });
+
+  window._nextAvailableDrawer=nextDrawer;
+  const totalDrawers=nextDrawer-1;
+  assignLog('小抽屜：使用 '+totalDrawers+' 個抽屜（同分類連續排列）','ok');
 }
 function assignMergeStep(){
-  const candidates=assignBuckets.merge;if(!candidates.length){assignLog('無融合候選','info');return}
-  const catGroups={};candidates.forEach(item=>{const g=item._catGroup;if(!catGroups[g])catGroups[g]=[];catGroups[g].push(item)});
-  const bins=[];
-  Object.entries(catGroups).forEach(([group,items])=>{items.sort((a,b)=>b._vt-a._vt);items.forEach(item=>{let placed=false;for(const bin of bins){if(bin.catGroup!==group||bin.items.length>=getMergeMaxItems(bin.items))continue;if(bin.totalVt+item._vt<=SLOT_ML){bin.items.push(item);bin.totalVt+=item._vt;placed=true;break}}if(!placed)bins.push({items:[item],totalVt:item._vt,catGroup:group,tier:getTier(group)})})});
-  bins.filter(b=>b.items.length===1).forEach(single=>{for(const bin of bins){if(bin===single||bin.tier!==single.tier||bin.items.length>=getMergeMaxItems(bin.items))continue;if(bin.totalVt+single.totalVt<=SLOT_ML){bin.items.push(...single.items);bin.totalVt+=single.totalVt;single.items=[];single.totalVt=0;break}}});
-  bins.filter(b=>b.items.length===1).forEach(single=>{for(const bin of bins){if(bin===single||bin.items.length>=getMergeMaxItems(bin.items))continue;if(bin.totalVt+single.totalVt<=SLOT_ML){bin.items.push(...single.items);bin.totalVt+=single.totalVt;single.items=[];single.totalVt=0;break}}});
-  const finalBins=bins.filter(b=>b.items.length>0);finalBins.sort((a,b)=>{if(a.tier!==b.tier)return b.tier-a.tier;return a.catGroup.localeCompare(b.catGroup)});
-  let nextDrawer=window._nextDrawerForMerge||1;
-  for(let i=0;i<finalBins.length;i+=2){ensureDrawerCapAssign(nextDrawer);const label=drawerNumToLabel(nextDrawer);const binA=finalBins[i];
-    binA.items.forEach(item=>{assignAssignments.push({item,slot:label+'a',slotType:'small',mergedWith:binA.items.filter(x=>x.id!==item.id).map(x=>x.id)})});
-    if(i+1<finalBins.length){const binB=finalBins[i+1];binB.items.forEach(item=>{assignAssignments.push({item,slot:label+'b',slotType:'small',mergedWith:binB.items.filter(x=>x.id!==item.id).map(x=>x.id)})})}
-    nextDrawer++}
-  window._nextAvailableDrawer=nextDrawer;assignLog('融合：'+finalBins.length+' 格','ok');
+  // Merged into assignSmallDrawers — this is now a no-op
+  assignLog('融合：已整合到小抽屜分配','info');
 }
 function assignBagsStep(){
   const candidates=assignBuckets.bag;if(!candidates.length){assignLog('無收納袋候選','info');return}
@@ -3322,9 +3475,19 @@ function applyAssignToMemory(){
   allItems.forEach(item=>{
     const a=assignMap[item.id];
     if(a){item.slot=a.slot;item.slotType=a.slotType;item.mergedWith=a.mergedWith;
-      // Clear stale overflow data from old system
       item.overflowSlot='';item.overflowQty=0;item.isFull=false;
       item.updatedAt=Date.now();markDirty(item.id)}
+  });
+  // Companion parts: copy master's slot to all companions
+  allItems.forEach(item=>{
+    if(item._companionOf){
+      const master=allItems.find(m=>m.id===item._companionOf);
+      if(master&&master.slot){
+        item.slot=master.slot;item.slotType=master.slotType||'small';
+        item.mergedWith=[];item.overflowSlot='';item.overflowQty=0;item.isFull=false;
+        item.updatedAt=Date.now();markDirty(item.id);
+      }
+    }
   });
   // Update slotConfig
   const nextD=window._nextAvailableDrawer||1;
@@ -3338,11 +3501,15 @@ function applyAssignToMemory(){
 }
 
 async function writeAssignToFirebase(){
-  if(!confirm('確定將 '+assignAssignments.length+' 筆分配結果寫入 Firebase？\n（約需 '+Math.ceil(assignAssignments.length/100)+'秒）'))return;
+  // Collect companion items that need writing
+  const companions=allItems.filter(i=>i._companionOf);
+  const totalCount=assignAssignments.length+companions.length;
+  if(!confirm('確定將 '+totalCount+' 筆分配結果寫入 Firebase？\n（含 '+companions.length+' 個配對零件，約需 '+Math.ceil(totalCount/100)+'秒）'))return;
   document.getElementById('assign-status').textContent='寫入中…';
-  let written=0,errors=0;const total=assignAssignments.length;
-  const BATCH=100; // smaller batches to avoid quota/rate limits
-  for(let i=0;i<total;i+=BATCH){
+  let written=0,errors=0;
+  const BATCH=100;
+  // Write main assignments
+  for(let i=0;i<assignAssignments.length;i+=BATCH){
     const chunk=assignAssignments.slice(i,i+BATCH);
     try{
       const batch=db.batch();
@@ -3350,15 +3517,30 @@ async function writeAssignToFirebase(){
       await batch.commit();
       written+=chunk.length;
     }catch(e){
-      // Fallback: individual writes with delay
       for(const a of chunk){
         try{await db.collection(FB_COL).doc(a.item.id).update({slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],overflowSlot:'',overflowQty:0,isFull:false,updatedAt:Date.now()});written++}
         catch(e2){errors++}
       }
     }
-    document.getElementById('assign-status').textContent='寫入中 '+written+'/'+total+(errors?' ('+errors+'失敗)':'');
-    // Rate limit: 1s delay between batches
-    if(i+BATCH<total) await new Promise(r=>setTimeout(r,1000));
+    document.getElementById('assign-status').textContent='寫入中 '+written+'/'+totalCount+(errors?' ('+errors+'失敗)':'');
+    if(i+BATCH<assignAssignments.length) await new Promise(r=>setTimeout(r,1000));
+  }
+  // Write companion items (same slot as master)
+  for(let i=0;i<companions.length;i+=BATCH){
+    const chunk=companions.slice(i,i+BATCH);
+    try{
+      const batch=db.batch();
+      chunk.forEach(c=>{batch.update(db.collection(FB_COL).doc(c.id),{slot:c.slot,slotType:c.slotType||'small',mergedWith:[],overflowSlot:'',overflowQty:0,isFull:false,updatedAt:Date.now()})});
+      await batch.commit();
+      written+=chunk.length;
+    }catch(e){
+      for(const c of chunk){
+        try{await db.collection(FB_COL).doc(c.id).update({slot:c.slot,slotType:c.slotType||'small',mergedWith:[],overflowSlot:'',overflowQty:0,isFull:false,updatedAt:Date.now()});written++}
+        catch(e2){errors++}
+      }
+    }
+    document.getElementById('assign-status').textContent='寫入中 '+written+'/'+totalCount+(errors?' ('+errors+'失敗)':'');
+    if(i+BATCH<companions.length) await new Promise(r=>setTimeout(r,1000));
   }
   const nextD=window._nextAvailableDrawer||1;
   try{await db.collection(FB_COL).doc(FB_CONFIG_DOC).set({nextSmallSlot:drawerNumToLabel(nextD)+'a',nextBagSlot:'B'+String((window._bagCount||0)+1).padStart(2,'0'),totalSmallDrawers:TOTAL_SMALL_DRAWERS_ASSIGN,bagCapacity:window._bagCapacity||BAG_ML_DEFAULT,lastAssignedAt:Date.now()},{merge:true})}catch(e){}
