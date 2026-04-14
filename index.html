@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14n';
+const APP_VERSION = '2026.04.14r';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1394,10 +1394,22 @@ function recalcVol(){
   const tv=Math.round(vol*qty*10)/10,el=document.getElementById('m-vol-display');
   if(w>0&&l>0&&h>0)el.innerHTML='<div>佔位體積</div><div>'+w+' × '+l+' × '+h+' mm = <b>'+vol+' ml</b> × '+qty+' 件 = <b>'+tv+' ml</b></div>';
   else el.innerHTML='<div>佔位體積</div><div><b>'+vol+' ml</b> × '+qty+' 件 = <b>'+tv+' ml</b></div><div style="font-size:11px;color:var(--muted)">填入尺寸可精確計算</div>';
-  if(currentItem&&!isNewItem&&currentItem.slot){const cap=getSlotCap(currentItem.slot,currentItem.slotType),warnEl=document.getElementById('m-overflow-warn');if(tv>cap&&cap<Infinity){const fq=Math.max(1,Math.floor(cap/(vol||1))),oq=qty-fq;warnEl.innerHTML='<div class="overflow-warn">⚠ 容量超出！'+(currentItem.slot)+' 上限 '+cap+'ml，目前 '+tv+'ml<br>建議留 '+fq+' 件，溢出 '+oq+' 件到收納袋<br><button class="btn btn-warn btn-sm" onclick="doOverflow('+fq+','+oq+')" style="margin-top:6px">✓ 執行溢出</button></div>'}else warnEl.innerHTML=''}
+  if(currentItem&&!isNewItem&&currentItem.slot){
+    const cap=getSlotCap(currentItem.slot,currentItem.slotType),warnEl=document.getElementById('m-overflow-warn');
+    const otherVol=allItems.filter(i=>i.slot===currentItem.slot&&i.id!==currentItem.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+    const slotTotal=Math.round((otherVol+tv)*10)/10;
+    const availCap=Math.max(0,cap-otherVol);
+    if(slotTotal>cap&&cap<Infinity){
+      const fq=Math.max(0,Math.floor(availCap/(vol||1)));const oq=qty-fq;
+      let warn='⚠ 格子容量超出！<b>'+currentItem.slot+'</b> 上限 '+cap+'ml';
+      if(otherVol>0)warn+='<br>同格其他物品佔 '+Math.round(otherVol*10)/10+'ml，剩餘空間 '+Math.round(availCap*10)/10+'ml';
+      warn+='<br>此物品 '+tv+'ml，格子總計 <b>'+slotTotal+'ml</b>';
+      if(oq>0)warn+='<br>建議留 '+fq+' 件，溢出 '+oq+' 件到收納袋<br><button class="btn btn-warn btn-sm" onclick="doOverflow('+fq+','+oq+')" style="margin-top:6px">✓ 執行溢出</button>';
+      else warn+='<br>此物品不需溢出，但同格其他物品可能需要調整';
+      warnEl.innerHTML='<div class="overflow-warn">'+warn+'</div>';
+    }else warnEl.innerHTML='';
+  }
 }
-function pasteFromClipboard(){navigator.clipboard.readText().then(text=>{const m=text.match(/([\d.]+)\s*[x×X]\s*([\d.]+)\s*[x×X]\s*([\d.]+)\s*(cm|mm|in)?/i);if(m){let w=parseFloat(m[1]),l=parseFloat(m[2]),h=parseFloat(m[3]);const u=(m[4]||'cm').toLowerCase();if(u==='cm'){w*=10;l*=10;h*=10}else if(u==='in'){w*=25.4;l*=25.4;h*=25.4}document.getElementById('m-dimW').value=Math.round(w*10)/10;document.getElementById('m-dimL').value=Math.round(l*10)/10;document.getElementById('m-dimH').value=Math.round(h*10)/10;recalcVol();showToast('已貼上尺寸（'+u+'→mm）')}else showToast('無法解析尺寸格式','error')}).catch(()=>showToast('無法讀取剪貼簿','error'))}
-
 function doOverflow(fitsQty,ovQty){
   if(!currentItem)return;const vol1=currentItem.estimateVolumeMl||0,bagSlot=findBagForOverflow(vol1*ovQty);
   currentItem.overflowSlot=bagSlot;currentItem.overflowQty=ovQty;currentItem.updatedAt=Date.now();
@@ -1405,10 +1417,19 @@ function doOverflow(fitsQty,ovQty){
   markDirty(currentItem.id);showToast('溢出 '+ovQty+' 件到 '+bagSlot);
 }
 function forceOverflow(){
-  if(!currentItem||isNewItem)return;const vol1=currentItem.estimateVolumeMl||0,qty=parseInt(document.getElementById('m-qty').value)||1,cap=getSlotCap(currentItem.slot,currentItem.slotType),tv=vol1*qty;
-  if(tv<=cap&&!confirm('目前體積未超出容量。仍要手動溢出嗎？'))return;
-  const fq=Math.max(1,Math.floor(cap/(vol1||1))),oq=qty-fq;if(oq<=0){showToast('無需溢出','error');return}doOverflow(fq,oq);
+  if(!currentItem||isNewItem)return;
+  const vol1=currentItem.estimateVolumeMl||0,qty=parseInt(document.getElementById('m-qty').value)||1;
+  const cap=getSlotCap(currentItem.slot,currentItem.slotType);
+  const otherVol=allItems.filter(i=>i.slot===currentItem.slot&&i.id!==currentItem.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+  const availCap=Math.max(0,cap-otherVol);
+  const tv=vol1*qty;const slotTotal=otherVol+tv;
+  if(slotTotal<=cap&&!confirm('格子總計 '+Math.round(slotTotal)+'ml 未超出 '+cap+'ml。仍要手動溢出嗎？'))return;
+  const fq=Math.max(0,Math.floor(availCap/(vol1||1))),oq=qty-fq;
+  if(oq<=0){showToast('此物品無需溢出（同格其他物品可能需要調整）','error');return}
+  doOverflow(fq,oq);
 }
+
+function pasteFromClipboard(){navigator.clipboard.readText().then(text=>{const m=text.match(/([\d.]+)\s*[x×X]\s*([\d.]+)\s*[x×X]\s*([\d.]+)\s*(cm|mm|in)?/i);if(m){let w=parseFloat(m[1]),l=parseFloat(m[2]),h=parseFloat(m[3]);const u=(m[4]||'cm').toLowerCase();if(u==='cm'){w*=10;l*=10;h*=10}else if(u==='in'){w*=25.4;l*=25.4;h*=25.4}document.getElementById('m-dimW').value=Math.round(w*10)/10;document.getElementById('m-dimL').value=Math.round(l*10)/10;document.getElementById('m-dimH').value=Math.round(h*10)/10;recalcVol();showToast('已貼上尺寸（'+u+'→mm）')}else showToast('無法解析尺寸格式','error')}).catch(()=>showToast('無法讀取剪貼簿','error'))}
 
 function editorSaveItem(){
   if(!currentItem)return;const i=currentItem;
@@ -1423,7 +1444,12 @@ function editorSaveItem(){
   i.nameCN=document.getElementById('m-nameCN').value.trim();
   i.designId=document.getElementById('m-did').value.trim();i.updatedAt=Date.now();
   if(isNewItem){const vt=(i.estimateVolumeMl||0)*(i.quantity||1);const r=autoAssign(vt);i.slot=r.slot;i.slotType=r.slotType;i.createdAt=Date.now();allItems.unshift(i);showToast('新零件編入 '+i.slot+'（'+i.slotType+'）')}
-  else{i.slot=document.getElementById('m-slot').value.trim();i.slotType=document.getElementById('m-slotType').value;showToast('已暫存（點回傳上傳）')}
+  else{i.slot=document.getElementById('m-slot').value.trim();i.slotType=document.getElementById('m-slotType').value;
+    // Auto-overflow check on save
+    const ovResult=autoOverflowCheck(i);
+    if(ovResult){showToast('已儲存 → 溢出 '+ovResult.overQty+' 件到 '+ovResult.bagSlot)}
+    else{showToast('已暫存（點回傳上傳）')}
+  }
   markDirty(i.id);closeModal();renderStats();applyFilter();
 }
 function autoAssign(vt){
@@ -2596,7 +2622,11 @@ async function confirmPart(){
     item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);
     item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;
     item.altIds=existing?.altIds||[];
-    if(existing)Object.assign(existing,item);showToast('已更新：'+item.slot+'（數量 +1）');
+    if(existing)Object.assign(existing,item);
+    // Auto-overflow check after qty+1
+    const ovResult=autoOverflowCheck(existing||item);
+    if(ovResult){showToast('已更新 +1 → 溢出 '+ovResult.overQty+' 件到 '+ovResult.bagSlot)}
+    else{showToast('已更新：'+item.slot+'（數量 +1）')}
   }else{
     item.id='lego_'+now+'_'+Math.random().toString(36).slice(2,5);item.createdAt=now;allItems.unshift(item);showToast('已儲存到 '+item.slot);
     // Fetch altIds for new item (background, non-blocking)
@@ -2906,11 +2936,35 @@ async function saveResultQty(){
   if(!item){showToast('找不到零件','error');return}
   item.quantity=(item.quantity||1)+qty;
   item.updatedAt=Date.now();
+  // Auto-overflow check
+  const ovResult=autoOverflowCheck(item);
   markDirty(item.id);
   try{await fbSaveItem(item)}catch(e){}
   document.getElementById('result-qty-save').textContent='✓ 已追加 +'+qty;
   document.getElementById('result-qty-save').disabled=true;
-  showToast('已追加 '+qty+' 件，庫存 '+item.quantity+' 件');
+  if(ovResult){showToast('已追加 '+qty+' 件 → 溢出 '+ovResult.overQty+' 件到 '+ovResult.bagSlot)}
+  else{showToast('已追加 '+qty+' 件，庫存 '+item.quantity+' 件')}
+}
+
+// Auto overflow: check if slot total exceeds cap, auto-assign bag
+function autoOverflowCheck(item){
+  if(!item||!item.slot)return null;
+  const vol1=item.estimateVolumeMl||0;
+  const qty=item.quantity||1;
+  const cap=getSlotCap(item.slot,item.slotType);
+  if(cap===Infinity)return null;
+  // Calculate total vol of all items in same slot
+  const otherVol=allItems.filter(i=>i.slot===item.slot&&i.id!==item.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+  const availCap=Math.max(0,cap-otherVol);
+  const tv=vol1*qty;
+  if(otherVol+tv<=cap)return null; // fits
+  const fitsQty=Math.max(0,Math.floor(availCap/(vol1||1)));
+  const overQty=qty-fitsQty;
+  if(overQty<=0)return null;
+  const bagSlot=findBagForOverflow(vol1*overQty);
+  item.overflowSlot=bagSlot;
+  item.overflowQty=overQty;
+  return{bagSlot,overQty,fitsQty};
 }
 function searchDrawer(d){
   const pad=String(d).padStart(3,'0'), plain=String(d);
@@ -2968,7 +3022,9 @@ function searchDrawer(d){
 }
 function partRowHTML(item){
   const thumbSrc=item.thumbnailUrl||'';const sc=item.slotType==='large'?'slot-large':item.slotType==='bag'?'slot-bag':'slot-small';
-  return'<div class="item-row" onclick="openItem(\''+item.id+'\')">'+(thumbSrc?'<img class="item-thumb" src="'+thumbSrc+'" loading="lazy" onerror="this.style.display=\'none\'">':'<div style="width:40px;height:40px;border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px">🧱</div>')+'<div class="item-info"><div class="item-name">'+(item.name||item.nameCN||'未知')+'</div><div class="item-meta"><span style="color:var(--accent);font-family:var(--mono);font-weight:700">'+(item.slot||'?')+'</span><span>'+(item.featureTags||[]).slice(0,2).join(', ')+'</span></div></div><span class="slot-badge '+sc+'">'+(item.slot||'?')+'</span></div>';
+  const ov=item.overflowSlot&&(item.overflowQty||0)>0?'、'+item.overflowSlot:'';
+  const ovMeta=item.overflowSlot&&(item.overflowQty||0)>0?' <span style="color:var(--purple);font-size:10px">→'+item.overflowSlot+'('+item.overflowQty+'件)</span>':'';
+  return'<div class="item-row" onclick="openItem(\''+item.id+'\')">'+(thumbSrc?'<img class="item-thumb" src="'+thumbSrc+'" loading="lazy" onerror="this.style.display=\'none\'">':'<div style="width:40px;height:40px;border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px">🧱</div>')+'<div class="item-info"><div class="item-name">'+(item.name||item.nameCN||'未知')+'</div><div class="item-meta"><span style="color:var(--accent);font-family:var(--mono);font-weight:700">'+(item.slot||'?')+ov+'</span><span>'+(item.featureTags||[]).slice(0,2).join(', ')+'</span></div></div><span class="slot-badge '+sc+'">'+(item.slot||'?')+ov+'</span></div>';
 }
 
 // ═══════════════════════════════════════════════════
