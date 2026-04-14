@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14v';
+const APP_VERSION = '2026.04.14w';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1438,16 +1438,32 @@ function pasteFromClipboard(){
     if(m){let w=parseFloat(m[1]),l=parseFloat(m[2]),h=parseFloat(m[3]);const u=(m[4]||'cm').toLowerCase();if(u==='cm'){w*=10;l*=10;h*=10}else if(u==='in'){w*=25.4;l*=25.4;h*=25.4}document.getElementById('m-dimW').value=Math.round(w*10)/10;document.getElementById('m-dimL').value=Math.round(l*10)/10;document.getElementById('m-dimH').value=Math.round(h*10)/10;recalcVol();showToast('已貼上尺寸（'+u+'→mm）')}
     else showToast('無法解析尺寸格式','error');
   }
-  // APK or no clipboard API → prompt fallback
-  if(window._isAPK||!navigator.clipboard||!navigator.clipboard.readText){
-    const text=prompt('請貼上尺寸（如 1.6 x 1.6 x 0.3 cm）');
-    parseDimText(text);return;
+  // Try clipboard API first (Chrome)
+  if(navigator.clipboard&&navigator.clipboard.readText&&!window._isAPK){
+    navigator.clipboard.readText().then(parseDimText).catch(()=>showPasteDialog(parseDimText));
+    return;
   }
-  navigator.clipboard.readText().then(parseDimText).catch(()=>{
-    // Clipboard failed → prompt fallback
-    const text=prompt('請貼上尺寸（如 1.6 x 1.6 x 0.3 cm）');
-    parseDimText(text);
-  });
+  showPasteDialog(parseDimText);
+}
+
+function showPasteDialog(callback){
+  let ov=document.getElementById('paste-overlay');
+  if(!ov){
+    ov=document.createElement('div');ov.id='paste-overlay';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.innerHTML='<div style="background:var(--card);border-radius:16px;padding:20px;width:100%;max-width:340px"><div style="font-size:14px;font-weight:700;color:var(--accent);margin-bottom:8px">📋 貼上尺寸</div><div style="font-size:12px;color:var(--muted);margin-bottom:12px">從 BrickLink 複製尺寸後，在下方長按貼上<br>格式：1.6 x 1.6 x 0.3 cm</div><input id="paste-input" type="text" placeholder="長按此處貼上…" style="width:100%;background:var(--surface);border:2px solid var(--accent);color:var(--text);padding:12px;border-radius:10px;font-size:16px;font-family:var(--mono);box-sizing:border-box;margin-bottom:12px"><div style="display:flex;gap:8px"><button onclick="closePasteDialog()" class="btn" style="flex:1;padding:10px">取消</button><button onclick="submitPasteDialog()" class="btn btn-primary" style="flex:1;padding:10px">✓ 確定</button></div></div>';
+    document.body.appendChild(ov);
+  }
+  ov.style.display='flex';
+  window._pasteCallback=callback;
+  const inp=document.getElementById('paste-input');inp.value='';
+  setTimeout(()=>inp.focus(),200);
+}
+function closePasteDialog(){const ov=document.getElementById('paste-overlay');if(ov)ov.style.display='none'}
+function submitPasteDialog(){
+  const text=document.getElementById('paste-input').value.trim();
+  closePasteDialog();
+  if(text&&window._pasteCallback)window._pasteCallback(text);
 }
 
 function openExternalLink(url){
