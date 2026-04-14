@@ -499,9 +499,9 @@ tr:hover{background:var(--accent-bg)}
   <div class="card">
     <div class="card-title">API Keys</div>
     <div class="field"><label>Gemini API Key <span style="color:var(--accent);font-size:10px">必填</span></label><input type="password" id="inp-apikey" placeholder="AIzaSy..."></div>
-    <div style="font-size:12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">🔑 取得 Gemini API Key →</a><button onclick="navigator.clipboard.readText().then(t=>{document.getElementById('inp-apikey').value=t.trim();document.getElementById('inp-apikey').type='text';showToast('已貼上')}).catch(()=>showToast('無法讀取剪貼簿','error'))" style="background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:3px 10px;border-radius:5px;font-size:11px;cursor:pointer;white-space:nowrap">📋 貼上剪貼簿</button></div>
+    <div style="font-size:12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><a href="https://aistudio.google.com/apikey" onclick="openExternalLink(this.href);return false" style="color:var(--accent)">🔑 取得 Gemini API Key →</a><button onclick="pasteToInput('inp-apikey')" style="background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:3px 10px;border-radius:5px;font-size:11px;cursor:pointer;white-space:nowrap">📋 貼上剪貼簿</button></div>
     <div class="field"><label>Rebrickable API Key</label><input type="text" id="inp-rbkey" placeholder="56ee6047eaeb..."></div>
-    <div style="font-size:12px;margin-bottom:8px"><a href="https://rebrickable.com/api/" target="_blank" style="color:var(--accent)">🔑 取得 Rebrickable Key →</a></div>
+    <div style="font-size:12px;margin-bottom:8px"><a href="https://rebrickable.com/api/" onclick="openExternalLink(this.href);return false" style="color:var(--accent)">🔑 取得 Rebrickable Key →</a></div>
     <button class="btn-primary" style="width:100%" onclick="saveSettings()">💾 儲存設定</button>
   </div>
   <div class="card">
@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14w';
+const APP_VERSION = '2026.04.14x';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1464,6 +1464,18 @@ function submitPasteDialog(){
   const text=document.getElementById('paste-input').value.trim();
   closePasteDialog();
   if(text&&window._pasteCallback)window._pasteCallback(text);
+}
+function pasteToInput(inputId){
+  function applyPaste(text){
+    if(!text)return;
+    const el=document.getElementById(inputId);
+    if(el){el.value=text.trim();el.type='text';showToast('已貼上')}
+  }
+  if(navigator.clipboard&&navigator.clipboard.readText&&!window._isAPK){
+    navigator.clipboard.readText().then(applyPaste).catch(()=>showPasteDialog(applyPaste));
+    return;
+  }
+  showPasteDialog(applyPaste);
 }
 
 function openExternalLink(url){
