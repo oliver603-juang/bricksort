@@ -233,6 +233,7 @@ tr:hover{background:var(--accent-bg)}
         <input type="text" id="set-id-input" readonly placeholder="盒組編號（如 42115）匯入建檔" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:12px;font-family:var(--mono);caret-color:var(--accent)" onfocus="openNumpad(this,'importSet')">
         <button class="btn btn-sm btn-green" onclick="importSet()">📥 匯入</button>
       </div>
+      <button class="btn" style="width:100%;margin-top:8px;padding:10px;font-size:13px" onclick="showStocktakeSetup()">📋 清點庫存</button>
     </div>
   </div>
 
@@ -335,6 +336,83 @@ tr:hover{background:var(--accent-bg)}
   </div>
   <button id="result-confirm-btn" class="btn-primary" style="width:100%" onclick="confirmPart()">✓ 確認儲存</button>
   <button id="result-cancel-btn" class="btn" style="width:100%;margin-top:8px" onclick="cancelResult()">取消</button>
+</div>
+</div>
+
+<!-- ═══ STOCKTAKE ═══ -->
+<div id="s-stocktake" class="screen">
+<div style="padding:12px 16px">
+  <button class="btn btn-sm" onclick="cancelStocktake()">✕ 結束清點</button>
+  <span style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:8px">📋 清點庫存</span>
+  <span id="st-progress" style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-left:8px"></span>
+</div>
+<div style="flex:1;overflow-y:auto;padding:0 16px 100px">
+  <div class="card" id="st-card">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+      <img id="st-img" src="" style="width:72px;height:72px;border-radius:10px;object-fit:cover;background:var(--surface)" onerror="if(this.dataset.fb){this.src=this.dataset.fb;this.dataset.fb=''}">
+      <div style="flex:1">
+        <div id="st-name" style="font-size:16px;font-weight:700"></div>
+        <div id="st-ids" style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px"></div>
+        <div id="st-desc" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+      </div>
+    </div>
+    <div id="st-tags" style="margin-bottom:8px"></div>
+    <div id="st-vol" style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:12px"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <label style="font-size:14px;font-weight:600;white-space:nowrap">數量</label>
+      <button onclick="var el=document.getElementById('st-qty');el.value=Math.max(0,(parseInt(el.value)||0)-1)" style="width:44px;height:44px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:22px;cursor:pointer">−</button>
+      <input type="number" id="st-qty" inputmode="numeric" pattern="[0-9]*" style="flex:1;text-align:center;background:var(--surface);border:2px solid var(--accent);color:var(--accent);padding:10px;border-radius:10px;font-size:28px;font-weight:900;font-family:var(--mono)" onfocus="this.select()">
+      <button onclick="var el=document.getElementById('st-qty');el.value=(parseInt(el.value)||0)+1" style="width:44px;height:44px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:22px;cursor:pointer">+</button>
+    </div>
+    <div id="st-diff" style="font-size:13px;font-family:var(--mono);text-align:center;margin-bottom:8px"></div>
+  </div>
+  <div style="position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:8px;z-index:60">
+    <button class="btn" style="flex:1;padding:14px;font-size:14px" onclick="skipStocktakeItem()">⏭ 跳過</button>
+    <button class="btn btn-primary" style="flex:2;padding:14px;font-size:15px;font-weight:800" onclick="saveAndNextStocktake()">✓ 下一個</button>
+  </div>
+</div>
+</div>
+
+<!-- ═══ STOCKTAKE SETUP OVERLAY ═══ -->
+<div id="stocktake-setup" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:200;display:none;align-items:center;justify-content:center;padding:20px">
+<div class="card" style="max-width:380px;width:100%">
+  <div style="font-size:18px;font-weight:800;color:var(--accent);margin-bottom:16px">📋 清點庫存</div>
+  <div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">依序顯示每個格子的零件，確認實際數量。</div>
+  <div class="field" style="margin-bottom:12px">
+    <label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block">區域</label>
+    <div style="display:flex;gap:8px">
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px">
+        <input type="radio" name="st-zone" value="small" checked style="accent-color:var(--accent)"> 小抽屜</label>
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px">
+        <input type="radio" name="st-zone" value="large" style="accent-color:var(--accent)"> 大抽屜</label>
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px">
+        <input type="radio" name="st-zone" value="bag" style="accent-color:var(--accent)"> 收納袋</label>
+    </div>
+  </div>
+  <div class="field" id="st-side-field" style="margin-bottom:12px">
+    <label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block">格子面</label>
+    <div style="display:flex;gap:8px">
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px">
+        <input type="radio" name="st-side" value="all" checked style="accent-color:var(--accent)"> 全部</label>
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px">
+        <input type="radio" name="st-side" value="a" style="accent-color:var(--accent)"> 只有 a 面</label>
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px">
+        <input type="radio" name="st-side" value="b" style="accent-color:var(--accent)"> 只有 b 面</label>
+    </div>
+  </div>
+  <div class="field" style="margin-bottom:16px">
+    <label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block">範圍</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="number" id="st-from" inputmode="numeric" value="1" min="1" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center">
+      <span style="color:var(--muted)">～</span>
+      <input type="number" id="st-to" inputmode="numeric" value="450" min="1" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center">
+    </div>
+  </div>
+  <div id="st-setup-count" style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:12px"></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn" style="flex:1;padding:12px" onclick="hideStocktakeSetup()">取消</button>
+    <button class="btn btn-primary" style="flex:2;padding:12px;font-size:15px" onclick="startStocktake()">▶ 開始清點</button>
+  </div>
 </div>
 </div>
 
@@ -450,7 +528,7 @@ tr:hover{background:var(--accent-bg)}
     <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">校正後可在零件詳情頁點擊縮圖，顯示 1:1 實體尺寸的立體線框圖來比對實品。</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
       <label style="font-size:13px;flex-shrink:0">px/mm</label>
-      <input type="number" id="inp-pxmm" step="0.01" placeholder="如 3.96" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px 8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center">
+      <input type="text" id="inp-pxmm" readonly inputmode="none" placeholder="如 3.96" onfocus="openNumpad(this,null,'decimal')" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px 8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center">
       <button class="btn btn-sm" style="white-space:nowrap" onclick="autoDetectPxMm()">自動偵測</button>
     </div>
     <div id="pxmm-ruler" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px">
@@ -458,7 +536,7 @@ tr:hover{background:var(--accent-bg)}
       <div id="pxmm-line" style="height:2px;background:var(--accent);border-radius:1px;margin:12px 0"></div>
       <div style="display:flex;gap:8px;align-items:center">
         <label style="font-size:12px;color:var(--muted)">實測長度</label>
-        <input type="number" id="pxmm-measured" step="0.1" placeholder="mm" style="width:70px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px;font-size:13px;text-align:center">
+        <input type="text" id="pxmm-measured" readonly inputmode="none" placeholder="mm" onfocus="openNumpad(this,null,'decimal')" style="width:70px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px;font-size:13px;text-align:center">
         <span style="font-size:12px;color:var(--muted)">mm</span>
         <button class="btn btn-sm btn-primary" onclick="confirmPxMm()">確認</button>
       </div>
@@ -506,9 +584,10 @@ tr:hover{background:var(--accent-bg)}
     <button class="nk" onclick="numpadKey('8')">8</button>
     <button class="nk" onclick="numpadKey('9')">9</button>
     <button class="nk" style="background:var(--surface);color:var(--muted);font-size:13px" onclick="closeNumpad()">取消</button>
-    <button class="nk" style="font-size:13px" onclick="numpadKey('-')">-</button>
+    <button class="nk" id="numpad-dash" style="font-size:13px" onclick="numpadKey('-')">-</button>
     <button class="nk" onclick="numpadKey('0')">0</button>
-    <button class="nk" style="font-size:12px" onclick="numpadKey(' ')">空格</button>
+    <button class="nk" id="numpad-space" style="font-size:12px" onclick="numpadKey(' ')">空格</button>
+    <button class="nk" id="numpad-dot" style="font-size:20px;display:none" onclick="numpadKey('.')">.</button>
     <button class="nk" style="background:var(--accent);color:#111;font-size:15px;font-weight:700" onclick="numpadSubmit()">⏎</button>
   </div>
 </div>
@@ -549,13 +628,13 @@ tr:hover{background:var(--accent-bg)}
   <div class="modal-body">
     <div id="m-overflow-warn"></div>
     <div id="m-overflow-info" class="overflow-info" style="display:none"></div>
-    <div class="field"><label>數量（件）</label><input type="number" id="m-qty" min="0" step="1" inputmode="numeric" pattern="[0-9]*" oninput="recalcVol()"></div>
+    <div class="field"><label>數量（件）</label><input type="text" id="m-qty" readonly inputmode="none" style="caret-color:var(--accent)" onfocus="openNumpad(this,null,'int')" oninput="recalcVol()"></div>
     <div class="vol-display" id="m-vol-display"></div>
     <div class="field"><label>尺寸 (mm)</label>
       <div class="dim-row">
-        <input type="number" id="m-dimW" step="0.1" inputmode="decimal" placeholder="寬" oninput="recalcVol()"><span>×</span>
-        <input type="number" id="m-dimL" step="0.1" inputmode="decimal" placeholder="長" oninput="recalcVol()"><span>×</span>
-        <input type="number" id="m-dimH" step="0.1" inputmode="decimal" placeholder="高" oninput="recalcVol()"><span>mm</span>
+        <input type="text" id="m-dimW" readonly inputmode="none" placeholder="寬" onfocus="openNumpad(this,null,'decimal')" oninput="recalcVol()"><span>×</span>
+        <input type="text" id="m-dimL" readonly inputmode="none" placeholder="長" onfocus="openNumpad(this,null,'decimal')" oninput="recalcVol()"><span>×</span>
+        <input type="text" id="m-dimH" readonly inputmode="none" placeholder="高" onfocus="openNumpad(this,null,'decimal')" oninput="recalcVol()"><span>mm</span>
       </div>
       <div class="paste-hint" onclick="pasteFromClipboard()">📋 貼上尺寸（從 BrickLink 複製 W x L x H cm，自動轉 mm）</div>
     </div>
@@ -597,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14h';
+const APP_VERSION = '2026.04.14k';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -930,30 +1009,46 @@ async function showTab(tab){
 }
 function togglePanel(id){const el=document.getElementById(id);el.style.display=el.style.display==='none'?'':'none'}
 
-let _numpadTarget=null,_numpadAction='';
-function openNumpad(input,action){
-  _numpadTarget=input;_numpadAction=action;
+let _numpadTarget=null,_numpadAction='',_numpadMode='text';
+function openNumpad(input,action,mode){
+  _numpadTarget=input;_numpadAction=action;_numpadMode=mode||'text';
   input.blur(); // prevent system keyboard
   document.getElementById('numpad-display').textContent=input.value||'';
+  // Show/hide decimal point button
+  const dotBtn=document.getElementById('numpad-dot');
+  if(dotBtn)dotBtn.style.display=(_numpadMode==='decimal')?'':'none';
+  const spaceBtn=document.getElementById('numpad-space');
+  if(spaceBtn)spaceBtn.style.display=(_numpadMode==='decimal')?'none':'';
+  const dashBtn=document.getElementById('numpad-dash');
+  if(dashBtn)dashBtn.style.display=(_numpadMode==='int'||_numpadMode==='decimal')?'none':'';
   document.getElementById('numpad-overlay').style.display='block';
 }
 function closeNumpad(){
   document.getElementById('numpad-overlay').style.display='none';
-  _numpadTarget=null;_numpadAction='';
+  if(_numpadTarget&&_numpadMode!=='text'){
+    // Trigger recalcVol for modal fields
+    try{recalcVol()}catch(e){}
+  }
+  _numpadTarget=null;_numpadAction='';_numpadMode='text';
 }
 function numpadKey(k){
   const disp=document.getElementById('numpad-display');
   let val=disp.textContent||'';
   if(k==='del'){val=val.slice(0,-1)}
   else if(k==='clear'){val=''}
+  else if(k==='.'&&val.includes('.')){}// only one dot
+  else if(_numpadMode==='int'&&(k==='.'||k===' '||k==='-')){}// int mode: digits only
   else{val+=k}
   disp.textContent=val;
   if(_numpadTarget)_numpadTarget.value=val;
+  // Live update volume for modal
+  if(_numpadMode==='int'||_numpadMode==='decimal'){try{recalcVol()}catch(e){}}
 }
 function numpadSubmit(){
   const disp=document.getElementById('numpad-display');
   if(_numpadTarget)_numpadTarget.value=disp.textContent||'';
   const action=_numpadAction;
+  const mode=_numpadMode;
   closeNumpad();
   if(action&&typeof window[action]==='function')window[action]();
 }
@@ -2501,6 +2596,139 @@ function openResultItem(){
   }
 }
 function cancelResult(){pendingPart=null;currentImageData=null;if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}goBack()}
+// ═══════════════════════════════════════════════════
+// STOCKTAKE (清點庫存)
+// ═══════════════════════════════════════════════════
+let _stItems=[],_stIdx=0,_stSaved=0,_stChanged=0;
+
+function showStocktakeSetup(){
+  const overlay=document.getElementById('stocktake-setup');
+  overlay.style.display='flex';
+  // Update zone change handler
+  document.querySelectorAll('input[name="st-zone"]').forEach(r=>r.onchange=onStZoneChange);
+  onStZoneChange();
+}
+function hideStocktakeSetup(){document.getElementById('stocktake-setup').style.display='none'}
+
+function onStZoneChange(){
+  const zone=document.querySelector('input[name="st-zone"]:checked').value;
+  const sideField=document.getElementById('st-side-field');
+  sideField.style.display=zone==='small'?'block':'none';
+  // Auto-set range
+  const toInput=document.getElementById('st-to');
+  if(zone==='small')toInput.value='450';
+  else if(zone==='large')toInput.value='27';
+  else{
+    let maxBag=1;allItems.forEach(i=>{const m=(i.slot||'').match(/^B(\d+)$/);if(m)maxBag=Math.max(maxBag,parseInt(m[1]))});
+    toInput.value=maxBag;
+  }
+  document.getElementById('st-from').value='1';
+  updateStSetupCount();
+}
+
+function updateStSetupCount(){
+  const items=getStocktakeItems();
+  document.getElementById('st-setup-count').textContent='共 '+items.length+' 個零件待清點';
+}
+
+function getStocktakeItems(){
+  const zone=document.querySelector('input[name="st-zone"]:checked').value;
+  const side=zone==='small'?(document.querySelector('input[name="st-side"]:checked')?.value||'all'):'all';
+  const from=parseInt(document.getElementById('st-from').value)||1;
+  const to=parseInt(document.getElementById('st-to').value)||999;
+
+  return allItems.filter(item=>{
+    const slot=item.slot||'';
+    if(zone==='small'){
+      const m=slot.match(/^(\d+)([ab])$/);
+      if(!m)return false;
+      const num=parseInt(m[1]),face=m[2];
+      if(num<from||num>to)return false;
+      if(side!=='all'&&face!==side)return false;
+      return true;
+    }else if(zone==='large'){
+      const m=slot.match(/^L(\d+)$/);
+      if(!m)return false;
+      const num=parseInt(m[1]);
+      return num>=from&&num<=to;
+    }else{
+      const m=slot.match(/^B(\d+)$/);
+      if(!m)return false;
+      const num=parseInt(m[1]);
+      return num>=from&&num<=to;
+    }
+  }).sort((a,b)=>{
+    const sa=a.slot||'',sb=b.slot||'';
+    // Natural sort by slot
+    const na=sa.match(/\d+/),nb=sb.match(/\d+/);
+    if(na&&nb){
+      const diff=parseInt(na[0])-parseInt(nb[0]);
+      if(diff!==0)return diff;
+    }
+    return sa.localeCompare(sb);
+  });
+}
+
+function startStocktake(){
+  _stItems=getStocktakeItems();
+  if(!_stItems.length){showToast('該範圍沒有零件','error');return}
+  _stIdx=0;_stSaved=0;_stChanged=0;
+  hideStocktakeSetup();
+  showScreen('s-stocktake');
+  renderStocktakeItem();
+}
+
+function renderStocktakeItem(){
+  if(_stIdx>=_stItems.length){finishStocktake();return}
+  const item=_stItems[_stIdx];
+  const thumb=item.thumbnailUrl||item.imageData||'';
+  const img=document.getElementById('st-img');
+  img.dataset.fb=item.imageData||'';
+  img.src=thumb;
+  document.getElementById('st-name').textContent=item.nameCN||item.name||'未知零件';
+  document.getElementById('st-ids').textContent=(item.designId?'ID: '+item.designId+' · ':'')+item.slot+' · '+(item.slotType||'small');
+  document.getElementById('st-desc').textContent=item.description||'';
+  document.getElementById('st-tags').innerHTML=(item.featureTags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
+  const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;
+  const volStr=w>0&&l>0&&h>0?w+'×'+l+'×'+h+'mm = '+(item.estimateVolumeMl||0)+'ml':'佔位體積 ≈ '+(item.estimateVolumeMl||0)+'ml';
+  document.getElementById('st-vol').textContent=volStr;
+  document.getElementById('st-qty').value=item.quantity||0;
+  document.getElementById('st-diff').textContent='';
+  document.getElementById('st-progress').textContent=(_stIdx+1)+'/'+_stItems.length+' ('+Math.round((_stIdx/_stItems.length)*100)+'%)';
+  // Auto-focus and select the quantity input
+  setTimeout(()=>{const q=document.getElementById('st-qty');q.focus();q.select()},200);
+}
+
+function saveAndNextStocktake(){
+  const item=_stItems[_stIdx];
+  const newQty=parseInt(document.getElementById('st-qty').value)||0;
+  const oldQty=item.quantity||0;
+  if(newQty!==oldQty){
+    item.quantity=newQty;
+    item.updatedAt=Date.now();
+    markDirty(item.id);
+    fbSaveItem(item).catch(()=>{});
+    _stChanged++;
+  }
+  _stSaved++;_stIdx++;
+  renderStocktakeItem();
+}
+
+function skipStocktakeItem(){
+  _stSaved++;_stIdx++;
+  renderStocktakeItem();
+}
+
+function cancelStocktake(){
+  if(_stChanged>0&&!confirm('已修改 '+_stChanged+' 個零件的數量，確定結束清點？'))return;
+  showTab('main');renderStats();applyFilter();
+}
+
+function finishStocktake(){
+  showTab('main');renderStats();applyFilter();
+  showToast('✅ 清點完成！檢查 '+_stSaved+' 個，修改 '+_stChanged+' 個');
+}
+
 function cancelBatch(){if(batchRunning){batchCancelled=true}else showTab('main')}
 function renderBatchList(){document.getElementById('batch-item-list').innerHTML=batchQueue.map(item=>'<div class="item-row" style="border-left:3px solid '+(item.status==='done'?'var(--green)':item.status==='error'?'var(--red)':item.status==='processing'?'var(--accent)':'var(--border)')+'"><div class="item-info"><div class="item-name">'+item.name+'</div><div class="item-meta">'+(item.status==='done'?'✅ '+(item.result?.slot||''):(item.status==='error'?'❌ '+item.error:item.status==='processing'?'⏳ 處理中…':'⏸ 等待中'))+'</div></div></div>').join('')}
 function updateBatchProgress(done,total){document.getElementById('batch-status-text').textContent=done+'/'+total;document.getElementById('batch-count-badge').textContent=Math.round(done/total*100)+'%';document.getElementById('batch-progress-bar').style.width=(done/total*100)+'%'}
