@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14u';
+const APP_VERSION = '2026.04.14v';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1452,13 +1452,19 @@ function pasteFromClipboard(){
 
 function openExternalLink(url){
   if(!url||url==='#')return;
-  if(window._isAPK){
-    // APK: open in system browser via intent scheme
-    try{window.location='intent://'+url.replace(/^https?:\/\//,'')+'#Intent;scheme=https;action=android.intent.action.VIEW;end'}
-    catch(e){window.open(url)}
-  }else{
-    window.open(url,'_blank');
+  if(window.BrickSortNative){
+    // APK: try native bridge first, fallback to copy URL
+    try{
+      if(BrickSortNative.openExternal){BrickSortNative.openExternal(url);return}
+    }catch(e){}
+    // Fallback: copy URL to clipboard + toast
+    try{navigator.clipboard.writeText(url)}catch(e){
+      const ta=document.createElement('textarea');ta.value=url;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    }
+    showToast('已複製連結，請在瀏覽器開啟');
+    return;
   }
+  window.open(url,'_blank');
 }
 
 function editorSaveItem(){
