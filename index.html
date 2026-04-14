@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14m';
+const APP_VERSION = '2026.04.14n';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1692,7 +1692,7 @@ async function findByMoldVariant(designId){
   if(!designId)return null;
   // ═══ Step 1: Check local altIds (no API needed) ═══
   const localMatch=findByLocalAltIds(designId);
-  if(localMatch)return localMatch;
+  if(localMatch){localMatch._altIdMatch=true;return localMatch}
   // ═══ Step 2: API fallback — query Rebrickable ═══
   let variants=await getMoldVariants(designId);
   if(!variants.length){
@@ -1972,7 +1972,7 @@ async function cameraRecognize(base64,imgSrc){
     if(!match&&bkId){
       setProcessingMsg('🔍 模具變體查詢…');
       const moldMatch=await findByMoldVariant(bkId);
-      if(moldMatch){const newImg=currentImageData||bkResult.imgUrl||'';const yes=await showVariantConfirm(bkId,bkResult.name,newImg,moldMatch);if(yes){match=moldMatch;matchType='mold-variant'}}
+      if(moldMatch){if(moldMatch._altIdMatch){match=moldMatch;matchType='mold-variant';delete moldMatch._altIdMatch}else{const newImg=currentImageData||bkResult.imgUrl||'';const yes=await showVariantConfirm(bkId,bkResult.name,newImg,moldMatch);if(yes){match=moldMatch;matchType='mold-variant'}}}
     }
     if(!match&&bkName.length>=3){const found=allItems.find(i=>i.brickognizeName&&i.brickognizeName.toLowerCase()===bkName);if(found){match=found;matchType='bk-name'}}
     if(!match&&bkName.length>=5){const found=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(bkName)||bkName.includes(n))});if(found){match=found;matchType='name-fuzzy'}}
@@ -2550,9 +2550,12 @@ async function processResult(item){
     setProcessingMsg('🔍 模具變體查詢…');
     const moldMatch=await findByMoldVariant(item.design_id);
     if(moldMatch){
-      const newImg=currentImageData||window._pendingRbImgUrl||(item.design_id?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(item.design_id)+'.png':'');
-      const yes=await showVariantConfirm(item.design_id,item.name_cn||item.name||'',newImg,moldMatch);
-      if(yes)match=moldMatch;
+      if(moldMatch._altIdMatch){match=moldMatch;delete moldMatch._altIdMatch}
+      else{
+        const newImg=currentImageData||window._pendingRbImgUrl||(item.design_id?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(item.design_id)+'.png':'');
+        const yes=await showVariantConfirm(item.design_id,item.name_cn||item.name||'',newImg,moldMatch);
+        if(yes)match=moldMatch;
+      }
     }
   }
   const designId=item.design_id||'';
