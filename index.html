@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14k';
+const APP_VERSION = '2026.04.14m';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1645,8 +1645,28 @@ async function getMoldVariants(designId){
   const key=cfg.rbKey||DEFAULT_RB_KEY;if(!key)return[];
   try{
     let resp=await fetch('https://rebrickable.com/api/v3/lego/parts/'+encodeURIComponent(designId)+'/?key='+key);
-    // Retry once on rate limit (429)
     if(resp.status===429){await new Promise(r=>setTimeout(r,1500));resp=await fetch('https://rebrickable.com/api/v3/lego/parts/'+encodeURIComponent(designId)+'/?key='+key)}
+    // 404 → use search API to find variants (30367 → finds 30367a/b/c)
+    if(resp.status===404&&/^\d+$/.test(designId)){
+      try{
+        const searchResp=await fetch('https://rebrickable.com/api/v3/lego/parts/?search='+encodeURIComponent(designId)+'&key='+key+'&page_size=20');
+        if(searchResp.ok){
+          const searchData=await searchResp.json();
+          const candidates=(searchData.results||[]).filter(r=>{
+            const pn=r.part_num||'';
+            // Must start with the exact ID (30367a, 30367b, not 303670)
+            return pn.startsWith(designId)&&/^[a-d]/.test(pn.slice(designId.length));
+          });
+          if(candidates.length){
+            // Pick the base variant (no print suffix) with most external IDs, or first
+            const base=candidates.find(c=>!/pr\d|pat\d|ps\d/.test(c.part_num))||candidates[0];
+            // Re-fetch this specific part for full data
+            const r2=await fetch('https://rebrickable.com/api/v3/lego/parts/'+encodeURIComponent(base.part_num)+'/?key='+key);
+            if(r2.ok)resp=r2;
+          }
+        }
+      }catch(e){}
+    }
     if(!resp.ok){_moldCache[designId]=[];return[]}
     const data=await resp.json();
     const variants=new Set();
@@ -1657,7 +1677,9 @@ async function getMoldVariants(designId){
     blIds.forEach(v=>variants.add(String(v)));
     const bsIds=data.external_ids?.Brickset||[];
     bsIds.forEach(v=>variants.add(String(v)));
-    variants.delete(designId);variants.delete(data.part_num);
+    // Add the found part_num itself as variant (30367b for query 30367)
+    if(data.part_num&&data.part_num!==designId)variants.add(data.part_num);
+    variants.delete(designId);
     const result=[...variants];
     _moldCache[designId]=result;
     result.forEach(v=>{if(!_moldCache[v])_moldCache[v]=[designId,...result.filter(u=>u!==v)]});
@@ -2486,7 +2508,7 @@ async function handlePartIdBatch(){
       if(match){Object.assign(match,savedItem);markDirty(match.id)}else{allItems.unshift(savedItem);markDirty(savedItem.id)}
       await fbSaveItem(savedItem);item.result=savedItem;item.status='done';done++;
     }catch(err){item.error=err.message;item.status='error';errors++}
-    renderBatchList();updateBatchProgress(done+errors,ids.length);if(!batchCancelled)await new Promise(r=>setTimeout(r,300));
+    renderBatchList();updateBatchProgress(done+errors,ids.length);if(!batchCancelled)await new Promise(r=>setTimeout(r,1500));
   }
   batchRunning=false;document.getElementById('batch-back-btn').textContent='← 返回';
   document.getElementById('batch-done-panel').style.display='block';
@@ -2760,17 +2782,24 @@ async function importSet(){
     let done=0,errors=0;
     for(let i=0;i<newParts.length;i++){
       if(batchCancelled)break;const p=newParts[i],item=batchQueue[i];item.status='processing';renderBatchList();
-      try{
-        const prompt='LEGO零件「'+p.name+'」Design ID='+p.designId+'。回應純JSON：{"bricklink_category":"BrickLink分類","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"name_cn":"中文名","description":"15字描述"}';
-        const textResp=await callGeminiAPI(prompt,null,0,GEMINI_LEGO_SYSTEM);const parsed=safeParseJSON(textResp);
-        const baseId=getBaseDesignId(p.designId)||p.designId,thumbnailUrl=p.imgUrl||(baseId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'');
-        const vol=calcVolFromAI(p.name,parsed);
-        const slotInfo=gatewayAssign({estimateVolumeMl:vol,quantity:p.quantity,featureTags:parsed.feature_tags||[],name:p.name,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0});
-        const now=Date.now();
-        const savedItem={id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),name:p.name,nameCN:parsed.name_cn||'',designId:p.designId,description:parsed.description||'',dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:p.quantity,createdAt:now,updatedAt:now,setSource:setNum};
-        allItems.unshift(savedItem);markDirty(savedItem.id);await fbSaveItem(savedItem);item.result=savedItem;item.status='done';done++;
-      }catch(err){item.error=err.message;item.status='error';errors++}
-      renderBatchList();updateBatchProgress(done+errors,newParts.length);if(!batchCancelled)await new Promise(r=>setTimeout(r,200));
+      let retries=0,success=false;
+      while(retries<3&&!success){
+        try{
+          const prompt='LEGO零件「'+p.name+'」Design ID='+p.designId+'。回應純JSON：{"bricklink_category":"BrickLink分類","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"name_cn":"中文名","description":"15字描述"}';
+          const textResp=await callGeminiAPI(prompt,null,0,GEMINI_LEGO_SYSTEM);const parsed=safeParseJSON(textResp);
+          const baseId=getBaseDesignId(p.designId)||p.designId,thumbnailUrl=p.imgUrl||(baseId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'');
+          const vol=calcVolFromAI(p.name,parsed);
+          const slotInfo=gatewayAssign({estimateVolumeMl:vol,quantity:p.quantity,featureTags:parsed.feature_tags||[],name:p.name,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0});
+          const now=Date.now();
+          const savedItem={id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),name:p.name,nameCN:parsed.name_cn||'',designId:p.designId,description:parsed.description||'',dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:'',quantity:p.quantity,createdAt:now,updatedAt:now,setSource:setNum};
+          allItems.unshift(savedItem);markDirty(savedItem.id);await fbSaveItem(savedItem);item.result=savedItem;item.status='done';done++;success=true;
+        }catch(err){
+          retries++;
+          if(retries<3){item.name=p.designId+' '+p.name+' (重試'+retries+')';renderBatchList();await new Promise(r=>setTimeout(r,3000*retries))}
+          else{item.error=err.message;item.status='error';errors++}
+        }
+      }
+      renderBatchList();updateBatchProgress(done+errors,newParts.length);if(!batchCancelled)await new Promise(r=>setTimeout(r,1500));
     }
     batchRunning=false;document.getElementById('batch-back-btn').textContent='← 返回';document.getElementById('batch-done-panel').style.display='block';
     document.getElementById('batch-done-icon').textContent=errors===0?'✓':'⚠';
@@ -2836,7 +2865,7 @@ async function startBatch(files){
       if(match)Object.assign(match,savedItem);else allItems.unshift(savedItem);
       markDirty(savedItem.id);await fbSaveItem(savedItem);item.result=savedItem;item.status='done';done++;
     }catch(err){item.error=err.message;item.status='error';errors++}
-    renderBatchList();updateBatchProgress(done+errors,files.length);if(!batchCancelled)await new Promise(r=>setTimeout(r,300));
+    renderBatchList();updateBatchProgress(done+errors,files.length);if(!batchCancelled)await new Promise(r=>setTimeout(r,1500));
   }
   batchRunning=false;document.getElementById('batch-back-btn').textContent='← 返回';document.getElementById('batch-done-panel').style.display='block';
   document.getElementById('batch-done-icon').textContent=errors===0?'✓':'⚠';
