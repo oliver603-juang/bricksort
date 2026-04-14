@@ -211,8 +211,8 @@ tr:hover{background:var(--accent-bg)}
   </div>
   <div id="instruction-menu" style="display:none;margin-bottom:6px">
     <div style="display:flex;gap:8px">
-      <button class="btn" style="flex:1;padding:10px;font-size:13px" onclick="document.getElementById('instruction-camera').click();hideInstructionMenu()">📷 拍照</button>
-      <button class="btn" style="flex:1;padding:10px;font-size:13px" onclick="document.getElementById('instruction-gallery').click();hideInstructionMenu()">🖼 從圖庫選</button>
+      <button class="btn" style="flex:1;padding:10px;font-size:13px" onclick="startInstructionCapture('camera')">📷 拍照</button>
+      <button class="btn" style="flex:1;padding:10px;font-size:13px" onclick="startInstructionCapture('gallery')">🖼 從圖庫選</button>
     </div>
   </div>
   <div style="font-size:10px;color:var(--dim);text-align:center;margin-bottom:10px">拍照：查位置 ｜ 建檔：Lens 截圖 ｜ 說明書：拍照或選圖→手動框選</div>
@@ -597,7 +597,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14e';
+const APP_VERSION = '2026.04.14h';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1549,26 +1549,22 @@ async function getMoldVariants(designId){
   if(_moldCache[designId])return _moldCache[designId];
   const key=cfg.rbKey||DEFAULT_RB_KEY;if(!key)return[];
   try{
-    const resp=await fetch('https://rebrickable.com/api/v3/lego/parts/'+encodeURIComponent(designId)+'/?key='+key);
+    let resp=await fetch('https://rebrickable.com/api/v3/lego/parts/'+encodeURIComponent(designId)+'/?key='+key);
+    // Retry once on rate limit (429)
+    if(resp.status===429){await new Promise(r=>setTimeout(r,1500));resp=await fetch('https://rebrickable.com/api/v3/lego/parts/'+encodeURIComponent(designId)+'/?key='+key)}
     if(!resp.ok){_moldCache[designId]=[];return[]}
     const data=await resp.json();
     const variants=new Set();
-    // Collect mold variants (e.g. 4589 → 59900)
     (data.molds||[]).forEach(v=>variants.add(v));
-    // Collect all LEGO IDs (e.g. 28701, 64288, 55525)
     const legoIds=data.external_ids?.LEGO||[];
     legoIds.forEach(v=>variants.add(String(v)));
-    // Collect BrickLink IDs
     const blIds=data.external_ids?.BrickLink||[];
     blIds.forEach(v=>variants.add(String(v)));
-    // Collect Brickset IDs
     const bsIds=data.external_ids?.Brickset||[];
     bsIds.forEach(v=>variants.add(String(v)));
-    // Remove self
     variants.delete(designId);variants.delete(data.part_num);
     const result=[...variants];
     _moldCache[designId]=result;
-    // Cache reverse: each variant maps back to this part and siblings
     result.forEach(v=>{if(!_moldCache[v])_moldCache[v]=[designId,...result.filter(u=>u!==v)]});
     return result;
   }catch(e){_moldCache[designId]=[];return[]}
@@ -1577,9 +1573,11 @@ async function getMoldVariants(designId){
 // Find a DB match by checking mold variants of a given designId
 async function findByMoldVariant(designId){
   if(!designId)return null;
-  // Try original ID first
+  // ═══ Step 1: Check local altIds (no API needed) ═══
+  const localMatch=findByLocalAltIds(designId);
+  if(localMatch)return localMatch;
+  // ═══ Step 2: API fallback — query Rebrickable ═══
   let variants=await getMoldVariants(designId);
-  // If not found, retry with stripped suffix (4589b → 4589)
   if(!variants.length){
     const base=getBaseDesignId(designId);
     if(base&&base!==designId)variants=await getMoldVariants(base);
@@ -1594,9 +1592,49 @@ async function findByMoldVariant(designId){
       const iId=(i.designId||'').toLowerCase();
       return iId===v.toLowerCase()||getBaseDesignId(i.designId)===getBaseDesignId(v);
     });
-    if(match)return match;
+    if(match){
+      // ═══ Save altIds to DB for future local lookups ═══
+      saveAltIds(match,variants.concat([designId,getBaseDesignId(designId),getNumericBase(designId)].filter(Boolean)));
+      return match;
+    }
   }
   return null;
+}
+
+// ═══ LOCAL ALT-ID MATCHING (offline, instant) ═══
+function findByLocalAltIds(queryId){
+  if(!queryId)return null;
+  const q=queryId.toLowerCase();
+  const qBase=(getBaseDesignId(queryId)||'').toLowerCase();
+  const qNum=(getNumericBase(queryId)||'').toLowerCase();
+  for(const item of allItems){
+    const alts=item.altIds;
+    if(!alts||!alts.length)continue;
+    for(const a of alts){
+      const al=a.toLowerCase();
+      if(al===q||al===qBase||al===qNum)return item;
+    }
+  }
+  return null;
+}
+
+// Save alternative IDs to an item (dedup, persist)
+function saveAltIds(item,newIds){
+  if(!item||!newIds||!newIds.length)return;
+  const existing=new Set((item.altIds||[]).map(s=>s.toLowerCase()));
+  const self=(item.designId||'').toLowerCase();
+  let changed=false;
+  newIds.forEach(id=>{
+    if(!id)return;
+    const low=id.toLowerCase();
+    if(low===self)return; // don't store self
+    if(!existing.has(low)){existing.add(low);changed=true}
+  });
+  if(changed){
+    item.altIds=[...existing];
+    markDirty(item.id);
+    fbSaveItem(item).catch(()=>{});
+  }
 }
 
 async function brickognizePredict(base64Image){
@@ -1794,6 +1832,13 @@ async function handleCameraPhoto(event){
 }
 
 async function cameraRecognize(base64,imgSrc){
+  // APK instruction mode: redirect to instruction flow
+  if(window._pendingInstructionMode){
+    window._pendingInstructionMode=false;
+    const resized=await resizeImage(imgSrc||('data:image/jpeg;base64,'+base64),1200);
+    showInstructionCrop(resized);
+    return;
+  }
   // Brickognize fast path
   setProcessingMsg('🔍 Brickognize 辨識中…');
   const bkResult=await brickognizePredict(base64);
@@ -1907,6 +1952,24 @@ async function handleLensGallery(event){
 // ═══ INSTRUCTION: Camera → Manual Crop → BK/AI → Results ═══
 
 // Open instruction: show camera/gallery menu (web) or APK gallery
+function startInstructionCapture(mode){
+  hideInstructionMenu();
+  if(window.BrickSortNative){
+    // APK: use native bridge
+    window._galleryMode='instruction';
+    if(mode==='camera'){
+      BrickSortNative.openCamera();
+      // Override: APK camera normally calls cameraRecognize, 
+      // but for instruction we need instructionRecognize
+      window._pendingInstructionMode=true;
+    }else{
+      BrickSortNative.openGalleryWithMode('instruction');
+    }
+  }else{
+    // Chrome: use file input
+    document.getElementById(mode==='camera'?'instruction-camera':'instruction-gallery').click();
+  }
+}
 function openInstructionCamera(){
   if(window.BrickSortNative){
     window._galleryMode='instruction';
@@ -2112,7 +2175,7 @@ async function confirmCrops(){
     const thumb=match?(match.thumbnailUrl||(match.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(match.designId)+'.png':'')):(bkResult?.imgUrl||cropDataUrl);
     results.push({did:match?(match.designId||did):did,name:match?(match.nameCN||match.name||name):name,qty:1,match,matchMethod,thumb,bkScore:bkResult?.score||0});
     
-    if(i<_cropBoxes.length-1)await new Promise(r=>setTimeout(r,300));
+    if(i<_cropBoxes.length-1)await new Promise(r=>setTimeout(r,800));
   }
   
   renderInstructionResults(results,imgSrc,sw,sh);
@@ -2408,11 +2471,27 @@ async function processResult(item){
 async function confirmPart(){
   if(!pendingPart)return;
   const now=Date.now();
-  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',quantity:1,updatedAt:now};
-  if(pendingPart.isUpdate&&pendingPart.matchedId){item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;if(existing)Object.assign(existing,item);showToast('已更新：'+item.slot+'（數量 +1）')}
-  else{item.id='lego_'+now+'_'+Math.random().toString(36).slice(2,5);item.createdAt=now;allItems.unshift(item);showToast('已儲存到 '+item.slot)}
+  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],quantity:1,updatedAt:now};
+  if(pendingPart.isUpdate&&pendingPart.matchedId){
+    item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);
+    item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;
+    item.altIds=existing?.altIds||[];
+    if(existing)Object.assign(existing,item);showToast('已更新：'+item.slot+'（數量 +1）');
+  }else{
+    item.id='lego_'+now+'_'+Math.random().toString(36).slice(2,5);item.createdAt=now;allItems.unshift(item);showToast('已儲存到 '+item.slot);
+    // Fetch altIds for new item (background, non-blocking)
+    if(item.designId){fetchAndSaveAltIds(item)}
+  }
   markDirty(item.id);await fbSaveItem(item);
   pendingPart=null;currentImageData=null;showTab('main');renderStats();applyFilter();
+}
+
+// Background: fetch mold variants from Rebrickable and save as altIds
+async function fetchAndSaveAltIds(item){
+  try{
+    const variants=await getMoldVariants(item.designId);
+    if(variants.length)saveAltIds(item,variants);
+  }catch(e){}
 }
 function openResultItem(){
   if(pendingPart&&pendingPart.matchedId){
