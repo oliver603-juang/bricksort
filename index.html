@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.15j';
+const APP_VERSION = '2026.04.15k';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -3528,12 +3528,13 @@ function assignSmallDrawers(){
 
   // Assign drawers sequentially, all types within same catGroup together
   let nextDrawer=1;
+  let overflowToBag=0;
   groupOrder.forEach(group=>{
     const g=catItems[group];
 
     // Phase 1: drawer items (each needs whole drawer a+b)
     g.drawers.forEach(item=>{
-      ensureDrawerCapAssign(nextDrawer);
+      if(nextDrawer>BASE_DRAWERS){item._reason='小抽屜已滿→收納袋';assignBuckets.bag.push(item);overflowToBag++;return}
       const label=drawerNumToLabel(nextDrawer);
       assignAssignments.push({item,slot:label,slotType:'small',mergedWith:[]});
       nextDrawer++;
@@ -3541,7 +3542,10 @@ function assignSmallDrawers(){
 
     // Phase 2: slot items (pair into a/b)
     for(let i=0;i<g.slots.length;i+=2){
-      ensureDrawerCapAssign(nextDrawer);
+      if(nextDrawer>BASE_DRAWERS){
+        for(let j=i;j<g.slots.length;j++){g.slots[j]._reason='小抽屜已滿→收納袋';assignBuckets.bag.push(g.slots[j]);overflowToBag++}
+        break;
+      }
       const label=drawerNumToLabel(nextDrawer);
       assignAssignments.push({item:g.slots[i],slot:label+'a',slotType:'small',mergedWith:[]});
       if(i+1<g.slots.length){
@@ -3553,7 +3557,10 @@ function assignSmallDrawers(){
     // Phase 3: merge bins (pair into a/b)
     const bins=g.mergeBins||[];
     for(let i=0;i<bins.length;i+=2){
-      ensureDrawerCapAssign(nextDrawer);
+      if(nextDrawer>BASE_DRAWERS){
+        for(let j=i;j<bins.length;j++){bins[j].items.forEach(item=>{item._reason='小抽屜已滿→收納袋';assignBuckets.bag.push(item);overflowToBag++})}
+        break;
+      }
       const label=drawerNumToLabel(nextDrawer);
       const binA=bins[i];
       binA.items.forEach(item=>{
@@ -3569,9 +3576,10 @@ function assignSmallDrawers(){
     }
   });
 
-  window._nextAvailableDrawer=nextDrawer;
-  const totalDrawers=nextDrawer-1;
-  assignLog('小抽屜：使用 '+totalDrawers+' 個抽屜（同分類連續排列）','ok');
+  window._nextAvailableDrawer=Math.min(nextDrawer,BASE_DRAWERS+1);
+  const totalDrawers=Math.min(nextDrawer-1,BASE_DRAWERS);
+  if(overflowToBag>0)assignLog('小抽屜：使用 '+totalDrawers+'/'+BASE_DRAWERS+' 個抽屜，'+overflowToBag+' 個零件溢出到收納袋','warn');
+  else assignLog('小抽屜：使用 '+totalDrawers+'/'+BASE_DRAWERS+' 個抽屜','ok');
 }
 function assignMergeStep(){
   // Merged into assignSmallDrawers — this is now a no-op
