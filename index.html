@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16g';
+const APP_VERSION = '2026.04.16i';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -688,7 +688,7 @@ const DRAWER_ML=SLOT_ML*2; // ~248
 const LARGE_W=108,LARGE_L=136,LARGE_H=53;
 const LARGE_ML=LARGE_W*LARGE_L*LARGE_H/1000; // ~778
 const LARGE_COUNT=27;
-const BAG_ML_DEFAULT=784,BAG_THRESHOLD=100;
+const BAG_ML_DEFAULT=784;
 const MERGE_LIMIT=62;
 // ═══ 單件體積閾值 ═══
 // 單件佔位體積 > MERGE_VOL1_MAX 的零件不參與融合（避免大件堆疊浪費空間）
@@ -3035,10 +3035,12 @@ function autoOverflowCheck(item){
     const bagsNeeded=Math.ceil(qty/piecesPerBag);
     const ovBagsNeeded=bagsNeeded-1;
     const existingOvBags=item.overflowSlot?item.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean):[];
-    // Only add new bags, never remove existing ones
+    // Allocate new consecutive bags (don't mix with existing items)
     while(existingOvBags.length<ovBagsNeeded){
-      const newBagVol=vol1*piecesPerBag;
-      const itemCg=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));existingOvBags.push(findBagForOverflow(newBagVol,itemCg));
+      const nextBag=slotConfig.nextBagSlot||'B01';
+      slotConfig.nextBagSlot=advanceBag(nextBag);
+      markDirty('__config__');
+      existingOvBags.push(nextBag);
     }
     const overQty=qty-piecesPerBag;
     item.overflowSlot=existingOvBags.join(',');
@@ -3046,7 +3048,7 @@ function autoOverflowCheck(item){
     return{bagSlot:existingOvBags.join(','),overQty,fitsQty:piecesPerBag};
   }
 
-  // DRAWER items: multi-bag overflow (only expand, never shrink)
+  // DRAWER items: overflow to bag(s) — only expand, never shrink
   const otherVol=allItems.filter(i=>i.slot===item.slot&&i.id!==item.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
   const availCap=Math.max(0,cap-otherVol);
   const tv=vol1*qty;
@@ -3054,14 +3056,43 @@ function autoOverflowCheck(item){
   const fitsQty=Math.max(0,Math.floor(availCap/(vol1||1)));
   const overQty=qty-fitsQty;
   if(overQty<=0)return null;
+  const ovVol=vol1*overQty;
   const itemCg2=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
   const bagCap=BAG_ML_DEFAULT;
   const piecesPerBag=vol1>0?Math.max(1,Math.floor(bagCap/vol1)):overQty;
   const ovBagsNeeded=Math.ceil(overQty/piecesPerBag);
   const existingOvBags=item.overflowSlot?item.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean):[];
-  // Only add new bags, never remove existing ones
+
+  if(ovBagsNeeded===1&&existingOvBags.length===0){
+    // Single bag: find existing bag with capacity, or allocate new
+    const bagSlot=findBagForOverflow(ovVol,itemCg2);
+    item.overflowSlot=bagSlot;
+    item.overflowQty=Math.max(overQty,item.overflowQty||0);
+    return{bagSlot,overQty,fitsQty};
+  }
+  if(ovBagsNeeded===1&&existingOvBags.length>=1){
+    // Already has overflow bag(s) — check if first bag still has capacity
+    const eb=existingOvBags[0];
+    const currentOvVol=vol1*(item.overflowQty||0);
+    const bagVolWithout=getBagVol(eb)-currentOvVol;
+    if(bagVolWithout+ovVol<=bagCap){
+      item.overflowSlot=existingOvBags.join(',');
+      item.overflowQty=Math.max(overQty,item.overflowQty||0);
+      return{bagSlot:existingOvBags.join(','),overQty,fitsQty};
+    }
+    // Existing bag full → allocate new
+    const newBag=findBagForOverflow(ovVol,itemCg2);
+    existingOvBags.push(newBag);
+    item.overflowSlot=existingOvBags.join(',');
+    item.overflowQty=Math.max(overQty,item.overflowQty||0);
+    return{bagSlot:existingOvBags.join(','),overQty,fitsQty};
+  }
+  // Multi-bag: allocate new consecutive bags (don't mix with existing items)
   while(existingOvBags.length<ovBagsNeeded){
-    existingOvBags.push(findBagForOverflow(vol1*Math.min(piecesPerBag,overQty),itemCg2));
+    const nextBag=slotConfig.nextBagSlot||'B01';
+    slotConfig.nextBagSlot=advanceBag(nextBag);
+    markDirty('__config__');
+    existingOvBags.push(nextBag);
   }
   item.overflowSlot=existingOvBags.join(',');
   item.overflowQty=Math.max(overQty,item.overflowQty||0);
@@ -3656,26 +3687,6 @@ function assignBagsStep(){
       if(!placed)bags.push({items:[{item,splitQty:item.quantity||1,isFirst:true}],totalVt:item._rawVt,catGroups:new Set([group])});
     }
   })});
-  if(bags.length>=BAG_THRESHOLD){/* Repack: splits consecutive, super-group separate, mix others */
-    const allEntries=bags.flatMap(b=>b.items);bags.length=0;
-    // Step 1: Group split entries by item (keep consecutive)
-    const splitGroups={},superEntries=[],normalEntries=[];
-    allEntries.forEach(entry=>{
-      if(entry._isSplit){const key=entry.item.id;if(!splitGroups[key])splitGroups[key]=[];splitGroups[key].push(entry)}
-      else{const bg=getBagGroup(entry.item._catGroup,entry.item);if(BAG_SUPER_GROUPS[entry.item._catGroup]||bg!==entry.item._catGroup)superEntries.push(entry);else normalEntries.push(entry)}
-    });
-    // Step 2: Add split groups first (sealed, consecutive per item)
-    Object.values(splitGroups).forEach(group=>{group.forEach(entry=>{
-      const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;
-      bags.push({items:[entry],totalVt:vol,sealed:true,catGroups:new Set()});
-    })});
-    // Step 3: Pack super-group items WITH catGroup restriction
-    superEntries.sort((a,b)=>(b.item.estimateVolumeMl||0)*b.splitQty-(a.item.estimateVolumeMl||0)*a.splitQty);
-    superEntries.forEach(entry=>{const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;const bg=getBagGroup(entry.item._catGroup,entry.item);let placed=false;for(const bag of bags){if(bag.sealed)continue;if(!bag.catGroups.has(bg)&&bag.catGroups.size>0)continue;if(bag.totalVt+vol<=bagCapacity){bag.items.push(entry);bag.totalVt+=vol;bag.catGroups.add(bg);placed=true;break}}if(!placed)bags.push({items:[entry],totalVt:vol,catGroups:new Set([bg])})});
-    // Step 4: Pack normal items WITHOUT catGroup restriction
-    normalEntries.sort((a,b)=>(b.item.estimateVolumeMl||0)*b.splitQty-(a.item.estimateVolumeMl||0)*a.splitQty);
-    normalEntries.forEach(entry=>{const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;let placed=false;for(const bag of bags){if(bag.sealed)continue;if(bag.catGroups.size>0&&[...bag.catGroups].some(g=>BAG_SUPER_GROUPS[g]||g==='人偶身體部件'))continue;if(bag.totalVt+vol<=bagCapacity){bag.items.push(entry);bag.totalVt+=vol;placed=true;break}}if(!placed)bags.push({items:[entry],totalVt:vol,catGroups:new Set()})});
-  }
   // Assign bag labels and build overflow map
   const itemBags={};// itemId → [{label, qty}]
   bags.forEach((bag,i)=>{const label='B'+String(i+1).padStart(2,'0');bag.items.forEach(entry=>{
