@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16b';
+const APP_VERSION = '2026.04.16e';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1177,10 +1177,40 @@ function getSlotCap(slot,type){
   if(/^\d+$/.test(slot))return DRAWER_ML;
   return SLOT_ML;
 }
-function getBagVol(bagSlot){return allItems.reduce((s,i)=>{let v=0;if(i.slot===bagSlot&&i.slotType==='bag')v+=(i.estimateVolumeMl||0)*(i.quantity||1);if(i.overflowSlot===bagSlot)v+=(i.estimateVolumeMl||0)*(i.overflowQty||0);return s+v},0)}
-function findBagForOverflow(vol){
+function getBagVol(bagSlot){return allItems.reduce((s,i)=>{let v=0;if(i.slot===bagSlot&&i.slotType==='bag')v+=(i.estimateVolumeMl||0)*(i.quantity||1);if(i.overflowSlot&&i.overflowSlot.split(',').some(s=>s.trim()===bagSlot))v+=(i.estimateVolumeMl||0)*(i.overflowQty||0);return s+v},0)}
+// Get the bag super-group for a bag slot (checks what's already inside)
+function getBagSuperGroup(bagSlot){
+  const items=allItems.filter(i=>i.slot===bagSlot&&i.slotType==='bag');
+  for(const i of items){
+    const cg=getCatGroup(i.featureTags,i.bricklinkCategory);
+    const sg=BAG_SUPER_GROUPS[cg];
+    if(sg)return sg; // e.g. '人偶身體部件'
+  }
+  return null; // no super-group items in this bag
+}
+function findBagForOverflow(vol,catGroup){
   const cap=BAG_ML_DEFAULT;const lastBag=slotConfig.nextBagSlot||'B01';const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
-  for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');if(getBagVol(label)+vol<=cap)return label}
+  const superGroup=catGroup?BAG_SUPER_GROUPS[catGroup]:null;
+  // Phase 1: find bag with same super-group (for minifig parts)
+  if(superGroup){
+    for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');if(getBagSuperGroup(label)===superGroup&&getBagVol(label)+vol<=cap)return label}
+  }
+  // Phase 2: find bag with same catGroup
+  if(catGroup){
+    for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
+      const bagSG=getBagSuperGroup(label);
+      if(bagSG)continue; // skip super-group dedicated bags
+      const items=allItems.filter(i=>i.slot===label&&i.slotType==='bag');
+      const hasSameCat=items.some(i=>getCatGroup(i.featureTags,i.bricklinkCategory)===catGroup);
+      if(hasSameCat&&getBagVol(label)+vol<=cap)return label;
+    }
+  }
+  // Phase 3: find any bag with space (but skip super-group dedicated bags)
+  for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
+    if(getBagSuperGroup(label))continue;
+    if(getBagVol(label)+vol<=cap)return label;
+  }
+  // Phase 4: allocate new bag
   const newBag=lastBag;slotConfig.nextBagSlot=advanceBag(newBag);markDirty('__config__');return newBag;
 }
 
@@ -1485,7 +1515,7 @@ function editorSaveItem(){
   i.name=document.getElementById('m-nameEN').value.trim();
   i.nameCN=document.getElementById('m-nameCN').value.trim();
   i.designId=document.getElementById('m-did').value.trim();i.updatedAt=Date.now();
-  if(isNewItem){const vt=Math.round((i.estimateVolumeMl||0)*(i.quantity||1)*10)/10;const r=autoAssign(vt);i.slot=r.slot;i.slotType=r.slotType;i.createdAt=Date.now();allItems.unshift(i);showToast('新零件編入 '+i.slot+'（'+i.slotType+'）')}
+  if(isNewItem){const r=gatewayAssign(i);i.slot=r.slot;i.slotType=r.slotType;i.createdAt=Date.now();allItems.unshift(i);showToast('新零件編入 '+i.slot+'（'+i.slotType+'）')}
   else{i.slot=document.getElementById('m-slot').value.trim();i.slotType=document.getElementById('m-slotType').value;
     // Auto-overflow check on save
     const ovResult=autoOverflowCheck(i);
@@ -1507,16 +1537,28 @@ function deleteItem(){
 // ═══════════════════════════════════════════════════
 // GATEWAY ASSIGN (single-item, pointer-based)
 // ═══════════════════════════════════════════════════
-function assignToBag(vt){
-  const cap=BAG_ML_DEFAULT;
-  const lastBag=slotConfig.nextBagSlot||'B01';
-  const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
-  for(let n=1;n<=lastNum;n++){
-    const label='B'+String(n).padStart(2,'0');
+function assignToBag(vt,catGroup){
+  const cap=BAG_ML_DEFAULT;const lastBag=slotConfig.nextBagSlot||'B01';const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
+  const superGroup=catGroup?BAG_SUPER_GROUPS[catGroup]:null;
+  // Phase 1: find bag with same super-group
+  if(superGroup){
+    for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');if(getBagSuperGroup(label)===superGroup&&getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'}}
+  }
+  // Phase 2: find bag with same catGroup
+  if(catGroup){
+    for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
+      const bagSG=getBagSuperGroup(label);if(bagSG)continue;
+      const items=allItems.filter(i=>i.slot===label&&i.slotType==='bag');
+      if(items.some(i=>getCatGroup(i.featureTags,i.bricklinkCategory)===catGroup)&&getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'};
+    }
+  }
+  // Phase 3: any bag with space (skip super-group dedicated)
+  for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
+    if(getBagSuperGroup(label))continue;
     if(getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'};
   }
-  slotConfig.nextBagSlot=advanceBag(lastBag);
-  markDirty('__config__');
+  // Phase 4: new bag
+  slotConfig.nextBagSlot=advanceBag(lastBag);markDirty('__config__');
   return{slot:slotConfig.nextBagSlot,slotType:'bag'};
 }
 
@@ -1546,10 +1588,10 @@ function gatewayAssign(item){
 
   // 1. 人偶/超大/不合尺寸 → 收納袋
   if(isMinifigure(item)||!fitsSmallSlot(item)||vt>DRAWER_ML){
-    return assignToBag(vt);
+    return assignToBag(vt,catGroup);
   }
   // 1b. 人偶身體部件 → 強制收納袋
-  if(BAG_SUPER_GROUPS[catGroup]&&vol>=MINIFIG_BAG_VOL1){return assignToBag(vt)}
+  if(BAG_SUPER_GROUPS[catGroup]&&vol>=MINIFIG_BAG_VOL1){return assignToBag(vt,catGroup)}
 
   // 2. 單件體積 > 41ml 或 總體積 > MERGE_LIMIT → 不融合
   if(vt<=MERGE_LIMIT&&vol<=MERGE_VOL1_MAX){
@@ -1563,7 +1605,7 @@ function gatewayAssign(item){
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot+'a',slotType:'small'};
     // 小抽屜全滿 → 收納袋
-    return assignToBag(vt);
+    return assignToBag(vt,catGroup);
   }
 
   // 3. 體積 MERGE_LIMIT~SLOT_ML → 獨佔半格(a/b)
@@ -1574,17 +1616,17 @@ function gatewayAssign(item){
     // 開新格子
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot+'a',slotType:'small'};
-    return assignToBag(vt);
+    return assignToBag(vt,catGroup);
   }
 
   // 4. 體積 SLOT_ML~DRAWER_ML → 獨佔整抽屜
   if(vt<=DRAWER_ML){
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot,slotType:'small'};
-    return assignToBag(vt);
+    return assignToBag(vt,catGroup);
   }
 
-  return assignToBag(vt);
+  return assignToBag(vt,catGroup);
 }
 
 // 找有空間的融合格子
@@ -2973,20 +3015,44 @@ async function saveResultQty(){
 // Auto overflow: check if slot total exceeds cap, auto-assign bag
 function autoOverflowCheck(item){
   if(!item||!item.slot)return null;
-  const pv1=item.estimateVolumeMl||0;
+  const vol1=item.estimateVolumeMl||0;
   const qty=item.quantity||1;
   const cap=getSlotCap(item.slot,item.slotType);
   if(cap===Infinity)return null;
+
+  // BAG items: only expand overflow, never shrink (reset only via full reallocation)
+  if(item.slotType==='bag'&&vol1>0){
+    const piecesPerBag=Math.max(1,Math.floor(cap/vol1));
+    if(qty<=piecesPerBag){
+      // Fits in one bag — keep existing overflow bags (don't clear)
+      return null;
+    }
+    const bagsNeeded=Math.ceil(qty/piecesPerBag);
+    const ovBagsNeeded=bagsNeeded-1;
+    const existingOvBags=item.overflowSlot?item.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean):[];
+    // Only add new bags, never remove existing ones
+    while(existingOvBags.length<ovBagsNeeded){
+      const newBagVol=vol1*piecesPerBag;
+      const itemCg=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));existingOvBags.push(findBagForOverflow(newBagVol,itemCg));
+    }
+    const overQty=qty-piecesPerBag;
+    item.overflowSlot=existingOvBags.join(',');
+    item.overflowQty=Math.max(overQty,item.overflowQty||0);
+    return{bagSlot:existingOvBags.join(','),overQty,fitsQty:piecesPerBag};
+  }
+
+  // DRAWER items: only expand overflow, never shrink
   const otherVol=allItems.filter(i=>i.slot===item.slot&&i.id!==item.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
   const availCap=Math.max(0,cap-otherVol);
-  const tv=pv1*qty;
-  if(otherVol+tv<=cap)return null;
-  const fitsQty=Math.max(0,Math.floor(availCap/(pv1||1)));
+  const tv=vol1*qty;
+  if(otherVol+tv<=cap)return null; // fits, but keep existing overflow bags
+  const fitsQty=Math.max(0,Math.floor(availCap/(vol1||1)));
   const overQty=qty-fitsQty;
   if(overQty<=0)return null;
-  const bagSlot=findBagForOverflow((item.estimateVolumeMl||0)*overQty); // bag uses raw vol
+  // Reuse existing overflow bag or find new one
+  const itemCg2=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));const bagSlot=item.overflowSlot||findBagForOverflow((item.estimateVolumeMl||0)*overQty,itemCg2);
   item.overflowSlot=bagSlot;
-  item.overflowQty=overQty;
+  item.overflowQty=Math.max(overQty,item.overflowQty||0);
   return{bagSlot,overQty,fitsQty};
 }
 function searchDrawer(d){
