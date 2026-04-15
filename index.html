@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16a';
+const APP_VERSION = '2026.04.16b';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -3375,11 +3375,10 @@ function mergeCompanionParts(){
     const oldBuckets=['merge','slot','drawer','large'];
     oldBuckets.forEach(bk=>{const arr=assignBuckets[bk];const idx=arr.indexOf(master);if(idx>=0)arr.splice(idx,1)});
     const vt=master._vt;
-    if(vt>LARGE_ML){master._reason='配對合併'+vt+'ml→收納袋';assignBuckets.bag.push(master)}
-    else if(vt>DRAWER_ML){master._reason='配對合併'+vt+'ml→大抽屜';assignBuckets.large.push(master)}
-    else if(vt>SLOT_ML){master._reason='配對合併'+vt+'ml→小抽屜(a+b)';assignBuckets.drawer.push(master)}
-    else if(vt>MERGE_LIMIT){master._reason='配對合併'+vt+'ml→獨佔格子';assignBuckets.slot.push(master)}
-    else{master._reason='配對合併'+vt+'ml→融合';assignBuckets.merge.push(master)}
+    if(vt>DRAWER_ML){master._reason='配對合併'+Math.round(vt)+'ml>248→收納袋';assignBuckets.bag.push(master)}
+    else if(vt>SLOT_ML){master._reason='配對合併'+Math.round(vt)+'ml→小抽屜(a+b)';assignBuckets.drawer.push(master)}
+    else if(vt>MERGE_LIMIT){master._reason='配對合併'+Math.round(vt)+'ml→獨佔格子';assignBuckets.slot.push(master)}
+    else{master._reason='配對合併'+Math.round(vt)+'ml→融合';assignBuckets.merge.push(master)}
     if(key.startsWith('mirror_'))mirrorCount++;else companionCount++;
   });
 
