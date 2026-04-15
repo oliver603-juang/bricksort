@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.15a';
+const APP_VERSION = '2026.04.15b';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1348,7 +1348,7 @@ function renderTable(){
       '<td><div style="font-weight:500">'+(item.name||item.nameCN||'未知')+'</div>'+(item.nameCN&&item.name?'<div style="font-size:11px;color:var(--muted)">'+item.nameCN+'</div>':'')+'</td>'+
       '<td class="mono" style="font-size:11px">'+did+'</td>'+
       '<td class="mono">'+vol+'</td><td class="mono">'+(item.quantity||1)+'</td>'+
-      '<td><span class="slot-badge '+sc+'">'+(item.slot||'?')+'</span>'+ov+'</td>'+
+      '<td><span class="slot-badge '+sc+'" onclick="event.stopPropagation();goToSlot(\''+item.slot+'\')" style="cursor:pointer">'+(item.slot||'?')+'</span>'+ov+'</td>'+
       '<td>'+tags+'</td></tr>';
   }).join('');
 }
@@ -3107,8 +3107,17 @@ function searchDrawer(d){
 function partRowHTML(item){
   const thumbSrc=item.thumbnailUrl||'';const sc=item.slotType==='large'?'slot-large':item.slotType==='bag'?'slot-bag':'slot-small';
   const ov=item.overflowSlot&&(item.overflowQty||0)>0?'、'+item.overflowSlot:'';
-  const ovMeta=item.overflowSlot&&(item.overflowQty||0)>0?' <span style="color:var(--purple);font-size:10px">→'+item.overflowSlot+'('+item.overflowQty+'件)</span>':'';
-  return'<div class="item-row" onclick="openItem(\''+item.id+'\')">'+(thumbSrc?'<img class="item-thumb" src="'+thumbSrc+'" loading="lazy" onerror="this.style.display=\'none\'">':'<div style="width:40px;height:40px;border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px">🧱</div>')+'<div class="item-info"><div class="item-name">'+(item.name||item.nameCN||'未知')+'</div><div class="item-meta"><span style="color:var(--accent);font-family:var(--mono);font-weight:700">'+(item.slot||'?')+ov+'</span><span>'+(item.featureTags||[]).slice(0,2).join(', ')+'</span></div></div><span class="slot-badge '+sc+'">'+(item.slot||'?')+ov+'</span></div>';
+  const slotClick='event.stopPropagation();goToSlot(\''+item.slot+'\')';
+  return'<div class="item-row" onclick="openItem(\''+item.id+'\')">'+(thumbSrc?'<img class="item-thumb" src="'+thumbSrc+'" loading="lazy" onerror="this.style.display=\'none\'">':'<div style="width:40px;height:40px;border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px">🧱</div>')+'<div class="item-info"><div class="item-name">'+(item.name||item.nameCN||'未知')+'</div><div class="item-meta"><span style="color:var(--accent);font-family:var(--mono);font-weight:700">'+(item.slot||'?')+ov+'</span><span>'+(item.featureTags||[]).slice(0,2).join(', ')+'</span></div></div><span class="slot-badge '+sc+'" onclick="'+slotClick+'" style="cursor:pointer">'+(item.slot||'?')+ov+'</span></div>';
+}
+
+function goToSlot(slot){
+  if(!slot)return;
+  const m=slot.match(/^(\d+)[ab]?$/);
+  if(m){searchDrawer(parseInt(m[1]));return}
+  if(slot.startsWith('L')){doSearch(slot);return}
+  if(slot.startsWith('B')){doSearch(slot);return}
+  doSearch(slot);
 }
 
 // ═══════════════════════════════════════════════════
