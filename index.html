@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.14z';
+const APP_VERSION = '2026.04.15a';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -2099,16 +2099,18 @@ async function cameraRecognize(base64,imgSrc){
     // Brickognize matched but NOT in DB → auto-register with Gemini enrichment
     setProcessingMsg('🤖 補充零件資訊…');
     try{
-      const rbResult=cfg.rbKey?await rebrickableLookup(bkId):null;
-      const rbDid=rbResult?.designId||bkId;
-      const rbHint=rbResult?'此零件已確認為「'+rbResult.name+'」Design ID='+rbDid+'。':'';
-      const thumbnailUrl=(rbResult?.imgUrl)||(bkResult.imgUrl)||(bkId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(bkId)+'.png':'');
+      // Use BK result directly (skip rebrickableLookup which is slow with 404+retry)
+      const rbDid=bkId;
+      const baseForThumb=getBaseDesignId(bkId)||bkId;
+      const thumbnailUrl=bkResult.imgUrl||('https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseForThumb+'.png');
       window._pendingRbImgUrl=thumbnailUrl;
-      const regPrompt='你是LEGO零件專家。'+rbHint+'Brickognize辨識為「'+bkResult.name+'」('+bkId+'，信心'+bkResult.score+'%)。回應純JSON：{"design_id":"'+rbDid+'","name":"英文名","name_cn":"繁體中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool}';
-      const regResp=await callGeminiAPI(regPrompt,base64,0,GEMINI_LEGO_SYSTEM);
+      // Text-only Gemini call (no photo = fast ~2s)
+      const regPrompt='你是LEGO零件專家。Brickognize辨識為「'+bkResult.name+'」('+bkId+'，信心'+bkResult.score+'%)。回應純JSON：{"design_id":"'+rbDid+'","name":"英文名","name_cn":"繁體中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool}';
+      const regResp=await callGeminiAPI(regPrompt,null,0,GEMINI_LEGO_SYSTEM);
       const regItem=safeParseJSON(regResp);
       regItem.design_id=regItem.design_id||rbDid;
       regItem.brickognizeName=bkResult.name||'';
+      regItem._skipMoldCheck=true; // Already checked in cameraRecognize, skip slow API retry
       await processResult(regItem);
     }catch(e){
       if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
@@ -2654,7 +2656,7 @@ async function processResult(item){
     }
   }}
   // Mold variant check via Rebrickable (e.g. 4589 → 59900)
-  if(!match&&item.design_id){
+  if(!match&&item.design_id&&!item._skipMoldCheck){
     setProcessingMsg('🔍 模具變體查詢…');
     const moldMatch=await findByMoldVariant(item.design_id);
     if(moldMatch){
