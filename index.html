@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16e';
+const APP_VERSION = '2026.04.16f';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1177,7 +1177,12 @@ function getSlotCap(slot,type){
   if(/^\d+$/.test(slot))return DRAWER_ML;
   return SLOT_ML;
 }
-function getBagVol(bagSlot){return allItems.reduce((s,i)=>{let v=0;if(i.slot===bagSlot&&i.slotType==='bag')v+=(i.estimateVolumeMl||0)*(i.quantity||1);if(i.overflowSlot&&i.overflowSlot.split(',').some(s=>s.trim()===bagSlot))v+=(i.estimateVolumeMl||0)*(i.overflowQty||0);return s+v},0)}
+function getBagVol(bagSlot){return allItems.reduce((s,i)=>{let v=0;const vol1=i.estimateVolumeMl||0;
+  // Primary bag: subtract overflow qty (those items are in other bags)
+  if(i.slot===bagSlot&&i.slotType==='bag'){const mainQty=Math.max(0,(i.quantity||1)-(i.overflowQty||0));v+=vol1*mainQty}
+  // Overflow bag: calculate per-bag qty
+  if(i.overflowSlot){const ovBags=i.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean);const idx=ovBags.indexOf(bagSlot);if(idx>=0){const piecesPerBag=vol1>0?Math.max(1,Math.floor((BAG_ML_DEFAULT)/vol1)):1;const ovQty=i.overflowQty||0;const bagQty=idx<ovBags.length-1?Math.min(piecesPerBag,ovQty):Math.max(0,ovQty-piecesPerBag*(ovBags.length-1));v+=vol1*bagQty}}
+  return s+v},0)}
 // Get the bag super-group for a bag slot (checks what's already inside)
 function getBagSuperGroup(bagSlot){
   const items=allItems.filter(i=>i.slot===bagSlot&&i.slotType==='bag');
