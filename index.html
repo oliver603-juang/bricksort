@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16k';
+const APP_VERSION = '2026.04.16l';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1084,6 +1084,8 @@ async function loadData(){
       else allItems.push({id:d.id,...d.data()});
     });
     document.getElementById('status-text').textContent='✅ '+allItems.length+'筆';
+    // Clean runtime flags that may have leaked to Firebase
+    allItems.forEach(item=>{Object.keys(item).filter(k=>k.startsWith('_')&&k!=='_id').forEach(k=>delete item[k])});
   }catch(e){document.getElementById('status-text').textContent='❌ '+e.message;allItems=[]}
   document.getElementById('loading').style.display='none';
   dataReady=true;
@@ -1092,7 +1094,7 @@ async function loadData(){
 }
 
 async function fbSaveItem(item){
-  if(db) await db.collection(FB_COL).doc(item.id).set(item,{merge:true});
+  if(db){const clean={};Object.keys(item).forEach(k=>{if(!k.startsWith('_'))clean[k]=item[k]});await db.collection(FB_COL).doc(item.id).set(clean,{merge:true})}
 }
 async function fbDeleteItem(id){
   if(db) await db.collection(FB_COL).doc(id).delete();
@@ -1108,8 +1110,8 @@ async function saveAllToFirebase(){
   let written=0,errors=0;
   for(let i=0;i<toSave.length;i+=100){
     const chunk=toSave.slice(i,i+100);
-    try{const b=db.batch();chunk.forEach(item=>b.set(db.collection(FB_COL).doc(item.id),item,{merge:true}));await b.commit();written+=chunk.length}
-    catch(e){for(const item of chunk){try{await db.collection(FB_COL).doc(item.id).set(item,{merge:true});written++}catch(e2){errors++}}}
+    try{const b=db.batch();chunk.forEach(item=>{const clean={};Object.keys(item).forEach(k=>{if(!k.startsWith('_'))clean[k]=item[k]});b.set(db.collection(FB_COL).doc(item.id),clean,{merge:true})});await b.commit();written+=chunk.length}
+    catch(e){for(const item of chunk){try{const clean={};Object.keys(item).forEach(k=>{if(!k.startsWith('_'))clean[k]=item[k]});await db.collection(FB_COL).doc(item.id).set(clean,{merge:true});written++}catch(e2){errors++}}}
     st.textContent='上傳中 '+written+'/'+total+(errors?' ('+errors+'失敗)':'')+'…';
     if(i+100<toSave.length) await new Promise(r=>setTimeout(r,1000));
   }
@@ -3400,6 +3402,8 @@ async function startPipeline(){
   document.getElementById('assign-content').innerHTML='<div class="loading"><div class="spinner"></div>載入中…</div>';
   // Try Firebase reload; if offline, use local data
   try{const snap=await db.collection(FB_COL).get();allItems=[];snap.docs.forEach(d=>{if(d.id===FB_CONFIG_DOC)slotConfig={...slotConfig,...d.data()};else allItems.push({id:d.id,...d.data()})});assignLog('Firebase 載入：'+allItems.length+' 個零件','ok')}catch(e){if(allItems.length>0){assignLog('Firebase 離線，使用本機 '+allItems.length+' 個零件','warn')}else{document.getElementById('assign-content').innerHTML='<div class="card" style="color:var(--red)">❌ 無資料：'+e.message+'</div>';return}}
+  // Clean runtime flags (may have been saved to Firebase by saveAllToFirebase)
+  allItems.forEach(item=>{Object.keys(item).filter(k=>k.startsWith('_')&&k!=='_id').forEach(k=>delete item[k])});
   allItems.forEach(item=>{item._catGroup=getCatGroup(item.featureTags,item.bricklinkCategory);item._tier=getTier(item._catGroup);item._isMinifig=isMinifigure(item);item._fitsSmall=fitsSmallSlot(item);item._vt=Math.round((item.estimateVolumeMl||0)*(item.quantity||1)*10)/10});
   classifyAssign();mergeCompanionParts();assignLargeDrawers();assignSmallDrawers();assignBagsStep();showAssignReport();
 }
