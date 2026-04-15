@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16i';
+const APP_VERSION = '2026.04.16j';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -757,6 +757,14 @@ function init(){
   if(document.getElementById('inp-apikey'))document.getElementById('inp-apikey').value=cfg.apiKey||'';
   if(document.getElementById('inp-rbkey'))document.getElementById('inp-rbkey').value=cfg.rbKey||DEFAULT_RB_KEY;
   if(document.getElementById('app-version'))document.getElementById('app-version').textContent='v'+APP_VERSION;
+  // Auto version check: fetch latest from server, reload if stale
+  if(!sessionStorage.getItem('_vcheck_'+APP_VERSION)){
+    sessionStorage.setItem('_vcheck_'+APP_VERSION,'1');
+    fetch(location.pathname+'?_t='+Date.now(),{cache:'no-store'}).then(r=>r.text()).then(html=>{
+      const m=html.match(/APP_VERSION\s*=\s*'([^']+)'/);
+      if(m&&m[1]!==APP_VERSION){console.log('版本更新: '+APP_VERSION+' → '+m[1]);location.reload()}
+    }).catch(()=>{});
+  }
   initPxMmUI();
   _loadPromise=loadData();
   // Bluetooth shutter listener (calibrated click + Enter/Camera key)
