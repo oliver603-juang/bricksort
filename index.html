@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.15u';
+const APP_VERSION = '2026.04.15v';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -3513,25 +3513,18 @@ function assignBagsStep(){
       while(remaining>0){
         const batchQty=Math.min(remaining,piecesPerBag);
         const batchVol=Math.round(vol1*batchQty*10)/10;
-        // Try to fit in existing bag of same group
-        let placed=false;
-        if(batchVol<=bagCapacity){
-          for(const bag of bags){
-            if(!bag.catGroups.has(group)&&bag.catGroups.size>0)continue;
-            if(bag.totalVt+batchVol<=bagCapacity){bag.items.push({item,splitQty:batchQty,isFirst});bag.totalVt+=batchVol;bag.catGroups.add(group);placed=true;break}
-          }
-        }
-        if(!placed)bags.push({items:[{item,splitQty:batchQty,isFirst}],totalVt:batchVol,catGroups:new Set([group])});
+        // Split bags are sealed — don't try to fit into existing bags
+        bags.push({items:[{item,splitQty:batchQty,isFirst,_isSplit:true}],totalVt:batchVol,catGroups:new Set([group]),sealed:true});
         remaining-=batchQty;isFirst=false;
       }
     }else{
       // Normal FFD: fit whole item into a bag
       let placed=false;
-      for(const bag of bags){if(!bag.catGroups.has(group)&&bag.catGroups.size>0)continue;if(bag.totalVt+item._rawVt<=bagCapacity){bag.items.push({item,splitQty:item.quantity||1,isFirst:true});bag.totalVt+=item._rawVt;bag.catGroups.add(group);placed=true;break}}
+      for(const bag of bags){if(bag.sealed)continue;if(!bag.catGroups.has(group)&&bag.catGroups.size>0)continue;if(bag.totalVt+item._rawVt<=bagCapacity){bag.items.push({item,splitQty:item.quantity||1,isFirst:true});bag.totalVt+=item._rawVt;bag.catGroups.add(group);placed=true;break}}
       if(!placed)bags.push({items:[{item,splitQty:item.quantity||1,isFirst:true}],totalVt:item._rawVt,catGroups:new Set([group])});
     }
   })});
-  if(bags.length>=BAG_THRESHOLD){/* Repack without catGroup restriction to reduce bag count */const allEntries=bags.flatMap(b=>b.items);bags.length=0;allEntries.sort((a,b)=>{const va=(a.item.estimateVolumeMl||0)*a.splitQty,vb=(b.item.estimateVolumeMl||0)*b.splitQty;return vb-va});allEntries.forEach(entry=>{const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;let placed=false;for(const bag of bags){if(bag.totalVt+vol<=bagCapacity){bag.items.push(entry);bag.totalVt+=vol;placed=true;break}}if(!placed)bags.push({items:[entry],totalVt:vol,catGroups:new Set([getBagGroup(entry.item._catGroup,entry.item)])})})}
+  if(bags.length>=BAG_THRESHOLD){/* Repack without catGroup restriction */const allEntries=bags.flatMap(b=>b.items);bags.length=0;allEntries.sort((a,b)=>{const va=(a.item.estimateVolumeMl||0)*a.splitQty,vb=(b.item.estimateVolumeMl||0)*b.splitQty;return vb-va});allEntries.forEach(entry=>{const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;if(entry._isSplit){bags.push({items:[entry],totalVt:vol,sealed:true,catGroups:new Set()});return}let placed=false;for(const bag of bags){if(bag.sealed)continue;if(bag.totalVt+vol<=bagCapacity){bag.items.push(entry);bag.totalVt+=vol;placed=true;break}}if(!placed)bags.push({items:[entry],totalVt:vol,catGroups:new Set()})})}
   // Assign bag labels and build overflow map
   const itemBags={};// itemId → [{label, qty}]
   bags.forEach((bag,i)=>{const label='B'+String(i+1).padStart(2,'0');bag.items.forEach(entry=>{
