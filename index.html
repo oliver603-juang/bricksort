@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16f';
+const APP_VERSION = '2026.04.16g';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -3046,19 +3046,26 @@ function autoOverflowCheck(item){
     return{bagSlot:existingOvBags.join(','),overQty,fitsQty:piecesPerBag};
   }
 
-  // DRAWER items: only expand overflow, never shrink
+  // DRAWER items: multi-bag overflow (only expand, never shrink)
   const otherVol=allItems.filter(i=>i.slot===item.slot&&i.id!==item.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
   const availCap=Math.max(0,cap-otherVol);
   const tv=vol1*qty;
-  if(otherVol+tv<=cap)return null; // fits, but keep existing overflow bags
+  if(otherVol+tv<=cap)return null; // fits, keep existing overflow bags
   const fitsQty=Math.max(0,Math.floor(availCap/(vol1||1)));
   const overQty=qty-fitsQty;
   if(overQty<=0)return null;
-  // Reuse existing overflow bag or find new one
-  const itemCg2=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));const bagSlot=item.overflowSlot||findBagForOverflow((item.estimateVolumeMl||0)*overQty,itemCg2);
-  item.overflowSlot=bagSlot;
+  const itemCg2=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
+  const bagCap=BAG_ML_DEFAULT;
+  const piecesPerBag=vol1>0?Math.max(1,Math.floor(bagCap/vol1)):overQty;
+  const ovBagsNeeded=Math.ceil(overQty/piecesPerBag);
+  const existingOvBags=item.overflowSlot?item.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean):[];
+  // Only add new bags, never remove existing ones
+  while(existingOvBags.length<ovBagsNeeded){
+    existingOvBags.push(findBagForOverflow(vol1*Math.min(piecesPerBag,overQty),itemCg2));
+  }
+  item.overflowSlot=existingOvBags.join(',');
   item.overflowQty=Math.max(overQty,item.overflowQty||0);
-  return{bagSlot,overQty,fitsQty};
+  return{bagSlot:existingOvBags.join(','),overQty,fitsQty};
 }
 function searchDrawer(d){
   const pad=String(d).padStart(3,'0'), plain=String(d);
@@ -3572,6 +3579,33 @@ function assignSmallDrawers(){
   const totalDrawers=Math.min(nextDrawer-1,BASE_DRAWERS);
   if(overflowToBag>0)assignLog('小抽屜：使用 '+totalDrawers+'/'+BASE_DRAWERS+' 個抽屜，'+overflowToBag+' 個零件溢出到收納袋','warn');
   else assignLog('小抽屜：使用 '+totalDrawers+'/'+BASE_DRAWERS+' 個抽屜','ok');
+
+  // ═══ Compaction: eliminate any gaps in drawer numbering ═══
+  const smallAssigns=assignAssignments.filter(a=>a.slotType==='small');
+  const usedDrawerNums=new Set();
+  smallAssigns.forEach(a=>{const m=a.slot.match(/^(\d+)/);if(m)usedDrawerNums.add(parseInt(m[1]))});
+  const sortedNums=[...usedDrawerNums].sort((a,b)=>a-b);
+  // Build renumber map: old→new (close gaps)
+  const renumberMap={};let newNum=1;
+  sortedNums.forEach(oldNum=>{renumberMap[oldNum]=newNum;newNum++});
+  // Check if any renumbering needed
+  const needsRenumber=sortedNums.some(n=>renumberMap[n]!==n);
+  if(needsRenumber){
+    let renumbered=0;
+    smallAssigns.forEach(a=>{
+      const m=a.slot.match(/^(\d+)([ab]?)$/);
+      if(m){
+        const oldNum=parseInt(m[1]),suffix=m[2];
+        const mapped=renumberMap[oldNum];
+        if(mapped&&mapped!==oldNum){
+          a.slot=String(mapped).padStart(3,'0')+suffix;
+          renumbered++;
+        }
+      }
+    });
+    window._nextAvailableDrawer=newNum;
+    assignLog('壓縮：消除 '+(sortedNums.length-(newNum-1))+' 個空隙，'+renumbered+' 個位置重編','ok');
+  }
 }
 
 // Bag super-groups: merge related catGroups into same bag(s)
@@ -3737,12 +3771,12 @@ async function writeAssignToFirebase(){
     const chunk=assignAssignments.slice(i,i+BATCH);
     try{
       const batch=db.batch();
-      chunk.forEach(a=>{batch.update(db.collection(FB_COL).doc(a.item.id),{slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],overflowSlot:'',overflowQty:0,isFull:false,updatedAt:Date.now()})});
+      chunk.forEach(a=>{batch.update(db.collection(FB_COL).doc(a.item.id),{slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],overflowSlot:a.item.overflowSlot||'',overflowQty:a.item.overflowQty||0,isFull:false,updatedAt:Date.now()})});
       await batch.commit();
       written+=chunk.length;
     }catch(e){
       for(const a of chunk){
-        try{await db.collection(FB_COL).doc(a.item.id).update({slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],overflowSlot:'',overflowQty:0,isFull:false,updatedAt:Date.now()});written++}
+        try{await db.collection(FB_COL).doc(a.item.id).update({slot:a.slot,slotType:a.slotType,mergedWith:a.mergedWith||[],overflowSlot:a.item.overflowSlot||'',overflowQty:a.item.overflowQty||0,isFull:false,updatedAt:Date.now()});written++}
         catch(e2){errors++}
       }
     }
