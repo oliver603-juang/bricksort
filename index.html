@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.15v';
+const APP_VERSION = '2026.04.15w';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -693,6 +693,7 @@ const MERGE_LIMIT=62;
 // ═══ 單件體積閾值 ═══
 // 單件佔位體積 > MERGE_VOL1_MAX 的零件不參與融合（避免大件堆疊浪費空間）
 const MERGE_VOL1_MAX=41; // SLOT_ML/3 ≈ 41ml
+const MINIFIG_BAG_VOL1=1.2; // 人偶配件 vol1 ≥ 此值才進收納袋，更小的留小抽屜
 
 // 動態融合上限：極小零件可以多裝
 function getMergeMaxItems(binItems){
@@ -1548,7 +1549,7 @@ function gatewayAssign(item){
     return assignToBag(vt);
   }
   // 1b. 人偶身體部件 → 強制收納袋
-  if(BAG_SUPER_GROUPS[catGroup]){return assignToBag(vt)}
+  if(BAG_SUPER_GROUPS[catGroup]&&vol>=MINIFIG_BAG_VOL1){return assignToBag(vt)}
 
   // 2. 單件體積 > 41ml 或 總體積 > MERGE_LIMIT → 不融合
   if(vt<=MERGE_LIMIT&&vol<=MERGE_VOL1_MAX){
@@ -3363,7 +3364,7 @@ function classifyAssign(){
   allItems.forEach(item=>{const vt=item._vt;
     if(item._isMinifig){item._reason='Minifigure→收納袋';assignBuckets.bag.push(item);return}
     // Force minifig body parts to bags (headwear, body, head, matching creatures)
-    if(BAG_SUPER_GROUPS[item._catGroup]){item._reason=item._catGroup+'→人偶身體部件收納袋';assignBuckets.bag.push(item);return}
+    if(BAG_SUPER_GROUPS[item._catGroup]&&(item.estimateVolumeMl||0)>=MINIFIG_BAG_VOL1){item._reason=item._catGroup+'→人偶身體部件收納袋';assignBuckets.bag.push(item);return}
 
     if(!item._fitsSmall){item._reason='尺寸超過小格口→收納袋';assignBuckets.bag.push(item);return}
     if(vt>LARGE_ML){item._reason='體積'+vt+'ml>778→收納袋';assignBuckets.bag.push(item);return}
