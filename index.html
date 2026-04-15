@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16j';
+const APP_VERSION = '2026.04.16k';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -3397,8 +3397,9 @@ async function startPipeline(){
   }
   assignLogLines=[];assignAssignments=[];
   document.getElementById('assign-status').textContent='載入中…';
-  document.getElementById('assign-content').innerHTML='<div class="loading"><div class="spinner"></div>從 Firebase 載入中…</div>';
-  try{const snap=await db.collection(FB_COL).get();allItems=[];snap.docs.forEach(d=>{if(d.id===FB_CONFIG_DOC)slotConfig={...slotConfig,...d.data()};else allItems.push({id:d.id,...d.data()})});assignLog('載入完成：'+allItems.length+' 個零件','ok')}catch(e){document.getElementById('assign-content').innerHTML='<div class="card" style="color:var(--red)">❌ '+e.message+'</div>';return}
+  document.getElementById('assign-content').innerHTML='<div class="loading"><div class="spinner"></div>載入中…</div>';
+  // Try Firebase reload; if offline, use local data
+  try{const snap=await db.collection(FB_COL).get();allItems=[];snap.docs.forEach(d=>{if(d.id===FB_CONFIG_DOC)slotConfig={...slotConfig,...d.data()};else allItems.push({id:d.id,...d.data()})});assignLog('Firebase 載入：'+allItems.length+' 個零件','ok')}catch(e){if(allItems.length>0){assignLog('Firebase 離線，使用本機 '+allItems.length+' 個零件','warn')}else{document.getElementById('assign-content').innerHTML='<div class="card" style="color:var(--red)">❌ 無資料：'+e.message+'</div>';return}}
   allItems.forEach(item=>{item._catGroup=getCatGroup(item.featureTags,item.bricklinkCategory);item._tier=getTier(item._catGroup);item._isMinifig=isMinifigure(item);item._fitsSmall=fitsSmallSlot(item);item._vt=Math.round((item.estimateVolumeMl||0)*(item.quantity||1)*10)/10});
   classifyAssign();mergeCompanionParts();assignLargeDrawers();assignSmallDrawers();assignBagsStep();showAssignReport();
 }
@@ -3723,7 +3724,15 @@ function showAssignReport(){
   const nd=window._nextAvailableDrawer||1,bc=window._bagCount||0;
   const smA=assignAssignments.filter(a=>a.slotType==='small'),lgA=assignAssignments.filter(a=>a.slotType==='large'),bgA=assignAssignments.filter(a=>a.slotType==='bag'),bxA=assignAssignments.filter(a=>a.slotType==='box');
   document.getElementById('assign-status').textContent='✅ 完成（已套用本機）';
+  // Check for drawer gaps
+  const drawerNums={};allItems.forEach(i=>{const m=(i.slot||'').match(/^(\d+)[ab]?$/);if(m)drawerNums[parseInt(m[1])]=true});
+  const maxDrawer=Object.keys(drawerNums).length?Math.max(...Object.keys(drawerNums).map(Number)):0;
+  const drawerGaps=[];for(let d=1;d<=maxDrawer;d++)if(!drawerNums[d])drawerGaps.push(d);
+  const gapHtml=drawerGaps.length
+    ?`<div style="background:var(--red-bg);border:1px solid var(--red);border-radius:10px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--red)">❌ 小抽屜有 ${drawerGaps.length} 個空隙：${drawerGaps.join(', ')}<br><span style="font-size:11px">版本 v${APP_VERSION} — 如版本不正確請清除快取重新載入</span></div>`
+    :`<div style="background:var(--green-bg);border:1px solid var(--green);border-radius:10px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--green)">✅ 小抽屜 1~${maxDrawer}，0 空隙<br><span style="font-size:11px;color:var(--muted)">版本 v${APP_VERSION}</span></div>`;
   document.getElementById('assign-content').innerHTML=`
+    ${gapHtml}
     <div class="stats-row">
       <div class="stat-card"><div class="stat-num">${allItems.length}</div><div class="stat-label">總數</div></div>
       <div class="stat-card"><div class="stat-num">${smA.length}</div><div class="stat-label">小抽屜</div></div>
