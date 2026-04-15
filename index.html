@@ -657,7 +657,7 @@ tr:hover{background:var(--accent-bg)}
         </select>
       </div>
     </div>
-    <button class="btn btn-warn btn-sm" onclick="forceOverflow()" id="m-force-overflow-btn">⚠ 手動溢出</button>
+    <div id="m-overflow-warn"></div>
   </div>
   <div class="modal-footer">
     <button class="btn" onclick="closeModal()">取消</button>
@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.15b';
+const APP_VERSION = '2026.04.15j';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -690,6 +690,43 @@ const LARGE_ML=LARGE_W*LARGE_L*LARGE_H/1000; // ~778
 const LARGE_COUNT=27;
 const BAG_ML_DEFAULT=714,BAG_ML_MAX=714,BAG_ML_LARGE=1000,BAG_THRESHOLD=100;
 const MERGE_LIMIT=62;
+// ═══ 堆積係數 (Packing Factor) ═══
+// 剛性零件堆疊有空隙，實際佔用空間 = boundingBox / packingFactor
+const PACKING_FACTOR={
+  // 平板類（可完美堆疊）
+  'Plate':0.85,'Plate Modified':0.80,'Plate Round':0.75,
+  'Tile':0.90,'Tile Modified':0.85,'Tile Round':0.80,
+  'Baseplate':0.95,'Wedge Plate':0.65,
+  // 方塊類（堆疊良好）
+  'Brick':0.80,'Brick Modified':0.70,'Brick Round':0.65,
+  // 斜面/楔形（有間隙）
+  'Slope':0.60,'Slope Curved':0.55,'Slope Inverted':0.60,
+  'Wedge':0.55,'Wing':0.50,'Arch':0.55,
+  // 圓柱/圓錐
+  'Cone':0.55,'Cylinder':0.60,'Dish':0.70,
+  // Technic（桿狀，空隙大）
+  'Technic':0.50,'Technic Axle':0.45,'Technic Pin':0.40,
+  'Technic Liftarm':0.50,'Technic Connector':0.45,
+  'Technic Gear':0.50,'Technic Link':0.45,'Technic Panel':0.55,'Technic Plate':0.70,
+  // 門窗/面板
+  'Panel':0.55,'門窗類':0.50,'Support':0.50,
+  // 人偶（不規則，最鬆散）
+  '人偶武器':0.40,'人偶工具':0.40,'人偶頭飾':0.45,
+  '人偶身體':0.45,'人偶頭部':0.50,'人偶頸部':0.45,
+  // 生物/配件
+  '生物自然':0.40,'Hinge':0.50,'Bar':0.45,'Bracket':0.65,
+  '小型配件':0.55,'結構配件':0.50,'載具配件':0.45,
+  '車輛類':0.45,'輪子類':0.50,'軌道類':0.55,
+  // 柔性（可壓縮）
+  'Flag':0.70,'Container':0.45,
+};
+function getPackingFactor(item){
+  if(!item)return 0.55;
+  const cg=item._catGroup||getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
+  return PACKING_FACTOR[cg]||0.55;
+}
+function getPackedVol1(item){return(item.estimateVolumeMl||0)/getPackingFactor(item)}
+function getPackedVolTotal(item){return getPackedVol1(item)*(item.quantity||1)}
 // 動態融合上限：極小零件可以多裝
 function getMergeMaxItems(binItems){
   if(!binItems||!binItems.length)return 8;
@@ -1337,14 +1374,16 @@ function applyFilter(){
 function renderTable(){
   document.getElementById('tbody').innerHTML=filtered.map(item=>{
     const did=item.designId||'',baseId=did.replace(/(pb|pr|pat)\d+.*$/i,'');
-    const thumb=item.thumbnailUrl||(baseId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'');
+    const thumb=item.thumbnailUrl||item.imageData||(baseId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'');
+    const thumbFb=item.imageData||'';
     const vol=item.estimateVolumeMl?item.estimateVolumeMl.toFixed(1):'–';
     const st=item.slotType||'small',sc=st==='large'?'slot-large':st==='bag'?'slot-bag':st==='box'?'slot-box':'slot-small';
     const tags=(item.featureTags||[]).slice(0,2).map(t=>'<span class="tag">'+t+'</span>').join('');
     const dr=dirty.has(item.id)?' style="border-left:3px solid var(--accent)"':'';
     const ov=item.overflowSlot&&(item.overflowQty||0)>0?'<span class="overflow-tag">+'+item.overflowSlot+'('+item.overflowQty+'件)</span>':'';
+    const thumbErr=thumbFb?'onerror="this.src=this.dataset.fb;this.onerror=null"':'onerror="this.style.display=\'none\'"';
     return'<tr onclick="openItem(\''+item.id+'\')"'+dr+'>'+
-      '<td>'+(thumb?'<img class="thumb" src="'+thumb+'" loading="lazy" onerror="this.style.display=\'none\'">':'🧱')+'</td>'+
+      '<td>'+(thumb?'<img class="thumb" src="'+thumb+'" data-fb="'+thumbFb+'" loading="lazy" '+thumbErr+'>':'🧱')+'</td>'+
       '<td><div style="font-weight:500">'+(item.name||item.nameCN||'未知')+'</div>'+(item.nameCN&&item.name?'<div style="font-size:11px;color:var(--muted)">'+item.nameCN+'</div>':'')+'</td>'+
       '<td class="mono" style="font-size:11px">'+did+'</td>'+
       '<td class="mono">'+vol+'</td><td class="mono">'+(item.quantity||1)+'</td>'+
@@ -1393,40 +1432,43 @@ function closeModal(){document.getElementById('overlay').classList.remove('open'
 function recalcVol(){
   const w=parseFloat(document.getElementById('m-dimW').value)||0,l=parseFloat(document.getElementById('m-dimL').value)||0,h=parseFloat(document.getElementById('m-dimH').value)||0,qty=parseInt(document.getElementById('m-qty').value)||1;
   let vol=0;if(w>0&&l>0&&h>0)vol=Math.round(w*l*h/1000*10)/10;else if(currentItem)vol=currentItem.estimateVolumeMl||0;
-  const tv=Math.round(vol*qty*10)/10,el=document.getElementById('m-vol-display');
-  if(w>0&&l>0&&h>0)el.innerHTML='<div>佔位體積</div><div>'+w+' × '+l+' × '+h+' mm = <b>'+vol+' ml</b> × '+qty+' 件 = <b>'+tv+' ml</b></div>';
-  else el.innerHTML='<div>佔位體積</div><div><b>'+vol+' ml</b> × '+qty+' 件 = <b>'+tv+' ml</b></div><div style="font-size:11px;color:var(--muted)">填入尺寸可精確計算</div>';
+  const pf=currentItem?getPackingFactor(currentItem):0.55;
+  const pv=Math.round(vol/pf*10)/10; // packed volume per item
+  const tv=Math.round(pv*qty*10)/10,el=document.getElementById('m-vol-display');
+  const pfPct=Math.round(pf*100);
+  if(w>0&&l>0&&h>0)el.innerHTML='<div>佔位體積</div><div>'+w+' × '+l+' × '+h+' mm = '+vol+'ml ÷ '+pfPct+'% = <b>'+pv+'ml</b> × '+qty+' 件 = <b>'+tv+' ml</b></div>';
+  else el.innerHTML='<div>佔位體積</div><div>'+vol+'ml ÷ '+pfPct+'% = <b>'+pv+'ml</b> × '+qty+' 件 = <b>'+tv+' ml</b></div><div style="font-size:11px;color:var(--muted)">填入尺寸可精確計算 · 堆積效率 '+pfPct+'%</div>';
   if(currentItem&&!isNewItem&&currentItem.slot){
     const cap=getSlotCap(currentItem.slot,currentItem.slotType),warnEl=document.getElementById('m-overflow-warn');
-    const otherVol=allItems.filter(i=>i.slot===currentItem.slot&&i.id!==currentItem.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+    const otherVol=allItems.filter(i=>i.slot===currentItem.slot&&i.id!==currentItem.id).reduce((s,i)=>s+getPackedVol1(i)*(i.quantity||1),0);
     const slotTotal=Math.round((otherVol+tv)*10)/10;
     const availCap=Math.max(0,cap-otherVol);
     if(slotTotal>cap&&cap<Infinity){
-      const fq=Math.max(0,Math.floor(availCap/(vol||1)));const oq=qty-fq;
+      const fq=Math.max(0,Math.floor(availCap/(pv||1)));const oq=qty-fq;
       let warn='⚠ 格子容量超出！<b>'+currentItem.slot+'</b> 上限 '+cap+'ml';
       if(otherVol>0)warn+='<br>同格其他物品佔 '+Math.round(otherVol*10)/10+'ml，剩餘空間 '+Math.round(availCap*10)/10+'ml';
       warn+='<br>此物品 '+tv+'ml，格子總計 <b>'+slotTotal+'ml</b>';
-      if(oq>0)warn+='<br>建議留 '+fq+' 件，溢出 '+oq+' 件到收納袋<br><button class="btn btn-warn btn-sm" onclick="doOverflow('+fq+','+oq+')" style="margin-top:6px">✓ 執行溢出</button>';
+      if(oq>0)warn+='<br>建議留 '+fq+' 件，溢出 '+oq+' 件到收納袋<br><span style="font-size:11px;color:var(--muted)">💡 儲存時會自動溢出</span>';
       else warn+='<br>此物品不需溢出，但同格其他物品可能需要調整';
       warnEl.innerHTML='<div class="overflow-warn">'+warn+'</div>';
     }else warnEl.innerHTML='';
   }
 }
 function doOverflow(fitsQty,ovQty){
-  if(!currentItem)return;const vol1=currentItem.estimateVolumeMl||0,bagSlot=findBagForOverflow(vol1*ovQty);
+  if(!currentItem)return;const rawVol1=currentItem.estimateVolumeMl||0,bagSlot=findBagForOverflow(rawVol1*ovQty); // bag uses raw vol
   currentItem.overflowSlot=bagSlot;currentItem.overflowQty=ovQty;currentItem.updatedAt=Date.now();
   document.getElementById('m-overflow-info').innerHTML='📦 溢出：主位 <b>'+currentItem.slot+'</b> 留 '+fitsQty+' 件，溢出 <b>'+bagSlot+'</b> 放 '+ovQty+' 件';document.getElementById('m-overflow-info').style.display='';
   markDirty(currentItem.id);showToast('溢出 '+ovQty+' 件到 '+bagSlot);
 }
 function forceOverflow(){
   if(!currentItem||isNewItem)return;
-  const vol1=currentItem.estimateVolumeMl||0,qty=parseInt(document.getElementById('m-qty').value)||1;
+  const pv1=getPackedVol1(currentItem),qty=parseInt(document.getElementById('m-qty').value)||1;
   const cap=getSlotCap(currentItem.slot,currentItem.slotType);
-  const otherVol=allItems.filter(i=>i.slot===currentItem.slot&&i.id!==currentItem.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+  const otherVol=allItems.filter(i=>i.slot===currentItem.slot&&i.id!==currentItem.id).reduce((s,i)=>s+getPackedVol1(i)*(i.quantity||1),0);
   const availCap=Math.max(0,cap-otherVol);
-  const tv=vol1*qty;const slotTotal=otherVol+tv;
+  const tv=pv1*qty;const slotTotal=otherVol+tv;
   if(slotTotal<=cap&&!confirm('格子總計 '+Math.round(slotTotal)+'ml 未超出 '+cap+'ml。仍要手動溢出嗎？'))return;
-  const fq=Math.max(0,Math.floor(availCap/(vol1||1))),oq=qty-fq;
+  const fq=Math.max(0,Math.floor(availCap/(pv1||1))),oq=qty-fq;
   if(oq<=0){showToast('此物品無需溢出（同格其他物品可能需要調整）','error');return}
   doOverflow(fq,oq);
 }
@@ -1507,7 +1549,7 @@ function editorSaveItem(){
   i.name=document.getElementById('m-nameEN').value.trim();
   i.nameCN=document.getElementById('m-nameCN').value.trim();
   i.designId=document.getElementById('m-did').value.trim();i.updatedAt=Date.now();
-  if(isNewItem){const vt=(i.estimateVolumeMl||0)*(i.quantity||1);const r=autoAssign(vt);i.slot=r.slot;i.slotType=r.slotType;i.createdAt=Date.now();allItems.unshift(i);showToast('新零件編入 '+i.slot+'（'+i.slotType+'）')}
+  if(isNewItem){const pf=getPackingFactor(i);const vt=Math.round((i.estimateVolumeMl||0)/pf*(i.quantity||1)*10)/10;const r=autoAssign(vt);i.slot=r.slot;i.slotType=r.slotType;i.createdAt=Date.now();allItems.unshift(i);showToast('新零件編入 '+i.slot+'（'+i.slotType+'）')}
   else{i.slot=document.getElementById('m-slot').value.trim();i.slotType=document.getElementById('m-slotType').value;
     // Auto-overflow check on save
     const ovResult=autoOverflowCheck(i);
@@ -1546,7 +1588,7 @@ function assignToBag(vt){
 
 // 取得某個格子的已用體積
 function getSlotVol(slot){
-  return allItems.reduce((s,i)=>s+((i.slot===slot)?(i.estimateVolumeMl||0)*(i.quantity||1):0),0);
+  return allItems.reduce((s,i)=>s+((i.slot===slot)?getPackedVol1(i)*(i.quantity||1):0),0);
 }
 // 取得某個格子的零件數
 function getSlotItemCount(slot){
@@ -1562,8 +1604,11 @@ function getSlotMaxVol(slot){
 }
 
 function gatewayAssign(item){
-  const vol=item.estimateVolumeMl||2,qty=item.quantity||1,vt=vol*qty;
+  const vol=item.estimateVolumeMl||2,qty=item.quantity||1;
   const catGroup=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
+  const pf=PACKING_FACTOR[catGroup]||0.55;
+  const pv=vol/pf; // packed volume per item
+  const vt=Math.round(pv*qty*10)/10; // packed total volume
   
   // 1. 人偶/超大/不合尺寸 → 收納袋
   if(isMinifigure(item)||!fitsSmallSlot(item)||vt>DRAWER_ML){
@@ -1682,13 +1727,17 @@ async function callGeminiAPI(prompt,base64Image=null,_retryIdx=0,systemInstructi
   if(!cfg.apiKey)throw new Error('請先設定 Gemini API Key');
   let model=(_retryIdx===0&&_lastWorkingModel)?_lastWorkingModel:(GEMINI_MODELS[_retryIdx]||GEMINI_MODELS[0]);
   const parts=[{text:prompt}];if(base64Image)parts.push({inlineData:{mimeType:'image/jpeg',data:base64Image}});
-  const resp=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+cfg.apiKey,{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({contents:[{parts}],generationConfig:{responseMimeType:"application/json",temperature:0},...(systemInstruction?{system_instruction:{parts:[{text:systemInstruction}]}}:{})})
-  });
-  if(resp.status===503){_lastWorkingModel=null;const curIdx=GEMINI_MODELS.indexOf(model),nextIdx=curIdx>=0?curIdx+1:_retryIdx+1;if(nextIdx<GEMINI_MODELS.length){setProcessingMsg(model+' 過載，切換…');return callGeminiAPI(prompt,base64Image,nextIdx,systemInstruction)}}
-  if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error('Gemini '+resp.status+': '+(e?.error?.message||''))}
-  _lastWorkingModel=model;const data=await resp.json();return data.candidates[0].content.parts[0].text;
+  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),30000);
+  try{
+    const resp=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+cfg.apiKey,{
+      method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,
+      body:JSON.stringify({contents:[{parts}],generationConfig:{responseMimeType:"application/json",temperature:0},...(systemInstruction?{system_instruction:{parts:[{text:systemInstruction}]}}:{})})
+    });
+    clearTimeout(timeout);
+    if(resp.status===503){_lastWorkingModel=null;const curIdx=GEMINI_MODELS.indexOf(model),nextIdx=curIdx>=0?curIdx+1:_retryIdx+1;if(nextIdx<GEMINI_MODELS.length){setProcessingMsg(model+' 過載，切換…');return callGeminiAPI(prompt,base64Image,nextIdx,systemInstruction)}}
+    if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error('Gemini '+resp.status+': '+(e?.error?.message||''))}
+    _lastWorkingModel=model;const data=await resp.json();return data.candidates[0].content.parts[0].text;
+  }catch(e){clearTimeout(timeout);if(e.name==='AbortError')throw new Error('Gemini API 逾時（30秒），請重試');throw e}
 }
 
 async function rebrickableLookup(inputId){
@@ -1999,14 +2048,12 @@ async function parseLensScreenshot(dataUrl){
     if(lensName)item.name=lensName;
     if(lensNameCN)item.name_cn=lensNameCN;
 
-    // Step 3.5: Construct thumbnail URL (no network test needed)
-    if(lensId){
-      // Try Rebrickable API (works in Chrome, may fail in APK)
+    // Step 3.5: Construct thumbnail URL (skip API for invalid IDs)
+    if(lensId&&/^\d{3,6}[a-d]?$/i.test(lensId)){
       try{
         const rb=await rebrickableLookup(lensId);
         if(rb&&rb.imgUrl)window._pendingRbImgUrl=rb.imgUrl;
       }catch(e){}
-      // Fallback: BrickLink URL (predictable pattern)
       if(!window._pendingRbImgUrl){
         const base=lensId.replace(/[a-e]\d*$/i,'');
         window._pendingRbImgUrl='https://img.bricklink.com/ItemImage/PN/86/'+base+'.png';
@@ -3026,26 +3073,33 @@ async function saveResultQty(){
   try{await fbSaveItem(item)}catch(e){}
   document.getElementById('result-qty-save').textContent='✓ 已追加 +'+qty;
   document.getElementById('result-qty-save').disabled=true;
-  if(ovResult){showToast('已追加 '+qty+' 件 → 溢出 '+ovResult.overQty+' 件到 '+ovResult.bagSlot)}
-  else{showToast('已追加 '+qty+' 件，庫存 '+item.quantity+' 件')}
+  if(ovResult){
+    showToast('已追加 '+qty+' 件 → 溢出 '+ovResult.overQty+' 件到 '+ovResult.bagSlot);
+    // Update result screen to show overflow
+    document.getElementById('result-slot').textContent=item.slot+'、'+ovResult.bagSlot;
+    const banner=document.getElementById('match-banner');
+    banner.style.display='block';
+    banner.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--orange)">📦 溢出分配</div><div style="font-size:12px;color:var(--muted)">留 '+ovResult.fitsQty+' 件在 '+item.slot+'，溢出 '+ovResult.overQty+' 件到 '+ovResult.bagSlot+'</div>';
+  }else{
+    showToast('已追加 '+qty+' 件，庫存 '+item.quantity+' 件');
+  }
 }
 
 // Auto overflow: check if slot total exceeds cap, auto-assign bag
 function autoOverflowCheck(item){
   if(!item||!item.slot)return null;
-  const vol1=item.estimateVolumeMl||0;
+  const pv1=getPackedVol1(item);
   const qty=item.quantity||1;
   const cap=getSlotCap(item.slot,item.slotType);
   if(cap===Infinity)return null;
-  // Calculate total vol of all items in same slot
-  const otherVol=allItems.filter(i=>i.slot===item.slot&&i.id!==item.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+  const otherVol=allItems.filter(i=>i.slot===item.slot&&i.id!==item.id).reduce((s,i)=>s+getPackedVol1(i)*(i.quantity||1),0);
   const availCap=Math.max(0,cap-otherVol);
-  const tv=vol1*qty;
-  if(otherVol+tv<=cap)return null; // fits
-  const fitsQty=Math.max(0,Math.floor(availCap/(vol1||1)));
+  const tv=pv1*qty;
+  if(otherVol+tv<=cap)return null;
+  const fitsQty=Math.max(0,Math.floor(availCap/(pv1||1)));
   const overQty=qty-fitsQty;
   if(overQty<=0)return null;
-  const bagSlot=findBagForOverflow(vol1*overQty);
+  const bagSlot=findBagForOverflow((item.estimateVolumeMl||0)*overQty); // bag uses raw vol
   item.overflowSlot=bagSlot;
   item.overflowQty=overQty;
   return{bagSlot,overQty,fitsQty};
@@ -3064,7 +3118,7 @@ function searchDrawer(d){
     else sides.full.push(i);
   });
   
-  const totalVol=results.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+  const totalVol=results.reduce((s,i)=>s+getPackedVol1(i)*(i.quantity||1),0);
   const drawerCap=DRAWER_ML; // 248ml for full drawer
   const slotCap=SLOT_ML; // 124ml per side
   
@@ -3079,7 +3133,7 @@ function searchDrawer(d){
   html+='</div>';
   
   function renderSide(label,items,cap){
-    const vol=items.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+    const vol=items.reduce((s,i)=>s+getPackedVol1(i)*(i.quantity||1),0);
     const pct=Math.min(100,Math.round(vol/cap*100));
     const color=pct>90?'var(--red)':pct>70?'var(--orange)':'var(--green)';
     const border=vol>cap?'border:2px solid var(--red);box-shadow:0 0 8px rgba(239,68,68,0.3)':'border:1px solid var(--border)';
@@ -3105,10 +3159,12 @@ function searchDrawer(d){
   showScreen('s-search');
 }
 function partRowHTML(item){
-  const thumbSrc=item.thumbnailUrl||'';const sc=item.slotType==='large'?'slot-large':item.slotType==='bag'?'slot-bag':'slot-small';
+  const thumbSrc=item.thumbnailUrl||item.imageData||'';const fb=item.imageData||'';
+  const sc=item.slotType==='large'?'slot-large':item.slotType==='bag'?'slot-bag':'slot-small';
   const ov=item.overflowSlot&&(item.overflowQty||0)>0?'、'+item.overflowSlot:'';
   const slotClick='event.stopPropagation();goToSlot(\''+item.slot+'\')';
-  return'<div class="item-row" onclick="openItem(\''+item.id+'\')">'+(thumbSrc?'<img class="item-thumb" src="'+thumbSrc+'" loading="lazy" onerror="this.style.display=\'none\'">':'<div style="width:40px;height:40px;border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px">🧱</div>')+'<div class="item-info"><div class="item-name">'+(item.name||item.nameCN||'未知')+'</div><div class="item-meta"><span style="color:var(--accent);font-family:var(--mono);font-weight:700">'+(item.slot||'?')+ov+'</span><span>'+(item.featureTags||[]).slice(0,2).join(', ')+'</span></div></div><span class="slot-badge '+sc+'" onclick="'+slotClick+'" style="cursor:pointer">'+(item.slot||'?')+ov+'</span></div>';
+  const onerr=fb?'onerror="this.src=this.dataset.fb;this.onerror=null"':'onerror="this.style.display=\'none\'"';
+  return'<div class="item-row" onclick="openItem(\''+item.id+'\')">'+(thumbSrc?'<img class="item-thumb" src="'+thumbSrc+'" data-fb="'+fb+'" loading="lazy" '+onerr+'>':'<div style="width:40px;height:40px;border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px">🧱</div>')+'<div class="item-info"><div class="item-name">'+(item.name||item.nameCN||'未知')+'</div><div class="item-meta"><span style="color:var(--accent);font-family:var(--mono);font-weight:700">'+(item.slot||'?')+ov+'</span><span>'+(item.featureTags||[]).slice(0,2).join(', ')+'</span></div></div><span class="slot-badge '+sc+'" onclick="'+slotClick+'" style="cursor:pointer">'+(item.slot||'?')+ov+'</span></div>';
 }
 
 function goToSlot(slot){
@@ -3317,7 +3373,7 @@ async function startPipeline(){
   document.getElementById('assign-status').textContent='載入中…';
   document.getElementById('assign-content').innerHTML='<div class="loading"><div class="spinner"></div>從 Firebase 載入中…</div>';
   try{const snap=await db.collection(FB_COL).get();allItems=[];snap.docs.forEach(d=>{if(d.id===FB_CONFIG_DOC)slotConfig={...slotConfig,...d.data()};else allItems.push({id:d.id,...d.data()})});assignLog('載入完成：'+allItems.length+' 個零件','ok')}catch(e){document.getElementById('assign-content').innerHTML='<div class="card" style="color:var(--red)">❌ '+e.message+'</div>';return}
-  allItems.forEach(item=>{const v=item.estimateVolumeMl||0,q=item.quantity||1;item._vt=Math.round(v*q*10)/10;item._catGroup=getCatGroup(item.featureTags,item.bricklinkCategory);item._tier=getTier(item._catGroup);item._isMinifig=isMinifigure(item);item._fitsSmall=fitsSmallSlot(item)});
+  allItems.forEach(item=>{item._catGroup=getCatGroup(item.featureTags,item.bricklinkCategory);item._tier=getTier(item._catGroup);item._isMinifig=isMinifigure(item);item._fitsSmall=fitsSmallSlot(item);const pv=getPackedVol1(item),q=item.quantity||1;item._vt=Math.round(pv*q*10)/10});
   classifyAssign();mergeCompanionParts();assignLargeDrawers();assignSmallDrawers();assignMergeStep();assignBagsStep();showAssignReport();
 }
 
@@ -3521,19 +3577,43 @@ function assignMergeStep(){
   // Merged into assignSmallDrawers — this is now a no-op
   assignLog('融合：已整合到小抽屜分配','info');
 }
+// Bag super-groups: merge related catGroups into same bag(s)
+const BAG_SUPER_GROUPS={
+  '人偶身體':'人偶身體部件','人偶頭飾':'人偶身體部件','人偶頭部':'人偶身體部件'
+};
+// Keywords that indicate an item is a body/creature part (for 生物自然 and 人偶工具)
+const BODY_PART_KEYWORDS=/animal body|animal,|creature|body part|head |headwear|wing |dragon|skeleton|skull|bat |horn|claw|tail |leg |arm |paw|jaw|fang|tentacle|neckwear|neck |cape |armor|armou?r|chest|torso|動物身體|動物，|生物體|身體部|頭部|頭髮|頭盔|頭飾|龍頭|翅膀|龍|骷髏|蝙蝠|牛角|鹿角|觸角|獨角|爪|尾巴|尾部|腿|臂|頸|披風|護甲|盔甲|胸甲/i;
+
+function getBagGroup(catGroup,item){
+  // Static mappings (always merge)
+  if(BAG_SUPER_GROUPS[catGroup])return BAG_SUPER_GROUPS[catGroup];
+  // Dynamic: 生物自然 items with body/creature keywords → 人偶身體部件
+  if(catGroup==='生物自然'&&item){
+    const n=((item.name||'')+(item.nameCN||'')+' '+(item.description||'')).toLowerCase();
+    if(BODY_PART_KEYWORDS.test(n))return'人偶身體部件';
+  }
+  // Dynamic: 人偶工具 items with body keywords → 人偶身體部件
+  if(catGroup==='人偶工具'&&item){
+    const n=((item.name||'')+(item.nameCN||'')+' '+(item.description||'')).toLowerCase();
+    if(BODY_PART_KEYWORDS.test(n))return'人偶身體部件';
+  }
+  return catGroup;
+}
+
 function assignBagsStep(){
   const candidates=assignBuckets.bag;if(!candidates.length){assignLog('無收納袋候選','info');return}
   let bagCapacity=BAG_ML_DEFAULT;const boxItems=[],bagItems=[];
-  candidates.forEach(item=>{if((item.estimateVolumeMl||0)>bagCapacity)boxItems.push(item);else bagItems.push(item)});
+  // Bags use RAW volume (flexible container, no packing factor)
+  candidates.forEach(item=>{item._rawVt=Math.round((item.estimateVolumeMl||0)*(item.quantity||1)*10)/10;if((item.estimateVolumeMl||0)>bagCapacity)boxItems.push(item);else bagItems.push(item)});
   boxItems.forEach(item=>{assignAssignments.push({item,slot:'BOX',slotType:'box',mergedWith:[]})});
-  const catGroups2={};bagItems.forEach(item=>{const g=item._catGroup;if(!catGroups2[g])catGroups2[g]=[];catGroups2[g].push(item)});
-  Object.values(catGroups2).forEach(arr=>arr.sort((a,b)=>b._vt-a._vt));
+  const catGroups2={};bagItems.forEach(item=>{const g=getBagGroup(item._catGroup,item);if(!catGroups2[g])catGroups2[g]=[];catGroups2[g].push(item)});
+  Object.values(catGroups2).forEach(arr=>arr.sort((a,b)=>b._rawVt-a._rawVt));
   const bags=[];
-  Object.entries(catGroups2).forEach(([group,items])=>{items.forEach(item=>{let placed=false;for(const bag of bags){if(!bag.catGroups.has(group)&&bag.catGroups.size>0)continue;if(bag.totalVt+item._vt<=bagCapacity){bag.items.push(item);bag.totalVt+=item._vt;bag.catGroups.add(group);placed=true;break}}if(!placed)bags.push({items:[item],totalVt:item._vt,catGroups:new Set([group])})})});
-  if(bags.length>=BAG_THRESHOLD){bagCapacity=BAG_ML_LARGE;const all2=bags.flatMap(b=>b.items);bags.length=0;all2.sort((a,b)=>b._vt-a._vt);all2.forEach(item=>{let placed=false;for(const bag of bags){if(bag.totalVt+item._vt<=bagCapacity){bag.items.push(item);bag.totalVt+=item._vt;placed=true;break}}if(!placed)bags.push({items:[item],totalVt:item._vt,catGroups:new Set([item._catGroup])})})}
+  Object.entries(catGroups2).forEach(([group,items])=>{items.forEach(item=>{let placed=false;for(const bag of bags){if(!bag.catGroups.has(group)&&bag.catGroups.size>0)continue;if(bag.totalVt+item._rawVt<=bagCapacity){bag.items.push(item);bag.totalVt+=item._rawVt;bag.catGroups.add(group);placed=true;break}}if(!placed)bags.push({items:[item],totalVt:item._rawVt,catGroups:new Set([group])})})});
+  if(bags.length>=BAG_THRESHOLD){bagCapacity=BAG_ML_LARGE;const all2=bags.flatMap(b=>b.items);bags.length=0;all2.sort((a,b)=>b._rawVt-a._rawVt);all2.forEach(item=>{let placed=false;for(const bag of bags){if(bag.totalVt+item._rawVt<=bagCapacity){bag.items.push(item);bag.totalVt+=item._rawVt;placed=true;break}}if(!placed)bags.push({items:[item],totalVt:item._rawVt,catGroups:new Set([getBagGroup(item._catGroup,item)])})})}
   bags.forEach((bag,i)=>{const label='B'+String(i+1).padStart(2,'0');bag.items.forEach(item=>{assignAssignments.push({item,slot:label,slotType:'bag',mergedWith:[]})})});
   window._bagCount=bags.length;window._bagCapacity=bagCapacity;window._bags=bags;
-  assignLog('收納袋：'+bags.length+'袋（'+bagCapacity+'ml）','ok');
+  assignLog('收納袋：'+bags.length+'袋（'+bagCapacity+'ml，原始體積）','ok');
 }
 
 function showAssignReport(){
