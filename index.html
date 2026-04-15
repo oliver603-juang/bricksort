@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.15y';
+const APP_VERSION = '2026.04.16a';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -3046,10 +3046,19 @@ function searchDrawer(d){
 function partRowHTML(item){
   const thumbSrc=item.thumbnailUrl||item.imageData||'';const fb=item.imageData||'';
   const sc=item.slotType==='large'?'slot-large':item.slotType==='bag'?'slot-bag':'slot-small';
-  const ov=item.overflowSlot&&(item.overflowQty||0)>0?'、'+item.overflowSlot:'';
+  const hasOv=item.overflowSlot&&(item.overflowQty||0)>0;
   const slotClick='event.stopPropagation();goToSlot(\''+item.slot+'\')';
   const onerr=fb?'onerror="this.src=this.dataset.fb;this.onerror=null"':'onerror="this.style.display=\'none\'"';
-  return'<div class="item-row" onclick="openItem(\''+item.id+'\')">'+(thumbSrc?'<img class="item-thumb" src="'+thumbSrc+'" data-fb="'+fb+'" loading="lazy" '+onerr+'>':'<div style="width:40px;height:40px;border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px">🧱</div>')+'<div class="item-info"><div class="item-name">'+(item.name||item.nameCN||'未知')+'</div><div class="item-meta"><span style="color:var(--accent);font-family:var(--mono);font-weight:700">'+(item.slot||'?')+ov+'</span><span>'+(item.featureTags||[]).slice(0,2).join(', ')+'</span></div></div><span class="slot-badge '+sc+'" onclick="'+slotClick+'" style="cursor:pointer">'+(item.slot||'?')+ov+'</span></div>';
+  // Badge: primary slot + overflow slot(s) each clickable
+  let badge='<span class="slot-badge '+sc+'" onclick="'+slotClick+'" style="cursor:pointer">'+(item.slot||'?')+'</span>';
+  if(hasOv){
+    const ovSlots=item.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean);
+    const firstOv=ovSlots[0];
+    const ovClick='event.stopPropagation();goToSlot(\''+firstOv+'\')';
+    badge+='<span class="slot-badge slot-bag" onclick="'+ovClick+'" style="cursor:pointer;margin-left:2px;font-size:10px">'+item.overflowSlot+'</span>';
+  }
+  const metaOv=hasOv?'、'+item.overflowSlot:'';
+  return'<div class="item-row" onclick="openItem(\''+item.id+'\')">'+(thumbSrc?'<img class="item-thumb" src="'+thumbSrc+'" data-fb="'+fb+'" loading="lazy" '+onerr+'>':'<div style="width:40px;height:40px;border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px">🧱</div>')+'<div class="item-info"><div class="item-name">'+(item.name||item.nameCN||'未知')+'</div><div class="item-meta"><span style="color:var(--accent);font-family:var(--mono);font-weight:700">'+(item.slot||'?')+metaOv+'</span><span>'+(item.featureTags||[]).slice(0,2).join(', ')+'</span></div></div><div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end">'+badge+'</div></div>';
 }
 
 function goToSlot(slot){
@@ -3543,34 +3552,25 @@ function assignBagsStep(){
       if(!placed)bags.push({items:[{item,splitQty:item.quantity||1,isFirst:true}],totalVt:item._rawVt,catGroups:new Set([group])});
     }
   })});
-  if(bags.length>=BAG_THRESHOLD){/* Repack: keep super-group bags separate, mix others */
+  if(bags.length>=BAG_THRESHOLD){/* Repack: splits consecutive, super-group separate, mix others */
     const allEntries=bags.flatMap(b=>b.items);bags.length=0;
-    // Separate: super-group items (人偶身體部件) vs normal items
-    const superEntries=[],normalEntries=[];
+    // Step 1: Group split entries by item (keep consecutive)
+    const splitGroups={},superEntries=[],normalEntries=[];
     allEntries.forEach(entry=>{
-      const bg=getBagGroup(entry.item._catGroup,entry.item);
-      if(BAG_SUPER_GROUPS[entry.item._catGroup]||bg!==entry.item._catGroup)superEntries.push(entry);
-      else normalEntries.push(entry);
+      if(entry._isSplit){const key=entry.item.id;if(!splitGroups[key])splitGroups[key]=[];splitGroups[key].push(entry)}
+      else{const bg=getBagGroup(entry.item._catGroup,entry.item);if(BAG_SUPER_GROUPS[entry.item._catGroup]||bg!==entry.item._catGroup)superEntries.push(entry);else normalEntries.push(entry)}
     });
-    // Pack super-group items WITH catGroup restriction (keep 人偶身體部件 together)
-    superEntries.sort((a,b)=>{const va=(a.item.estimateVolumeMl||0)*a.splitQty,vb=(b.item.estimateVolumeMl||0)*b.splitQty;return vb-va});
-    superEntries.forEach(entry=>{
+    // Step 2: Add split groups first (sealed, consecutive per item)
+    Object.values(splitGroups).forEach(group=>{group.forEach(entry=>{
       const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;
-      const bg=getBagGroup(entry.item._catGroup,entry.item);
-      if(entry._isSplit){bags.push({items:[entry],totalVt:vol,sealed:true,catGroups:new Set([bg])});return}
-      let placed=false;
-      for(const bag of bags){if(bag.sealed)continue;if(!bag.catGroups.has(bg)&&bag.catGroups.size>0)continue;if(bag.totalVt+vol<=bagCapacity){bag.items.push(entry);bag.totalVt+=vol;bag.catGroups.add(bg);placed=true;break}}
-      if(!placed)bags.push({items:[entry],totalVt:vol,catGroups:new Set([bg])});
-    });
-    // Pack normal items WITHOUT catGroup restriction (cross-group OK)
-    normalEntries.sort((a,b)=>{const va=(a.item.estimateVolumeMl||0)*a.splitQty,vb=(b.item.estimateVolumeMl||0)*b.splitQty;return vb-va});
-    normalEntries.forEach(entry=>{
-      const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;
-      if(entry._isSplit){bags.push({items:[entry],totalVt:vol,sealed:true,catGroups:new Set()});return}
-      let placed=false;
-      for(const bag of bags){if(bag.sealed)continue;if(bag.catGroups.size>0&&[...bag.catGroups].some(g=>BAG_SUPER_GROUPS[g]||g==='人偶身體部件'))continue;if(bag.totalVt+vol<=bagCapacity){bag.items.push(entry);bag.totalVt+=vol;placed=true;break}}
-      if(!placed)bags.push({items:[entry],totalVt:vol,catGroups:new Set()});
-    });
+      bags.push({items:[entry],totalVt:vol,sealed:true,catGroups:new Set()});
+    })});
+    // Step 3: Pack super-group items WITH catGroup restriction
+    superEntries.sort((a,b)=>(b.item.estimateVolumeMl||0)*b.splitQty-(a.item.estimateVolumeMl||0)*a.splitQty);
+    superEntries.forEach(entry=>{const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;const bg=getBagGroup(entry.item._catGroup,entry.item);let placed=false;for(const bag of bags){if(bag.sealed)continue;if(!bag.catGroups.has(bg)&&bag.catGroups.size>0)continue;if(bag.totalVt+vol<=bagCapacity){bag.items.push(entry);bag.totalVt+=vol;bag.catGroups.add(bg);placed=true;break}}if(!placed)bags.push({items:[entry],totalVt:vol,catGroups:new Set([bg])})});
+    // Step 4: Pack normal items WITHOUT catGroup restriction
+    normalEntries.sort((a,b)=>(b.item.estimateVolumeMl||0)*b.splitQty-(a.item.estimateVolumeMl||0)*a.splitQty);
+    normalEntries.forEach(entry=>{const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;let placed=false;for(const bag of bags){if(bag.sealed)continue;if(bag.catGroups.size>0&&[...bag.catGroups].some(g=>BAG_SUPER_GROUPS[g]||g==='人偶身體部件'))continue;if(bag.totalVt+vol<=bagCapacity){bag.items.push(entry);bag.totalVt+=vol;placed=true;break}}if(!placed)bags.push({items:[entry],totalVt:vol,catGroups:new Set()})});
   }
   // Assign bag labels and build overflow map
   const itemBags={};// itemId → [{label, qty}]
