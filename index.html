@@ -676,7 +676,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.15w';
+const APP_VERSION = '2026.04.15y';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -3131,30 +3131,48 @@ function renderDrawerMap(zone){
   else if(zone==='bag'){
     const bagCap=slotConfig.bagCapacity||BAG_ML_DEFAULT;
     const bagsBySlot={};allItems.filter(i=>i.slotType==='bag').forEach(i=>{if(!bagsBySlot[i.slot])bagsBySlot[i.slot]=[];bagsBySlot[i.slot].push(i)});
-    // Also collect overflow references
-    const overflowToBag={};allItems.filter(i=>i.overflowSlot&&(i.overflowQty||0)>0).forEach(i=>{const b=i.overflowSlot;if(!overflowToBag[b])overflowToBag[b]=[];overflowToBag[b].push(i)});
+    // Collect overflow references (handle comma-separated overflowSlot like "B07,B08,B89")
+    const overflowToBag={};
+    allItems.filter(i=>i.overflowSlot&&(i.overflowQty||0)>0).forEach(i=>{
+      const slots=i.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean);
+      const vol1=i.estimateVolumeMl||0;
+      const totalOvQty=i.overflowQty||0;
+      const qtyPerBag=slots.length>1?Math.ceil(totalOvQty/slots.length):totalOvQty;
+      slots.forEach((b,idx)=>{
+        if(!overflowToBag[b])overflowToBag[b]=[];
+        const batchQty=idx<slots.length-1?qtyPerBag:totalOvQty-qtyPerBag*idx;
+        overflowToBag[b].push({item:i,qty:Math.max(0,batchQty),vol:vol1*Math.max(0,batchQty)});
+        // Create bag entry if it doesn't exist (overflow-only bag)
+        if(!bagsBySlot[b])bagsBySlot[b]=[];
+      });
+    });
     const bags=Object.entries(bagsBySlot).sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true}));
     const totalBagVol=bags.reduce((s,e)=>s+e[1].reduce((ss,i)=>ss+(i.estimateVolumeMl||0)*(i.quantity||1),0),0);
     let html='<div style="font-size:13px;color:var(--muted);margin-bottom:12px">收納袋 · '+bags.length+' 袋 · '+Math.round(totalBagVol)+'ml · 容量 '+bagCap+'ml/袋</div>';
     if(!bags.length)html+='<div style="color:var(--dim);text-align:center;padding:48px">尚無收納袋</div>';
     bags.forEach(([bag,items])=>{
-      const vol=items.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+      // Include overflow items in this bag
+      const ovEntries=overflowToBag[bag]||[];
+      const primaryVol=items.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+      const ovVol=ovEntries.reduce((s,e)=>s+e.vol,0);
+      const vol=primaryVol+ovVol;
+      const allDisplayItems=items.concat(ovEntries.map(e=>e.item));
       const pct=Math.min(100,Math.round(vol/bagCap*100));
       const isOver=vol>bagCap;
-      const hasOverflow=!!overflowToBag[bag];
+      const hasOverflow=ovEntries.length>0;
       const barColor=isOver?'var(--red)':pct>80?'var(--orange)':'var(--green)';
-      const borderStyle=isOver||hasOverflow?'border:2px solid var(--red);box-shadow:0 0 8px rgba(239,68,68,0.3)':'border:1px solid var(--border)';
-      const thumbs=items.slice(0,3).map(i=>i.thumbnailUrl||'').filter(Boolean);
+      const borderStyle=isOver?'border:2px solid var(--red);box-shadow:0 0 8px rgba(239,68,68,0.3)':'border:1px solid var(--border)';
+      const thumbs=allDisplayItems.slice(0,3).map(i=>i.thumbnailUrl||'').filter(Boolean);
       const thumbHtml=thumbs.map(u=>'<img src="'+u+'" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">').join('');
-      const names=items.slice(0,3).map(i=>(i.nameCN||i.name||'').substring(0,12)).join(' · ');
-      const extra=items.length>3?' +' +(items.length-3):'';
-      const overflowLabel=hasOverflow?'<span style="font-size:9px;color:var(--red);margin-left:4px">⚠溢出</span>':'';
+      const names=allDisplayItems.slice(0,3).map(i=>(i.nameCN||i.name||'').substring(0,12)).join(' · ');
+      const extra=allDisplayItems.length>3?' +' +(allDisplayItems.length-3):'';
+      const overflowLabel=hasOverflow?'<span style="font-size:9px;color:var(--purple);margin-left:4px">↗溢入</span>':'';
       html+='<div style="background:var(--card);'+borderStyle+';border-radius:10px;padding:10px 12px;margin-bottom:6px;cursor:pointer" onclick="doSearch(\''+bag+'\')">';
       html+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">';
       html+='<span class="slot-badge slot-bag" style="font-size:12px;padding:3px 8px;min-width:36px;text-align:center">'+bag+'</span>';
       html+='<div style="display:flex;gap:3px">'+thumbHtml+'</div>';
       html+='<div style="flex:1;min-width:0"><div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+names+extra+'</div></div>';
-      html+='<span style="font-size:10px;color:var(--dim)">'+items.length+'種</span>'+overflowLabel;
+      html+='<span style="font-size:10px;color:var(--dim)">'+allDisplayItems.length+'種</span>'+overflowLabel;
       html+='</div>';
       // Capacity bar
       html+='<div style="display:flex;align-items:center;gap:8px">';
@@ -3525,7 +3543,35 @@ function assignBagsStep(){
       if(!placed)bags.push({items:[{item,splitQty:item.quantity||1,isFirst:true}],totalVt:item._rawVt,catGroups:new Set([group])});
     }
   })});
-  if(bags.length>=BAG_THRESHOLD){/* Repack without catGroup restriction */const allEntries=bags.flatMap(b=>b.items);bags.length=0;allEntries.sort((a,b)=>{const va=(a.item.estimateVolumeMl||0)*a.splitQty,vb=(b.item.estimateVolumeMl||0)*b.splitQty;return vb-va});allEntries.forEach(entry=>{const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;if(entry._isSplit){bags.push({items:[entry],totalVt:vol,sealed:true,catGroups:new Set()});return}let placed=false;for(const bag of bags){if(bag.sealed)continue;if(bag.totalVt+vol<=bagCapacity){bag.items.push(entry);bag.totalVt+=vol;placed=true;break}}if(!placed)bags.push({items:[entry],totalVt:vol,catGroups:new Set()})})}
+  if(bags.length>=BAG_THRESHOLD){/* Repack: keep super-group bags separate, mix others */
+    const allEntries=bags.flatMap(b=>b.items);bags.length=0;
+    // Separate: super-group items (人偶身體部件) vs normal items
+    const superEntries=[],normalEntries=[];
+    allEntries.forEach(entry=>{
+      const bg=getBagGroup(entry.item._catGroup,entry.item);
+      if(BAG_SUPER_GROUPS[entry.item._catGroup]||bg!==entry.item._catGroup)superEntries.push(entry);
+      else normalEntries.push(entry);
+    });
+    // Pack super-group items WITH catGroup restriction (keep 人偶身體部件 together)
+    superEntries.sort((a,b)=>{const va=(a.item.estimateVolumeMl||0)*a.splitQty,vb=(b.item.estimateVolumeMl||0)*b.splitQty;return vb-va});
+    superEntries.forEach(entry=>{
+      const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;
+      const bg=getBagGroup(entry.item._catGroup,entry.item);
+      if(entry._isSplit){bags.push({items:[entry],totalVt:vol,sealed:true,catGroups:new Set([bg])});return}
+      let placed=false;
+      for(const bag of bags){if(bag.sealed)continue;if(!bag.catGroups.has(bg)&&bag.catGroups.size>0)continue;if(bag.totalVt+vol<=bagCapacity){bag.items.push(entry);bag.totalVt+=vol;bag.catGroups.add(bg);placed=true;break}}
+      if(!placed)bags.push({items:[entry],totalVt:vol,catGroups:new Set([bg])});
+    });
+    // Pack normal items WITHOUT catGroup restriction (cross-group OK)
+    normalEntries.sort((a,b)=>{const va=(a.item.estimateVolumeMl||0)*a.splitQty,vb=(b.item.estimateVolumeMl||0)*b.splitQty;return vb-va});
+    normalEntries.forEach(entry=>{
+      const vol=Math.round((entry.item.estimateVolumeMl||0)*entry.splitQty*10)/10;
+      if(entry._isSplit){bags.push({items:[entry],totalVt:vol,sealed:true,catGroups:new Set()});return}
+      let placed=false;
+      for(const bag of bags){if(bag.sealed)continue;if(bag.catGroups.size>0&&[...bag.catGroups].some(g=>BAG_SUPER_GROUPS[g]||g==='人偶身體部件'))continue;if(bag.totalVt+vol<=bagCapacity){bag.items.push(entry);bag.totalVt+=vol;placed=true;break}}
+      if(!placed)bags.push({items:[entry],totalVt:vol,catGroups:new Set()});
+    });
+  }
   // Assign bag labels and build overflow map
   const itemBags={};// itemId → [{label, qty}]
   bags.forEach((bag,i)=>{const label='B'+String(i+1).padStart(2,'0');bag.items.forEach(entry=>{
