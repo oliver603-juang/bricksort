@@ -338,17 +338,17 @@ tr:hover{background:var(--accent-bg)}
   </div>
   <div id="result-dims-required" style="display:none;margin-bottom:12px">
     <div style="background:var(--orange-bg);border:1px solid var(--orange);border-radius:10px;padding:12px;margin-bottom:8px">
-      <div style="font-size:13px;font-weight:700;color:var(--orange);margin-bottom:6px">📐 確認零件尺寸</div>
-      <div id="rdim-hint" style="font-size:12px;color:var(--muted)">AI 未提供尺寸，請輸入</div>
+      <div style="font-size:13px;font-weight:700;color:var(--orange);margin-bottom:6px">📐 確認零件尺寸 (cm)</div>
+      <div id="rdim-hint" style="font-size:12px;color:var(--muted)">AI 未提供尺寸，請輸入（單位：公分）</div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px">
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <input type="number" id="rdim-w" placeholder="寬" inputmode="decimal" step="0.1" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center">
-        <span style="color:var(--dim)">×</span>
-        <input type="number" id="rdim-l" placeholder="長" inputmode="decimal" step="0.1" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center">
-        <span style="color:var(--dim)">×</span>
-        <input type="number" id="rdim-h" placeholder="高" inputmode="decimal" step="0.1" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center">
-        <span style="font-size:12px;color:var(--muted)">mm</span>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-bottom:10px">
+        <span style="font-size:12px;color:var(--muted);text-align:right">寬 W</span>
+        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-w" placeholder="0.0" inputmode="decimal" step="0.1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">cm</span></div>
+        <span style="font-size:12px;color:var(--muted);text-align:right">長 L</span>
+        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-l" placeholder="0.0" inputmode="decimal" step="0.1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">cm</span></div>
+        <span style="font-size:12px;color:var(--muted);text-align:right">高 H</span>
+        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-h" placeholder="0.0" inputmode="decimal" step="0.1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">cm</span></div>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:8px">
         <button class="btn btn-sm" onclick="pasteResultDims()" style="flex:1;font-size:11px">📋 貼上尺寸（BrickLink W×L×H cm）</button>
@@ -713,7 +713,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16x';
+const APP_VERSION = '2026.04.16z';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1650,10 +1650,12 @@ function recalcVol(){
       if(otherVol>0)warn+='<br>同格其他物品佔 '+Math.round(otherVol*10)/10+'ml，剩餘空間 '+Math.round(availCap*10)/10+'ml';
       warn+='<br>此物品 '+tv+'ml，格子總計 <b>'+slotTotal+'ml</b>';
       if(oq>0){
-        warn+='<br>建議留 '+fq+' 件，溢出 '+oq+' 件到收納袋<br>';
-        warn+='<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">';
-        warn+='<button class="btn btn-sm" onclick="moveAllToBag()" style="font-size:11px;padding:4px 10px">📦 全部移到收納袋</button>';
-        warn+='<span style="font-size:11px;color:var(--muted);align-self:center">💡 或直接儲存會自動溢出</span></div>';
+        warn+='<br>建議留 '+fq+' 件，溢出 '+oq+' 件<br>';
+        warn+='<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">';
+        warn+='<button class="btn btn-sm btn-primary" onclick="showEditorMoveList(\'move_all\')" style="font-size:12px;padding:8px 10px">🔄 全部移到新位置（清除原格）</button>';
+        warn+='<button class="btn btn-sm" onclick="showEditorMoveList(\'overflow\')" style="font-size:12px;padding:8px 10px">➕ 指派第二位置（部分溢出，保留原格）</button>';
+        warn+='<span style="font-size:11px;color:var(--muted);text-align:center">💡 或直接儲存 → 系統自動溢出到最空的袋</span></div>';
+        warn+='<div id="editor-move-list" style="margin-top:8px"></div>';
       }
       else warn+='<br>此物品不需溢出，但同格其他物品可能需要調整';
       warnEl.innerHTML='<div class="overflow-warn">'+warn+'</div>';
@@ -1797,6 +1799,112 @@ function moveAllToBag(){
   if(oldOverflow)msg+='，清除原溢出 '+oldOverflow;
   msg+='）';
   showToast(msg);
+}
+
+// Editor: show top-5 list for "move all" or "overflow" mode
+function showEditorMoveList(mode){
+  if(!currentItem)return;
+  currentItem._moveMode=mode;
+  const listEl=document.getElementById('editor-move-list');
+  if(!listEl)return;
+  const label=mode==='move_all'?'🔄 選擇新位置（會釋出原格）':'➕ 選擇第二位置（溢出去處）';
+  let html='<div style="background:var(--card);border:1px solid var(--accent);border-radius:8px;padding:10px;margin-top:4px">';
+  html+='<div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px">'+label+'</div>';
+  html+='<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">';
+  html+='<button class="btn btn-sm" onclick="renderEditorMoveOptions(\'bag\')" style="font-size:11px;flex:1">📦 收納袋</button>';
+  if(mode==='move_all'){
+    html+='<button class="btn btn-sm" onclick="renderEditorMoveOptions(\'small\')" style="font-size:11px;flex:1">🗄 小抽屜</button>';
+    html+='<button class="btn btn-sm" onclick="renderEditorMoveOptions(\'large\')" style="font-size:11px;flex:1">📦 大抽屜</button>';
+  }
+  html+='</div>';
+  html+='<div id="editor-move-options"></div>';
+  html+='<div style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="text" id="editor-manual-slot" placeholder="手動輸入（例 B01、420a、L05）" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:12px;font-family:var(--mono)"><button class="btn btn-green btn-sm" onclick="applyEditorManual()" style="font-size:11px">✓</button></div>';
+  html+='<button class="btn btn-sm" onclick="cancelEditorMove()" style="width:100%;margin-top:6px;font-size:11px">取消</button>';
+  html+='</div>';
+  listEl.innerHTML=html;
+}
+
+function renderEditorMoveOptions(slotType){
+  const topSlots=getTopEmptySlots(slotType,5);
+  const el=document.getElementById('editor-move-options');
+  if(!el)return;
+  let html='<div style="font-size:11px;color:var(--muted);margin:4px 0">Top 5 最空 (點選直接套用)：</div>';
+  if(!topSlots.length){
+    html+='<div style="font-size:11px;color:var(--muted);text-align:center;padding:6px">無現有可用位置</div>';
+  }else{
+    topSlots.forEach(s=>{
+      html+='<div onclick="applyEditorMove(\''+s.slot+'\',\''+slotType+'\')" style="display:flex;justify-content:space-between;padding:6px 8px;background:var(--surface);border-radius:6px;margin-bottom:3px;cursor:pointer">';
+      html+='<span style="font-family:var(--mono);font-weight:700;color:var(--accent)">'+s.slot+'</span>';
+      html+='<span style="font-size:10px;color:var(--muted)">餘 '+s.remaining+'/'+s.cap+'ml</span>';
+      html+='</div>';
+    });
+  }
+  if(slotType==='small'){
+    const ns=slotConfig.nextSmallSlot||'001a';
+    html+='<div onclick="applyEditorMove(\''+ns+'\',\'small\')" style="padding:6px 8px;background:var(--green-bg);border:1px dashed var(--green);border-radius:6px;cursor:pointer;text-align:center;font-family:var(--mono);color:var(--green);font-weight:700;font-size:12px;margin-top:4px">✨ '+ns+' (新抽屜)</div>';
+  }else if(slotType==='bag'){
+    const ns=slotConfig.nextBagSlot||'B01';
+    html+='<div onclick="applyEditorMove(\''+ns+'\',\'bag\')" style="padding:6px 8px;background:var(--green-bg);border:1px dashed var(--green);border-radius:6px;cursor:pointer;text-align:center;font-family:var(--mono);color:var(--green);font-weight:700;font-size:12px;margin-top:4px">✨ '+ns+' (新袋)</div>';
+  }
+  el.innerHTML=html;
+}
+
+function applyEditorMove(slot,slotType){
+  if(!currentItem)return;
+  const i=currentItem;
+  const mode=i._moveMode||'move_all';
+  // Auto-advance pointer if new slot
+  if(slotType==='small'&&slot===(slotConfig.nextSmallSlot||'')){
+    const num=parseInt(slot.replace(/[a-z]/g,''));
+    slotConfig.nextSmallSlot=String(num+1).padStart(3,'0')+'a';
+    markDirty('__config__');
+  }else if(slotType==='bag'&&slot===(slotConfig.nextBagSlot||'')){
+    slotConfig.nextBagSlot=advanceBag(slot);
+    markDirty('__config__');
+  }
+  if(mode==='move_all'){
+    const oldSlot=i.slot,oldOv=i.overflowSlot||'';
+    i.slot=slot;i.slotType=slotType;
+    i.overflowSlot='';i.overflowQty=0;
+    document.getElementById('m-slot').value=slot;
+    document.getElementById('m-slotType').value=slotType;
+    showToast('✅ 已全部移到 '+slot+'（原 '+oldSlot+' 釋出'+(oldOv?'，清除原溢出 '+oldOv:'')+'）');
+  }else{
+    // overflow: append to overflowSlot, compute overflow qty
+    const cap=getSlotCap(i.slot,i.slotType);
+    const v1=i.estimateVolumeMl||0;
+    const otherVol=allItems.filter(x=>x.slot===i.slot&&x.id!==i.id).reduce((s,x)=>s+(x.estimateVolumeMl||0)*(x.quantity||1),0);
+    const availCap=Math.max(0,cap-otherVol);
+    const fitsQty=Math.max(0,Math.floor(availCap/(v1||1)));
+    const overQty=Math.max(0,(i.quantity||1)-fitsQty);
+    const existing=(i.overflowSlot||'').split(',').map(s=>s.trim()).filter(Boolean);
+    if(!existing.includes(slot))existing.push(slot);
+    i.overflowSlot=existing.join(',');
+    i.overflowQty=overQty;
+    showToast('✅ 溢出 '+overQty+' 件到 '+slot+'（主位 '+i.slot+' 保留 '+fitsQty+' 件）');
+  }
+  delete i._moveMode;
+  i.updatedAt=Date.now();
+  markDirty(i.id);
+  cancelEditorMove();
+  recalcVol();
+}
+
+function applyEditorManual(){
+  const val=(document.getElementById('editor-manual-slot')?.value||'').trim();
+  if(!val){showToast('請輸入位置','error');return}
+  let slotType='small';
+  if(/^B\d+$/i.test(val))slotType='bag';
+  else if(/^L\d+$/i.test(val))slotType='large';
+  else if(/^\d+[ab]?$/.test(val))slotType='small';
+  else{showToast('格式錯誤（例：B01、420a、L05）','error');return}
+  applyEditorMove(val,slotType);
+}
+
+function cancelEditorMove(){
+  if(currentItem)delete currentItem._moveMode;
+  const el=document.getElementById('editor-move-list');
+  if(el)el.innerHTML='';
 }
 
 // ═══════════════════════════════════════════════════
@@ -3034,7 +3142,7 @@ async function processResult(item){
     document.getElementById('rdim-l').value=pendingPart.dimL>0?pendingPart.dimL:'';
     document.getElementById('rdim-h').value=pendingPart.dimH>0?pendingPart.dimH:'';
     const hasAI=(pendingPart.dimW||0)>0&&(pendingPart.dimL||0)>0&&(pendingPart.dimH||0)>0;
-    document.getElementById('rdim-hint').textContent=hasAI?'AI 估算：請確認或修正尺寸':'AI 未提供尺寸，請輸入';
+    document.getElementById('rdim-hint').textContent=hasAI?'AI 估算：請確認或修正尺寸（cm）':'AI 未提供尺寸，請輸入（單位：公分）';
     document.getElementById('result-dims-required').style.display='';
     document.getElementById('result-confirm-btn').style.display='none';
     document.getElementById('result-slot-override').style.display='none';
@@ -3046,19 +3154,60 @@ async function processResult(item){
   showScreen('s-result');
 }
 
+// Get top-N slots with most remaining capacity of a given type
+// slotType: 'small' | 'large' | 'bag'
+// Returns: [{slot, used, remaining, cap}]
+function getTopEmptySlots(slotType, limit){
+  limit=limit||5;
+  const results=[];
+  if(slotType==='small'){
+    const maxD=parseInt((slotConfig.nextSmallSlot||'001a').replace(/[a-z]/g,''));
+    for(let d=1;d<maxD;d++){
+      const pad=String(d).padStart(3,'0');
+      ['a','b'].forEach(side=>{
+        const slot=pad+side;
+        const used=allItems.filter(i=>i.slot===slot).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+        const cap=SLOT_ML;
+        const remaining=cap-used;
+        if(remaining>=5) results.push({slot,used:Math.round(used*10)/10,remaining:Math.round(remaining*10)/10,cap});
+      });
+    }
+  }else if(slotType==='large'){
+    const usedL=new Set(allItems.filter(i=>i.slotType==='large').map(i=>i.slot));
+    for(let n=1;n<=27;n++){
+      const slot='L'+String(n).padStart(2,'0');
+      const used=allItems.filter(i=>i.slot===slot).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+      const cap=LARGE_ML;
+      const remaining=cap-used;
+      if(remaining>=20) results.push({slot,used:Math.round(used*10)/10,remaining:Math.round(remaining*10)/10,cap});
+    }
+  }else if(slotType==='bag'){
+    const maxN=parseInt((slotConfig.nextBagSlot||'B01').replace(/[^\d]/g,''));
+    for(let n=1;n<=maxN;n++){
+      const slot='B'+String(n).padStart(2,'0');
+      const used=getBagVol(slot);
+      const cap=BAG_ML_DEFAULT;
+      const remaining=cap-used;
+      if(remaining>=20) results.push({slot,used:Math.round(used*10)/10,remaining:Math.round(remaining*10)/10,cap});
+    }
+  }
+  results.sort((a,b)=>b.remaining-a.remaining);
+  return results.slice(0,limit);
+}
+
 function showSlotOverride(){
   if(!pendingPart)return;
   const current=pendingPart.slot||'?';
-  const curType=pendingPart.slotType||'small';
   const el=document.getElementById('result-slot-override');
   el.innerHTML=`
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:8px" onclick="event.stopPropagation()">
       <div style="font-size:12px;color:var(--muted);margin-bottom:8px">變更收納位置（目前：${current}）</div>
       <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-        <button class="btn btn-sm" onclick="event.stopPropagation();applySlotOverride('bag')" style="font-size:12px">📦 收納袋</button>
-        <button class="btn btn-sm" onclick="event.stopPropagation();applySlotOverride('small')" style="font-size:12px">🗄 小抽屜</button>
-        <button class="btn btn-sm" onclick="event.stopPropagation();applySlotOverride('large')" style="font-size:12px">📦 大抽屜</button>
+        <button class="btn btn-sm" onclick="event.stopPropagation();showOverrideList('bag')" style="font-size:12px;flex:1">📦 收納袋</button>
+        <button class="btn btn-sm" onclick="event.stopPropagation();showOverrideList('small')" style="font-size:12px;flex:1">🗄 小抽屜</button>
+        <button class="btn btn-sm" onclick="event.stopPropagation();showOverrideList('large')" style="font-size:12px;flex:1">📦 大抽屜</button>
       </div>
+      <div id="override-list" style="margin-bottom:8px"></div>
       <div style="display:flex;gap:6px;align-items:center">
         <input type="text" id="slot-override-input" placeholder="手動輸入（如 B01、420a、L05）" value="" onclick="event.stopPropagation()" style="flex:1;background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:13px;font-family:var(--mono)">
         <button class="btn btn-green btn-sm" onclick="event.stopPropagation();applySlotOverrideManual()" style="font-size:12px;padding:8px 12px">✓</button>
@@ -3066,27 +3215,79 @@ function showSlotOverride(){
       <button class="btn btn-sm" onclick="event.stopPropagation();cancelSlotOverride()" style="margin-top:6px;font-size:11px;width:100%">取消</button>
     </div>`;
 }
+
+function showOverrideList(slotType){
+  const topSlots=getTopEmptySlots(slotType,5);
+  const listEl=document.getElementById('override-list');
+  if(!listEl)return;
+  let html='<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px;margin-top:4px">';
+  html+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Top 5 最空'+(slotType==='small'?'小抽屜分格':slotType==='large'?'大抽屜':'收納袋')+' (點選直接套用)：</div>';
+  if(!topSlots.length){
+    html+='<div style="font-size:12px;color:var(--muted);text-align:center;padding:8px">無可用位置，請用下方手動輸入新的</div>';
+  }else{
+    topSlots.forEach(s=>{
+      const pct=Math.round(s.used/s.cap*100);
+      const bar='<div style="width:30%;height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:2px"><div style="width:'+pct+'%;height:100%;background:'+(pct>80?'var(--red)':pct>50?'var(--orange)':'var(--green)')+'"></div></div>';
+      html+='<div onclick="event.stopPropagation();pickOverrideSlot(\''+s.slot+'\',\''+slotType+'\')" style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--surface);border-radius:6px;margin-bottom:4px;cursor:pointer" onmouseover="this.style.background=\'var(--accent-bg)\'" onmouseout="this.style.background=\'var(--surface)\'">';
+      html+='<span style="font-family:var(--mono);font-weight:700;color:var(--accent)">'+s.slot+'</span>';
+      html+='<span style="font-size:11px;color:var(--muted)">餘 '+s.remaining+'ml / '+s.cap+'ml</span>';
+      html+='</div>';
+    });
+    // "New slot" option
+    if(slotType==='small'){
+      const newSlot=(slotConfig.nextSmallSlot||'001a');
+      html+='<div onclick="event.stopPropagation();pickOverrideSlot(\''+newSlot+'\',\'small\')" style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--green-bg);border:1px dashed var(--green);border-radius:6px;cursor:pointer"><span style="font-family:var(--mono);font-weight:700;color:var(--green)">✨ '+newSlot+'</span><span style="font-size:11px;color:var(--muted)">新抽屜（全空）</span></div>';
+    }else if(slotType==='bag'){
+      const newSlot=(slotConfig.nextBagSlot||'B01');
+      html+='<div onclick="event.stopPropagation();pickOverrideSlot(\''+newSlot+'\',\'bag\')" style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--green-bg);border:1px dashed var(--green);border-radius:6px;cursor:pointer"><span style="font-family:var(--mono);font-weight:700;color:var(--green)">✨ '+newSlot+'</span><span style="font-size:11px;color:var(--muted)">新收納袋（全空）</span></div>';
+    }
+  }
+  html+='</div>';
+  listEl.innerHTML=html;
+}
+
+function pickOverrideSlot(slot,slotType){
+  if(!pendingPart)return;
+  pendingPart.slot=slot;pendingPart.slotType=slotType;
+  pendingPart.overflowSlot='';pendingPart.overflowQty=0;
+  // If this is a new slot, advance the pointer
+  if(slotType==='small'&&slot===(slotConfig.nextSmallSlot||'')){
+    const num=parseInt(slot.replace(/[a-z]/g,''));
+    slotConfig.nextSmallSlot=String(num+1).padStart(3,'0')+'a';
+    markDirty('__config__');
+  }else if(slotType==='bag'&&slot===(slotConfig.nextBagSlot||'')){
+    slotConfig.nextBagSlot=advanceBag(slot);
+    markDirty('__config__');
+  }
+  document.getElementById('result-slot').textContent=slot;
+  document.getElementById('result-slot-type').textContent=slotType==='large'?'大抽屜':slotType==='bag'?'收納袋':'小抽屜分格';
+  cancelSlotOverride();
+  renderMiniMap(slot,slotType);
+  showToast('已選 '+slot);
+}
 function pasteResultDims(){
   pasteFromClipboard(function(text){
     const m=text.match(/([\d.]+)\s*[x×X]\s*([\d.]+)\s*[x×X]\s*([\d.]+)/);
     if(!m){showToast('格式錯誤，需要 W x L x H','error');return}
-    // Auto-detect cm vs mm (BrickLink uses cm)
+    // Auto-detect: if any value >= 10, assume it was mm — convert to cm
     let w=parseFloat(m[1]),l=parseFloat(m[2]),h=parseFloat(m[3]);
-    if(w<10&&l<10&&h<10){w*=10;l*=10;h*=10} // cm → mm
+    if(w>=10||l>=10||h>=10){w/=10;l/=10;h/=10}  // mm → cm
     document.getElementById('rdim-w').value=Math.round(w*10)/10;
     document.getElementById('rdim-l').value=Math.round(l*10)/10;
     document.getElementById('rdim-h').value=Math.round(h*10)/10;
-    showToast('已貼上尺寸 '+Math.round(w)+'×'+Math.round(l)+'×'+Math.round(h)+' mm');
+    showToast('已貼上尺寸 '+(Math.round(w*10)/10)+'×'+(Math.round(l*10)/10)+'×'+(Math.round(h*10)/10)+' cm');
   });
 }
 function applyResultDims(){
   if(!pendingPart)return;
+  // Inputs are in cm (BrickLink standard), internal storage is cm
   const w=parseFloat(document.getElementById('rdim-w').value)||0;
   const l=parseFloat(document.getElementById('rdim-l').value)||0;
   const h=parseFloat(document.getElementById('rdim-h').value)||0;
-  if(w<=0||l<=0||h<=0){showToast('請輸入完整尺寸（寬×長×高）','error');return}
+  if(w<=0||l<=0||h<=0){showToast('請輸入完整尺寸（寬×長×高 cm）','error');return}
   pendingPart.dimW=w;pendingPart.dimL=l;pendingPart.dimH=h;
-  pendingPart.estimateVolumeMl=Math.round(w*l*h/1000*10)/10;
+  // Volume: w*l*h cm³ = ml (directly, no /1000 because units are cm)
+  pendingPart.estimateVolumeMl=Math.round(w*l*h*10)/10;
   // Re-assign slot with correct dims
   const slotInfo=gatewayAssign(pendingPart);
   pendingPart.slot=slotInfo.slot;pendingPart.slotType=slotInfo.slotType;
@@ -3659,6 +3860,11 @@ function gridToDrawerNum(col,row,cols){return row%2===0?row*cols+col+1:row*cols+
 function renderDrawerMap(zone){
   // Build slot counts using BOTH padded and unpadded keys for robust lookup
   const slotCounts={};allItems.forEach(i=>{const s=i.slot||'?';slotCounts[s]=(slotCounts[s]||0)+1});
+  // Build slot volume map
+  const slotVols={};allItems.forEach(i=>{
+    const s=i.slot||'?';const v=(i.estimateVolumeMl||0)*(i.quantity||1);
+    slotVols[s]=(slotVols[s]||0)+v;
+  });
   // Build thumbnail map: normalize drawer number to padded 3-digit string
   const drawerThumbs={};
   allItems.forEach(i=>{if(!i.slot)return;
@@ -3678,6 +3884,13 @@ function renderDrawerMap(zone){
     const cf=(slotCounts[pad]||0)+(slotCounts[plain]||0);
     return {ca:ca+cf, cb:cb, total:ca+cb+cf};
   }
+  // Helper: get volume usage for drawer number (both halves combined)
+  function getDrawerVol(dNum){
+    const pad=String(dNum).padStart(3,'0'), plain=String(dNum);
+    return (slotVols[pad+'a']||0)+(slotVols[plain+'a']||0)+
+           (slotVols[pad+'b']||0)+(slotVols[plain+'b']||0)+
+           (slotVols[pad]||0)+(slotVols[plain]||0);
+  }
 
   function renderSmallZone(z,offset){
     let h='<div class="drawer-grid" style="grid-template-columns:repeat('+z.cols+',1fr)">';
@@ -3685,10 +3898,15 @@ function renderDrawerMap(zone){
       const d=gridToDrawerNum(col,row,z.cols)+(offset||0);if(d>z.end)continue;
       const dPad=String(d).padStart(3,'0');
       const counts=getDrawerCounts(d);
+      const usedVol=getDrawerVol(d);
+      const drawerCap=DRAWER_ML; // full drawer capacity
+      const remaining=Math.max(0,drawerCap-usedVol);
+      const pct=Math.min(100,Math.round(usedVol/drawerCap*100));
       const cls=counts.total>0?'has-items':'';
       const t=drawerThumbs[dPad]||{a:[],b:[]},allImgs=[...(t.a||[]),...(t.b||[])];
       let thumbHtml='';if(allImgs.length>0){const sz=allImgs.length>=2?14:18;thumbHtml='<div style="display:flex;gap:1px;justify-content:center;margin-top:1px">';allImgs.slice(0,2).forEach(url=>{thumbHtml+='<img src="'+url+'" style="width:'+sz+'px;height:'+sz+'px;object-fit:contain;border-radius:2px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">'});thumbHtml+='</div>'}
-      h+='<div class="drawer-cell '+cls+'" onclick="searchDrawer('+d+')" title="'+d+'a:'+counts.ca+'件 '+d+'b:'+counts.cb+'件"><div style="font-size:11px">'+d+'</div>'+thumbHtml+'<div style="font-size:7px">'+counts.ca+'|'+counts.cb+'</div></div>';
+      const remColor=remaining<20?'var(--red)':remaining<50?'var(--orange)':'var(--green)';
+      h+='<div class="drawer-cell '+cls+'" onclick="searchDrawer('+d+')" title="'+d+'a:'+counts.ca+'件 '+d+'b:'+counts.cb+'件 | 用 '+Math.round(usedVol)+'ml/'+drawerCap+'ml ('+pct+'%)"><div style="font-size:11px">'+d+'</div>'+thumbHtml+'<div style="font-size:7px">'+counts.ca+'|'+counts.cb+'</div><div style="font-size:7px;color:'+remColor+'">餘'+Math.round(remaining)+'ml</div></div>';
     }}h+='</div>';return h;
   }
 
@@ -3705,15 +3923,19 @@ function renderDrawerMap(zone){
     document.getElementById('map-small-content').innerHTML=html;
   }
   else if(zone==='large'){
-    let html='<div style="font-size:13px;color:var(--muted);margin-bottom:8px">中層 大抽屜 L1~L27（9×3）</div>';
+    let html='<div style="font-size:13px;color:var(--muted);margin-bottom:8px">中層 大抽屜 L1~L27（9×3）· 容量 '+LARGE_ML+'ml/格</div>';
     html+='<div class="drawer-grid" style="grid-template-columns:repeat(9,1fr)">';
     for(let row=0;row<ZONE_LARGE_MAP.rows;row++){for(let col=0;col<ZONE_LARGE_MAP.cols;col++){
       const d=gridToDrawerNum(col,row,ZONE_LARGE_MAP.cols);if(d>ZONE_LARGE_MAP.drawers)continue;
       const lPlain='L'+d, lPad='L'+String(d).padStart(2,'0');
       const c=(slotCounts[lPlain]||0)+(slotCounts[lPad]||0),cls=c>0?'has-items':'';
+      const usedV=(slotVols[lPlain]||0)+(slotVols[lPad]||0);
+      const remainingL=Math.max(0,LARGE_ML-usedV);
+      const pctL=Math.min(100,Math.round(usedV/LARGE_ML*100));
+      const remColorL=remainingL<100?'var(--red)':remainingL<300?'var(--orange)':'var(--green)';
       const lItem=allItems.find(i=>i.slot===lPlain||i.slot===lPad);const lThumb=lItem?(lItem.thumbnailUrl||''):'';
       const lThumbHtml=lThumb?'<img src="'+lThumb+'" style="width:24px;height:24px;object-fit:contain;border-radius:2px;background:rgba(255,255,255,0.08)" onerror="this.style.display=\'none\'">':'';
-      html+='<div class="drawer-cell '+cls+'" style="min-height:56px" onclick="doSearch(\''+lPad+'\')"><div style="font-size:11px">L'+d+'</div>'+lThumbHtml+'<div style="font-size:7px">'+c+'件</div></div>';
+      html+='<div class="drawer-cell '+cls+'" style="min-height:62px" onclick="doSearch(\''+lPad+'\')" title="'+lPad+' · '+c+'件 · 用 '+Math.round(usedV)+'/'+LARGE_ML+'ml ('+pctL+'%)"><div style="font-size:11px">L'+d+'</div>'+lThumbHtml+'<div style="font-size:7px">'+c+'件</div><div style="font-size:8px;color:'+remColorL+'">餘'+Math.round(remainingL)+'ml</div></div>';
     }}html+='</div>';
     html+='<div style="margin-top:12px;text-align:center"><button class="btn btn-primary btn-sm" onclick="autoAssignLargeDrawers()">📦 自動指派大抽屜（Top 27）</button></div>';
     document.getElementById('map-large-content').innerHTML=html;
