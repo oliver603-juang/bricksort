@@ -697,6 +697,7 @@ tr:hover{background:var(--accent-bg)}
         <button class="btn btn-sm" onclick="showEditorMoveList('move_all')" style="flex:1;font-size:12px;padding:8px">🔄 變更位置（Top 5 最空）</button>
         <button class="btn btn-sm" onclick="showEditorMoveList('overflow')" style="flex:1;font-size:12px;padding:8px">➕ 指派第二位置</button>
       </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">💡 移動 Left/Right 鏡射件時自動同步（名稱需含 Left/Right 或 左/右）</div>
       <div id="editor-move-list" style="margin-top:8px"></div>
     </div>
   </div>
@@ -717,7 +718,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17g';
+const APP_VERSION = '2026.04.17j';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1780,12 +1781,19 @@ function editorSaveItem(){
     // If user manually changed slot → move ALL to new slot, clear overflow
     if(newSlot!==oldSlot||newSlotType!==i.slotType){
       i.slot=newSlot;i.slotType=newSlotType;
-      if(oldOverflow){
-        i.overflowSlot='';i.overflowQty=0;
-        showToast('已移到 '+newSlot+'（清除原溢出 '+oldOverflow+'）');
-      }else{
-        showToast('已移到 '+newSlot);
+      i.overflowSlot='';i.overflowQty=0;
+      // Mirror sync
+      const partner=findMirrorPartner(i);
+      let msg=(oldOverflow?'已移到 '+newSlot+'（清除原溢出 '+oldOverflow+'）':'已移到 '+newSlot);
+      if(partner){
+        const pOldSlot=partner.slot;
+        partner.slot=newSlot;partner.slotType=newSlotType;
+        partner.overflowSlot='';partner.overflowQty=0;
+        partner.updatedAt=Date.now();
+        markDirty(partner.id);
+        msg+='\n🔗 鏡射件「'+((partner.nameCN||partner.name||'').substring(0,18))+'」同步 '+pOldSlot+'→'+newSlot;
       }
+      showToast(msg);
     }else{
       // Slot unchanged → auto-overflow check (expand if qty increased)
       const ovResult=autoOverflowCheck(i);
@@ -1830,6 +1838,16 @@ function moveAllToBag(){
   let msg='✅ 已全部移到 '+r.slot+'（原 '+oldSlot+'/'+oldType+' 釋出';
   if(oldOverflow)msg+='，清除原溢出 '+oldOverflow;
   msg+='）';
+  // Mirror sync
+  const partner=findMirrorPartner(i);
+  if(partner){
+    const pOldSlot=partner.slot;
+    partner.slot=r.slot;partner.slotType='bag';
+    partner.overflowSlot='';partner.overflowQty=0;
+    partner.updatedAt=Date.now();
+    markDirty(partner.id);
+    msg+='\n🔗 鏡射件「'+((partner.nameCN||partner.name||'').substring(0,18))+'」同步 '+pOldSlot+'→'+r.slot;
+  }
   showToast(msg);
 }
 
@@ -1881,6 +1899,26 @@ function renderEditorMoveOptions(slotType){
   el.innerHTML=html;
 }
 
+// Find mirror partner (Left ↔ Right) by name matching
+function findMirrorPartner(item){
+  if(!item)return null;
+  const name=(item.name||'').trim();
+  const nameCN=(item.nameCN||'').trim();
+  const candidates=[];
+  // English Left ↔ Right (whole word)
+  if(/\bLeft\b/i.test(name)) candidates.push({name:name.replace(/\bLeft\b/i,'Right')});
+  else if(/\bRight\b/i.test(name)) candidates.push({name:name.replace(/\bRight\b/i,'Left')});
+  // Chinese 左 ↔ 右
+  if(/左/.test(nameCN)) candidates.push({nameCN:nameCN.replace(/左/g,'右')});
+  else if(/右/.test(nameCN)) candidates.push({nameCN:nameCN.replace(/右/g,'左')});
+  if(!candidates.length)return null;
+  // Find matching item (exclude self)
+  return allItems.find(j=>{
+    if(j.id===item.id)return false;
+    return candidates.some(c=>(c.name&&j.name===c.name)||(c.nameCN&&j.nameCN===c.nameCN));
+  })||null;
+}
+
 function applyEditorMove(slot,slotType){
   if(!currentItem)return;
   const i=currentItem;
@@ -1898,9 +1936,21 @@ function applyEditorMove(slot,slotType){
     const oldSlot=i.slot,oldOv=i.overflowSlot||'';
     i.slot=slot;i.slotType=slotType;
     i.overflowSlot='';i.overflowQty=0;
+    i.updatedAt=Date.now();
     document.getElementById('m-slot').value=slot;
     document.getElementById('m-slotType').value=slotType;
-    showToast('✅ 已全部移到 '+slot+'（原 '+oldSlot+' 釋出'+(oldOv?'，清除原溢出 '+oldOv:'')+'）');
+    // Mirror sync: also move Left/Right partner
+    const partner=findMirrorPartner(i);
+    let msg='✅ 已全部移到 '+slot+'（原 '+oldSlot+' 釋出'+(oldOv?'，清除原溢出 '+oldOv:'')+'）';
+    if(partner){
+      const pOldSlot=partner.slot;
+      partner.slot=slot;partner.slotType=slotType;
+      partner.overflowSlot='';partner.overflowQty=0;
+      partner.updatedAt=Date.now();
+      markDirty(partner.id);
+      msg+='\n🔗 鏡射件「'+((partner.nameCN||partner.name||'').substring(0,18))+'」同步 '+pOldSlot+'→'+slot;
+    }
+    showToast(msg);
   }else{
     // overflow: append to overflowSlot, compute overflow qty
     const cap=getSlotCap(i.slot,i.slotType);
@@ -3694,22 +3744,50 @@ if(match)Object.assign(match,savedItem);else allItems.unshift(savedItem);
 // SEARCH
 // ═══════════════════════════════════════════════════
 function doSearch(q){
-  q=(q||'').trim().toLowerCase();if(!q)return;
-  const results=allItems.filter(i=>[i.name,i.nameCN,i.designId,i.slot,i.overflowSlot,(i.featureTags||[]).join(' ')].join(' ').toLowerCase().includes(q));
+  q=(q||'').trim();if(!q)return;
+  // Detect slot-pattern queries and route to slot detail view
+  // Small drawer: "077", "77", "077a", "077b"
+  const smallM=q.match(/^0*(\d{1,3})[ab]?$/i);
+  if(smallM){
+    const n=parseInt(smallM[1]);
+    if(n>=1&&n<=450){searchDrawer(n);return}
+  }
+  // Bag: "B01", "B36"
+  const bagM=q.match(/^B(\d+)$/i);
+  if(bagM){searchBag(parseInt(bagM[1]));return}
+  // Large drawer: "L01", "L05"
+  const largeM=q.match(/^L(\d+)$/i);
+  if(largeM){searchLarge(parseInt(largeM[1]));return}
+  // Otherwise: text search
+  const ql=q.toLowerCase();
+  const results=allItems.filter(i=>[i.name,i.nameCN,i.designId,i.slot,i.overflowSlot,(i.featureTags||[]).join(' ')].join(' ').toLowerCase().includes(ql));
   document.getElementById('search-title').textContent='搜尋「'+q+'」：'+results.length+' 筆';
-  document.getElementById('search-results').innerHTML=results.length?results.map(partRowHTML).join(''):'<div style="text-align:center;padding:48px;color:var(--muted)">找不到結果</div>';
+  document.getElementById('search-results').innerHTML=results.length?renderSlotNav(null)+results.map(partRowHTML).join(''):'<div style="text-align:center;padding:48px;color:var(--muted)">找不到結果</div>';
   showScreen('s-search');
 }
+
+// Render prev/next slot navigation buttons
+function renderSlotNav(current){
+  if(!current)return '';
+  const prev=current.prev, next=current.next, label=current.label;
+  return '<div style="display:flex;gap:8px;padding:8px 0 12px 0;background:var(--bg);position:sticky;top:0;z-index:5">'
+    +(prev?'<button class="btn btn-sm" onclick="jumpToSlot(\''+prev+'\')" style="flex:1;font-size:13px;padding:10px">← '+prev+'</button>':'<div style="flex:1"></div>')
+    +'<div style="flex:1.5;text-align:center;font-family:var(--mono);font-size:14px;color:var(--accent);font-weight:700;padding:10px">'+label+'</div>'
+    +(next?'<button class="btn btn-sm" onclick="jumpToSlot(\''+next+'\')" style="flex:1;font-size:13px;padding:10px">'+next+' →</button>':'<div style="flex:1"></div>')
+    +'</div>';
+}
+
+// Unified jump: accepts "103", "103a", "B36", "L05"
+function jumpToSlot(s){
+  doSearch(s);
+  // scroll results area to top
+  const sr=document.getElementById('search-results');if(sr)sr.scrollTop=0;
+}
 function jumpToSlotFromResult(){
-  const slot=document.getElementById('result-slot').textContent||'';
+  const slot=(document.getElementById('result-slot').textContent||'').trim();
   if(!slot)return;
-  const d=parseInt(slot.replace(/\D/g,''));
-  if(slot.startsWith('B')){
-    // Bag: show bag map tab
-    showTab('main');document.querySelector('[onclick*="showBagMap"]')?.click();
-    return;
-  }
-  searchDrawer(d);
+  // For any slot type (bag/large/small), show its contents via search
+  doSearch(slot);
 }
 async function saveResultQty(){
   const qty=parseInt(document.getElementById('result-qty').value)||0;
@@ -3849,7 +3927,12 @@ function searchDrawer(d){
   const drawerCap=DRAWER_ML; // 248ml for full drawer
   const slotCap=SLOT_ML; // 124ml per side
 
-  let html='<div style="margin-bottom:16px">';
+  // Navigation: prev/next drawer (1-450)
+  const prev=d>1?String(d-1):null;
+  const next=d<450?String(d+1):null;
+  let html=renderSlotNav({prev:prev,next:next,label:'抽屜 '+d});
+
+  html+='<div style="margin-bottom:16px">';
   html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="slot-badge slot-small" style="font-size:16px;padding:6px 14px">抽屜 '+d+'</span>';
   html+='<span style="font-family:var(--mono);font-size:13px;color:var(--muted)">'+results.length+' 種零件 · '+Math.round(totalVol)+'ml / '+Math.round(drawerCap)+'ml</span></div>';
 
@@ -3884,6 +3967,114 @@ function searchDrawer(d){
   document.getElementById('search-title').textContent='抽屜 '+d+'：'+results.length+' 筆';
   document.getElementById('search-results').innerHTML=html;
   showScreen('s-search');
+  attachSwipeNav(prev,next);
+}
+
+// View contents of a bag (B01-B999)
+function searchBag(n){
+  const label='B'+String(n).padStart(2,'0');
+  const labelPlain='B'+n;
+  // Items where slot OR overflowSlot includes this bag
+  const results=allItems.filter(i=>{
+    if(i.slot===label||i.slot===labelPlain)return true;
+    return (i.overflowSlot||'').split(',').map(s=>s.trim()).includes(label)||
+           (i.overflowSlot||'').split(',').map(s=>s.trim()).includes(labelPlain);
+  });
+  const totalVol=results.reduce((s,i)=>{
+    // Only count primary items fully; overflow items count only their overflow portion
+    const isPrimary=i.slot===label||i.slot===labelPlain;
+    if(isPrimary)return s+(i.estimateVolumeMl||0)*(i.quantity||1);
+    return s+(i.estimateVolumeMl||0)*(i.overflowQty||0);
+  },0);
+  const cap=BAG_ML_DEFAULT;
+  const pct=Math.min(100,Math.round(totalVol/cap*100));
+  const color=pct>90?'var(--red)':pct>70?'var(--orange)':'var(--green)';
+
+  // Find max bag number used
+  let maxBag=0;
+  allItems.forEach(i=>{
+    const m=(i.slot||'').match(/^B(\d+)$/i);if(m)maxBag=Math.max(maxBag,parseInt(m[1]));
+    (i.overflowSlot||'').split(',').forEach(s=>{const m=s.trim().match(/^B(\d+)$/i);if(m)maxBag=Math.max(maxBag,parseInt(m[1]))});
+  });
+  const prev=n>1?'B'+String(n-1).padStart(2,'0'):null;
+  const next=n<maxBag?'B'+String(n+1).padStart(2,'0'):null;
+
+  let html=renderSlotNav({prev:prev,next:next,label:'收納袋 '+label});
+  html+='<div style="margin-bottom:12px">';
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="slot-badge slot-bag" style="font-size:16px;padding:6px 14px">'+label+'</span>';
+  html+='<span style="font-family:var(--mono);font-size:13px;color:var(--muted)">'+results.length+' 種零件 · '+Math.round(totalVol)+'ml / '+cap+'ml</span></div>';
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="flex:1;height:6px;background:var(--surface);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+color+';border-radius:3px"></div></div><span style="font-family:var(--mono);font-size:11px;color:var(--muted)">'+pct+'%</span></div>';
+  html+='</div>';
+  if(results.length===0){
+    html+='<div style="text-align:center;padding:32px;color:var(--muted);background:var(--card);border-radius:10px">（此袋為空）</div>';
+  }else{
+    html+=results.map(partRowHTML).join('');
+  }
+
+  document.getElementById('search-title').textContent='收納袋 '+label+'：'+results.length+' 筆';
+  document.getElementById('search-results').innerHTML=html;
+  showScreen('s-search');
+  attachSwipeNav(prev,next);
+}
+
+// View contents of a large drawer (L01-L27)
+function searchLarge(n){
+  const label='L'+String(n).padStart(2,'0');
+  const labelPlain='L'+n;
+  const results=allItems.filter(i=>i.slot===label||i.slot===labelPlain);
+  const totalVol=results.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+  const cap=LARGE_ML;
+  const pct=Math.min(100,Math.round(totalVol/cap*100));
+  const color=pct>90?'var(--red)':pct>70?'var(--orange)':'var(--green)';
+
+  const prev=n>1?'L'+String(n-1).padStart(2,'0'):null;
+  const next=n<27?'L'+String(n+1).padStart(2,'0'):null;
+
+  let html=renderSlotNav({prev:prev,next:next,label:'大抽屜 '+label});
+  html+='<div style="margin-bottom:12px">';
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="slot-badge slot-large" style="font-size:16px;padding:6px 14px">'+label+'</span>';
+  html+='<span style="font-family:var(--mono);font-size:13px;color:var(--muted)">'+results.length+' 種零件 · '+Math.round(totalVol)+'ml / '+cap+'ml</span></div>';
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="flex:1;height:6px;background:var(--surface);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+color+';border-radius:3px"></div></div><span style="font-family:var(--mono);font-size:11px;color:var(--muted)">'+pct+'%</span></div>';
+  html+='</div>';
+  if(results.length===0){
+    html+='<div style="text-align:center;padding:32px;color:var(--muted);background:var(--card);border-radius:10px">（此大抽屜為空）</div>';
+  }else{
+    html+=results.map(partRowHTML).join('');
+  }
+
+  document.getElementById('search-title').textContent='大抽屜 '+label+'：'+results.length+' 筆';
+  document.getElementById('search-results').innerHTML=html;
+  showScreen('s-search');
+  attachSwipeNav(prev,next);
+}
+
+// Attach horizontal swipe detection to search-results area
+function attachSwipeNav(prevSlot,nextSlot){
+  const el=document.getElementById('search-results');
+  if(!el)return;
+  // Remove old handlers
+  if(el._swipeHandler){
+    el.removeEventListener('touchstart',el._swipeStart);
+    el.removeEventListener('touchend',el._swipeEnd);
+  }
+  let startX=0,startY=0,startT=0;
+  el._swipeStart=function(e){
+    if(!e.touches||!e.touches[0])return;
+    startX=e.touches[0].clientX;startY=e.touches[0].clientY;startT=Date.now();
+  };
+  el._swipeEnd=function(e){
+    if(!e.changedTouches||!e.changedTouches[0])return;
+    const dx=e.changedTouches[0].clientX-startX;
+    const dy=e.changedTouches[0].clientY-startY;
+    const dt=Date.now()-startT;
+    // Must be horizontal (|dx|>|dy|*2), >50px, <500ms
+    if(Math.abs(dx)<50||Math.abs(dx)<Math.abs(dy)*2||dt>500)return;
+    if(dx<0&&nextSlot){jumpToSlot(nextSlot)}    // swipe left → next
+    else if(dx>0&&prevSlot){jumpToSlot(prevSlot)} // swipe right → prev
+  };
+  el.addEventListener('touchstart',el._swipeStart,{passive:true});
+  el.addEventListener('touchend',el._swipeEnd,{passive:true});
+  el._swipeHandler=true;
 }
 function partRowHTML(item){
   const thumbSrc=item.thumbnailUrl||item.imageData||'';const fb=item.imageData||'';
