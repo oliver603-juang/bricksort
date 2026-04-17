@@ -318,6 +318,7 @@ tr:hover{background:var(--accent-bg)}
     </div>
     <div id="result-desc" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
     <div id="result-tags"></div>
+    <div id="result-series-char" style="margin-top:6px"></div>
     <div id="result-volume" style="margin-top:8px;font-size:12px;color:var(--muted);font-family:var(--mono)"></div>
   </div>
   <div id="match-banner" style="display:none;background:var(--green-bg);border:1px solid var(--green);border-radius:10px;padding:12px 14px;margin-bottom:12px"></div>
@@ -712,7 +713,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16r';
+const APP_VERSION = '2026.04.16t';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1239,9 +1240,15 @@ function getBagSuperGroup(bagSlot){
   }
   return null; // no super-group items in this bag
 }
-function findBagForOverflow(vol,catGroup,characterTag){
+function findBagForOverflow(vol,catGroup,characterTag,seriesTag){
   const cap=BAG_ML_DEFAULT;const lastBag=slotConfig.nextBagSlot||'B01';const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
-  // Phase 0: character-tag routing
+  // Phase 0a: seriesTag routing
+  if(seriesTag){
+    const existing=findSeriesBag(seriesTag,vol);
+    if(existing)return existing;
+    return allocateNewSeriesBag(seriesTag);
+  }
+  // Phase 0b: character-tag routing
   if(characterTag){
     const char=(slotConfig.characters||{})[characterTag];
     if(char&&char.enabled){
@@ -1260,11 +1267,15 @@ function findBagForOverflow(vol,catGroup,characterTag){
   const superGroup=catGroup?BAG_SUPER_GROUPS[catGroup]:null;
   // Phase 1: find bag with same super-group (for minifig parts)
   if(superGroup){
-    for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');if(getBagSuperGroup(label)===superGroup&&getBagVol(label)+vol<=cap)return label}
+    for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
+      if(isBagSeriesTagged(label))continue;
+      if(getBagSuperGroup(label)===superGroup&&getBagVol(label)+vol<=cap)return label;
+    }
   }
-  // Phase 2: find bag with same catGroup (skip character-tagged bags)
+  // Phase 2: find bag with same catGroup (skip reserved bags)
   if(catGroup){
     for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
+      if(isBagSeriesTagged(label))continue;
       const bagSG=getBagSuperGroup(label);
       if(bagSG)continue;
       if(isBagCharacterTagged(label))continue;
@@ -1273,8 +1284,9 @@ function findBagForOverflow(vol,catGroup,characterTag){
       if(hasSameCat&&getBagVol(label)+vol<=cap)return label;
     }
   }
-  // Phase 3: find any bag with space (skip super-group and character-tagged bags)
+  // Phase 3: find any bag with space (skip all reserved bags)
   for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
+    if(isBagSeriesTagged(label))continue;
     if(getBagSuperGroup(label))continue;
     if(isBagCharacterTagged(label))continue;
     if(getBagVol(label)+vol<=cap)return label;
@@ -1405,6 +1417,93 @@ function isMinifigure(item){
   return false;
 }
 function fitsSmallSlot(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0){const vol=item.estimateVolumeMl||0;return vol<=SLOT_ML}const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=SLOT_H&&d[1]<=SLOT_W}
+
+// ═══ SERIES TAG DETECTION ═══
+// Maps from Rebrickable minifig prefix → series name
+const SERIES_PREFIX_MAP={
+  njo:'Ninjago',ang:'Ninjago', // Ninjago variants
+  sw:'Star Wars',
+  sh:'Super Heroes',mar:'Super Heroes',
+  dc:'DC',
+  hp:'Harry Potter',lor:'Lord of the Rings',
+  jw:'Jurassic',dino:'Jurassic',
+  dreamzzz:'DreamZzz',dzz:'DreamZzz',
+  disney:'Disney',toy:'Toy Story',
+  cty:'City',frnd:'Friends',idea:'Ideas',
+  mk:'Monkie Kid',hs:'Hidden Side',tlm:'LEGO Movie',
+  fst:'Fusion',col:'Collectible',
+  hol:'Holiday',sp:'Space',cas:'Castle',pi:'Pirates'
+};
+// Keyword → series (for items without clear designId)
+const SERIES_KEYWORDS={
+  'Ninjago':['ninjago','忍者','幻影忍者','lloyd','kai','zane','cole','jay','nya','garmadon','arin','sora','spinjitzu','勞埃德','贊恩','冰忍','火忍','吳大師'],
+  'DreamZzz':['dreamzzz','dream zzz','mateo','zoey','cooper','logan','izzie','zian'],
+  'Jurassic':['jurassic','dinosaur','raptor','velociraptor','dilophosaurus','trex','brachio','恐龍','迅猛龍','雙冠龍'],
+  'Super Heroes':['spider-man','iron man','hulk','thor','captain america','rocket','star-lord','groot','marvel','avenger'],
+  'DC':['batman','superman','wonder woman','joker','harley','dc comics','robin'],
+  'Harry Potter':['harry potter','hermione','ron weasley','dumbledore','voldemort','hogwarts','哈利波特','妙麗'],
+  'Star Wars':['vader','luke skywalker','yoda','stormtrooper','jedi','sith','lightsaber','chewbacca','星戰','光劍'],
+  'Monkie Kid':['monkie kid','sun wukong','悟空小俠','monkey king'],
+  'Disney':['mickey','minnie','donald','disney']
+};
+function detectSeriesFromDesignId(did){
+  if(!did)return null;
+  const m=String(did).toLowerCase().match(/^([a-z]+)\d/);
+  if(!m)return null;
+  return SERIES_PREFIX_MAP[m[1]]||null;
+}
+function detectSeriesFromText(item){
+  const txt=((item.name||'')+' '+(item.nameCN||'')+' '+(item.description||'')).toLowerCase();
+  for(const series in SERIES_KEYWORDS){
+    for(const kw of SERIES_KEYWORDS[series]){
+      if(txt.includes(kw))return series;
+    }
+  }
+  return null;
+}
+function detectSeries(item){
+  // Explicit seriesTag wins
+  if(item.seriesTag)return item.seriesTag;
+  // Derive from characterTag (minifigNum)
+  if(item.characterTag){
+    const m=String(item.characterTag).toLowerCase().match(/^([a-z]+)-?\d/);
+    if(m&&SERIES_PREFIX_MAP[m[1]])return SERIES_PREFIX_MAP[m[1]];
+    // Also try: characterTag might be minifig entry with 'fig-' prefix → needs mapping
+  }
+  // Try designId prefix
+  const byDid=detectSeriesFromDesignId(item.designId);
+  if(byDid)return byDid;
+  // Keyword fallback
+  return detectSeriesFromText(item);
+}
+
+// Series bag management
+function findSeriesBag(seriesTag,vol){
+  const cap=BAG_ML_DEFAULT;
+  const bags=(slotConfig.seriesBags||{})[seriesTag]||[];
+  for(const slot of bags){if(getBagVol(slot)+vol<=cap)return slot}
+  return null;
+}
+function allocateNewSeriesBag(seriesTag){
+  const lastBag=slotConfig.nextBagSlot||'B01';
+  slotConfig.nextBagSlot=advanceBag(lastBag);
+  if(!slotConfig.seriesBags)slotConfig.seriesBags={};
+  if(!slotConfig.seriesBags[seriesTag])slotConfig.seriesBags[seriesTag]=[];
+  slotConfig.seriesBags[seriesTag].push(lastBag);
+  markDirty('__config__');
+  return lastBag;
+}
+function isBagSeriesTagged(bagSlot){
+  const sb=slotConfig.seriesBags||{};
+  for(const s in sb){if(sb[s].includes(bagSlot))return true}
+  return false;
+}
+function getBagSeriesTag(bagSlot){
+  const sb=slotConfig.seriesBags||{};
+  for(const s in sb){if(sb[s].includes(bagSlot))return s}
+  return null;
+}
+
 
 // ═══════════════════════════════════════════════════
 // SORT & FILTER & TABLE (from editor)
@@ -1637,9 +1736,15 @@ function allocateNewCharacterBag(charTag,isShared){
   return lastBag;
 }
 
-function assignToBag(vt,catGroup,characterTag){
+function assignToBag(vt,catGroup,characterTag,seriesTag){
   const cap=BAG_ML_DEFAULT;const lastBag=slotConfig.nextBagSlot||'B01';const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
-  // Phase 0: character-tag routing (takes precedence over all other phases)
+  // Phase 0a: seriesTag routing (highest priority - series bags hold everything from that series)
+  if(seriesTag){
+    const existing=findSeriesBag(seriesTag,vt);
+    if(existing)return{slot:existing,slotType:'bag'};
+    return{slot:allocateNewSeriesBag(seriesTag),slotType:'bag'};
+  }
+  // Phase 0b: character-tag routing (only if no series)
   if(characterTag){
     const char=(slotConfig.characters||{})[characterTag];
     if(char&&char.enabled){
@@ -1658,21 +1763,26 @@ function assignToBag(vt,catGroup,characterTag){
     }
   }
   const superGroup=catGroup?BAG_SUPER_GROUPS[catGroup]:null;
-  // Phase 1: find bag with same super-group
+  // Phase 1: find bag with same super-group (but skip series/character bags)
   if(superGroup){
-    for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');if(getBagSuperGroup(label)===superGroup&&getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'}}
+    for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
+      if(isBagSeriesTagged(label))continue;
+      if(getBagSuperGroup(label)===superGroup&&getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'};
+    }
   }
-  // Phase 2: find bag with same catGroup (skip character-tagged bags)
+  // Phase 2: find bag with same catGroup (skip series/character/super-group bags)
   if(catGroup){
     for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
+      if(isBagSeriesTagged(label))continue;
       const bagSG=getBagSuperGroup(label);if(bagSG)continue;
       if(isBagCharacterTagged(label))continue;
       const items=allItems.filter(i=>i.slot===label&&i.slotType==='bag');
       if(items.some(i=>getCatGroup(i.featureTags,i.bricklinkCategory)===catGroup)&&getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'};
     }
   }
-  // Phase 3: any bag with space (skip super-group dedicated + character-tagged)
+  // Phase 3: any bag with space (skip all reserved bags)
   for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
+    if(isBagSeriesTagged(label))continue;
     if(getBagSuperGroup(label))continue;
     if(isBagCharacterTagged(label))continue;
     if(getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'};
@@ -1714,19 +1824,25 @@ function gatewayAssign(item){
   const catGroup=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
   const vt=Math.round(vol*qty*10)/10;
   const charTag=item.characterTag||null;
+  const seriesTag=item.seriesTag||detectSeries(item);
 
-  // 0. 有角色標籤 → 強制進角色袋（無論體積/分類）
+  // 0. 有系列標籤 → 強制進系列袋
+  if(seriesTag){
+    return assignToBag(vt,catGroup,charTag,seriesTag);
+  }
+
+  // 0b. 有角色標籤但無系列 → 進角色袋
   if(charTag){
     const char=(slotConfig.characters||{})[charTag];
-    if(char&&char.enabled)return assignToBag(vt,catGroup,charTag);
+    if(char&&char.enabled)return assignToBag(vt,catGroup,charTag,null);
   }
 
   // 1. 人偶/超大/不合尺寸 → 收納袋
   if(isMinifigure(item)||!fitsSmallSlot(item)||vt>DRAWER_ML){
-    return assignToBag(vt,catGroup,charTag);
+    return assignToBag(vt,catGroup,charTag,seriesTag);
   }
   // 1b. 人偶身體部件 → 強制收納袋
-  if(BAG_SUPER_GROUPS[catGroup]&&vol>=MINIFIG_BAG_VOL1){return assignToBag(vt,catGroup,charTag)}
+  if(BAG_SUPER_GROUPS[catGroup]&&vol>=MINIFIG_BAG_VOL1){return assignToBag(vt,catGroup,charTag,seriesTag)}
 
   // 2. 單件體積 > 41ml 或 總體積 > MERGE_LIMIT → 不融合
   if(vt<=MERGE_LIMIT&&vol<=MERGE_VOL1_MAX){
@@ -1740,7 +1856,7 @@ function gatewayAssign(item){
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot+'a',slotType:'small'};
     // 小抽屜全滿 → 收納袋
-    return assignToBag(vt,catGroup,charTag);
+    return assignToBag(vt,catGroup,charTag,seriesTag);
   }
 
   // 3. 體積 MERGE_LIMIT~SLOT_ML → 獨佔半格(a/b)
@@ -1751,17 +1867,17 @@ function gatewayAssign(item){
     // 開新格子
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot+'a',slotType:'small'};
-    return assignToBag(vt,catGroup,charTag);
+    return assignToBag(vt,catGroup,charTag,seriesTag);
   }
 
   // 4. 體積 SLOT_ML~DRAWER_ML → 獨佔整抽屜
   if(vt<=DRAWER_ML){
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot,slotType:'small'};
-    return assignToBag(vt,catGroup,charTag);
+    return assignToBag(vt,catGroup,charTag,seriesTag);
   }
 
-  return assignToBag(vt,catGroup,charTag);
+  return assignToBag(vt,catGroup,charTag,seriesTag);
 }
 
 // 找有空間的融合格子
@@ -2108,7 +2224,7 @@ async function parseLensScreenshot(dataUrl){
     // Step 3: Classify — Gemini sees the clean thumbnail + Lens text + existing list
     setProcessingMsg('🤖 AI 分類中…');
     const existingList=await buildExistingList();
-    const classifyPrompt='分析這個零件圖片，結合 Google Lens 辨識結果進行分類。\n\n【Lens 辨識結果】\nDesign ID: '+lensId+'\n名稱: '+lensName+' ('+lensNameCN+')\n摘要: '+lensSummary+'\n\n【重要】design_id 和 name/name_cn 請直接使用上方 Lens 辨識結果，不要自己猜。你只需要判斷：bricklink_category、feature_tags、尺寸dim、is_oversize、is_complete_minifig、matched_existing_id。\n\n回應純JSON：{"design_id":"'+lensId+'","name":"'+(lensName||'').replace(/"/g,'\\"')+'","name_cn":"'+(lensNameCN||'').replace(/"/g,'\\"')+'","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"matched_existing_id":"同外型零件id或null。已有:'+existingList+'"}';
+    const classifyPrompt='分析這個零件圖片，結合 Google Lens 辨識結果進行分類。\n\n【Lens 辨識結果】\nDesign ID: '+lensId+'\n名稱: '+lensName+' ('+lensNameCN+')\n摘要: '+lensSummary+'\n\n【重要】design_id 和 name/name_cn 請直接使用上方 Lens 辨識結果，不要自己猜。你只需要判斷：bricklink_category、feature_tags、尺寸dim、is_oversize、is_complete_minifig、matched_existing_id、series_tag、character_tag。\n\n【series_tag 判斷規則】從印花、顏色、設計特徵判斷所屬系列，若非明顯系列則回 null。可選值: "Ninjago"|"DreamZzz"|"Jurassic"|"Super Heroes"|"DC"|"Harry Potter"|"Star Wars"|"Monkie Kid"|"Disney"|null\n\n【character_tag 判斷規則】若能明顯辨識出特定角色才回傳，否則 null。範例: "Lloyd"|"Kai"|"Zane"|"Jay"|"Cole"|"Nya"|"Wu"|"Arin"|"Sora"|"Mateo"|"Zoey"|null。通用零件(武士刀/弓箭/普通頭髮)永遠回 null。\n\n回應純JSON：{"design_id":"'+lensId+'","name":"'+(lensName||'').replace(/"/g,'\\"')+'","name_cn":"'+(lensNameCN||'').replace(/"/g,'\\"')+'","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"series_tag":"系列或null","character_tag":"角色或null","matched_existing_id":"同外型零件id或null。已有:'+existingList+'"}';
     const classifyResp=await callGeminiAPI(classifyPrompt,thumbBase64,0,GEMINI_LEGO_SYSTEM);
     const item=safeParseJSON(classifyResp);
 
@@ -2223,7 +2339,7 @@ async function cameraRecognize(base64,imgSrc){
       const thumbnailUrl=bkResult.imgUrl||('https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseForThumb+'.png');
       window._pendingRbImgUrl=thumbnailUrl;
       // Text-only Gemini call (no photo = fast ~2s)
-      const regPrompt='你是LEGO零件專家。Brickognize辨識為「'+bkResult.name+'」('+bkId+'，信心'+bkResult.score+'%)。回應純JSON：{"design_id":"'+rbDid+'","name":"英文名","name_cn":"繁體中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool}';
+      const regPrompt='你是LEGO零件專家。Brickognize辨識為「'+bkResult.name+'」('+bkId+'，信心'+bkResult.score+'%)。回應純JSON：{"design_id":"'+rbDid+'","name":"英文名","name_cn":"繁體中文名","bricklink_category":"BrickLink分類","description":"30字描述","feature_tags":["1~3個,限選:'+LEGO_TAGS+'"],"dim_mm_w":寬mm數,"dim_mm_l":長mm數,"dim_mm_h":高mm數,"is_oversize":bool,"is_complete_minifig":bool,"series_tag":"若為Ninjago/DreamZzz/Jurassic/SuperHeroes/DC/HarryPotter/StarWars系列回系列名,否則null","character_tag":"若能明確辨識為Lloyd/Kai/Zane/Jay/Cole/Nya/Wu/Arin/Sora/Mateo/Zoey等具體角色回名字,通用零件回null"}';
       const regResp=await callGeminiAPI(regPrompt,null,0,GEMINI_LEGO_SYSTEM);
       const regItem=safeParseJSON(regResp);
       regItem.design_id=regItem.design_id||rbDid;
@@ -2785,8 +2901,10 @@ async function processResult(item){
   // Thumbnail priority: Rebrickable API → matched item's existing thumbnail → Lens crop → empty
   const thumbnailUrl=window._pendingRbImgUrl||(match?match.thumbnailUrl:'')||'';window._pendingRbImgUrl='';
   const vol=calcVolFromAI(item.name||item.name_cn||'',item);
-  let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...item,estimateVolumeMl:vol,quantity:1,featureTags:item.feature_tags||[],dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0});
-  pendingPart={...item,...slotInfo,designId,thumbnailUrl,dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0,featureTags:item.feature_tags||[],bricklinkCategory:item.bricklink_category||'',estimateVolumeMl:vol,imageData:currentImageData||'',nameCN:item.name_cn||'',isUpdate:!!match,matchedId:match?match.id:null};
+  const seriesTag=item.series_tag||detectSeriesFromDesignId(item.design_id||'')||detectSeriesFromText({name:item.name,nameCN:item.name_cn,description:item.description})||'';
+  const characterTag=item.character_tag||'';
+  let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...item,estimateVolumeMl:vol,quantity:1,featureTags:item.feature_tags||[],dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0,seriesTag,characterTag});
+  pendingPart={...item,...slotInfo,designId,thumbnailUrl,dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0,featureTags:item.feature_tags||[],bricklinkCategory:item.bricklink_category||'',estimateVolumeMl:vol,imageData:currentImageData||'',nameCN:item.name_cn||'',seriesTag,characterTag,isUpdate:!!match,matchedId:match?match.id:null};
   // Render — use Lens crop as visual fallback if no thumbnail URL
   const resultImg=document.getElementById('result-img');
   resultImg.dataset.fb=currentImageData||'';
@@ -2795,6 +2913,11 @@ async function processResult(item){
   document.getElementById('result-designid').textContent=designId?'Design ID: '+designId:'';
   document.getElementById('result-desc').textContent=item.description||'';
   document.getElementById('result-tags').innerHTML=(item.feature_tags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
+  // Series + character badges
+  const badgeHtml=[];
+  if(seriesTag)badgeHtml.push('<span style="display:inline-block;background:var(--accent);color:#111;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;margin-right:4px">🎬 '+seriesTag+'</span>');
+  if(characterTag)badgeHtml.push('<span style="display:inline-block;background:var(--green);color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">🎭 '+characterTag+'</span>');
+  document.getElementById('result-series-char').innerHTML=badgeHtml.join('');
   document.getElementById('result-volume').textContent='佔位體積 ≈ '+vol+'ml';
   document.getElementById('result-slot').textContent=slotInfo.slot;
   const isCompleteMF=item.is_complete_minifig;
@@ -2924,7 +3047,7 @@ function applySlotOverrideManual(){
 async function confirmPart(){
   if(!pendingPart)return;
   const now=Date.now();
-  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],quantity:1,updatedAt:now};
+  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,seriesTag:pendingPart.seriesTag||'',characterTag:pendingPart.characterTag||'',brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],quantity:1,updatedAt:now};
   if(pendingPart.isUpdate&&pendingPart.matchedId){
     item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);
     item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;
@@ -3303,6 +3426,7 @@ function autoOverflowCheck(item){
   const ovVol=vol1*overQty;
   const itemCg2=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
   const itemTag=item.characterTag||null;
+  const itemSeries=item.seriesTag||detectSeries(item)||null;
   const bagCap=BAG_ML_DEFAULT;
   const piecesPerBag=vol1>0?Math.max(1,Math.floor(bagCap/vol1)):overQty;
   const ovBagsNeeded=Math.ceil(overQty/piecesPerBag);
@@ -3310,7 +3434,7 @@ function autoOverflowCheck(item){
 
   if(ovBagsNeeded===1&&existingOvBags.length===0){
     // Single bag: find existing bag with capacity, or allocate new
-    const bagSlot=findBagForOverflow(ovVol,itemCg2,itemTag);
+    const bagSlot=findBagForOverflow(ovVol,itemCg2,itemTag,itemSeries);
     item.overflowSlot=bagSlot;
     item.overflowQty=Math.max(overQty,item.overflowQty||0);
     return{bagSlot,overQty,fitsQty};
@@ -3326,7 +3450,7 @@ function autoOverflowCheck(item){
       return{bagSlot:existingOvBags.join(','),overQty,fitsQty};
     }
     // Existing bag full → allocate new
-    const newBag=findBagForOverflow(ovVol,itemCg2,itemTag);
+    const newBag=findBagForOverflow(ovVol,itemCg2,itemTag,itemSeries);
     existingOvBags.push(newBag);
     item.overflowSlot=existingOvBags.join(',');
     item.overflowQty=Math.max(overQty,item.overflowQty||0);
@@ -4090,6 +4214,15 @@ function renderCharactersPage(){
   const sharedCount=enabledChars.filter(c=>c.bagType==='shared').length;
   const scannedCount=Object.keys(window._scannedMinifigs).length;
   const taggedCount=allItems.filter(i=>i.characterTag).length;
+  const seriesTaggedCount=allItems.filter(i=>i.seriesTag).length;
+  // Count by series
+  const seriesBreakdown={};
+  allItems.forEach(i=>{if(i.seriesTag){seriesBreakdown[i.seriesTag]=(seriesBreakdown[i.seriesTag]||0)+1}});
+  const seriesBags=slotConfig.seriesBags||{};
+  const seriesRows=Object.entries(seriesBreakdown).sort((a,b)=>b[1]-a[1]).map(([s,n])=>{
+    const bags=(seriesBags[s]||[]).join(', ')||'(未分配)';
+    return `<div style="font-size:12px;color:var(--muted);padding:2px 0">🎬 ${s}: <b style="color:var(--text)">${n}</b> 件 → ${bags}</div>`;
+  }).join('');
   el.innerHTML=`
     <div class="card">
       <div class="card-title">狀態</div>
@@ -4097,23 +4230,44 @@ function renderCharactersPage(){
         ▸ 已啟用角色：<b style="color:var(--accent)">${savedCount}</b> 個 (🌟獨佔 ${dedicatedCount} · 👥共用 ${sharedCount})<br>
         ▸ 已掃描人偶：<b style="color:var(--accent)">${scannedCount}</b> 個<br>
         ▸ DB 套件數：<b style="color:var(--accent)">${getUniqueSets().length}</b> 個<br>
-        ▸ 已貼標籤零件：<b style="color:${taggedCount>0?'var(--green)':'var(--muted)'}">${taggedCount}</b> 個
+        ▸ 已貼角色標籤：<b style="color:${taggedCount>0?'var(--green)':'var(--muted)'}">${taggedCount}</b> 件<br>
+        ▸ 已貼系列標籤：<b style="color:${seriesTaggedCount>0?'var(--green)':'var(--muted)'}">${seriesTaggedCount}</b> 件
       </div>
+      ${seriesRows?'<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">'+seriesRows+'</div>':''}
     </div>
     <div class="card">
-      <div class="card-title">🔍 掃描套件</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">從 Rebrickable 拉取你擁有套件的所有人偶，並統計每個人偶在你 DB 中的配件數。第一次掃描需約 2 分鐘。</div>
+      <div class="card-title">🔍 掃描套件（人偶/角色）</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">從 Rebrickable 拉取你擁有套件的所有人偶。第一次掃描需約 2 分鐘。掃描完成後可勾選角色並套用。</div>
       <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="scanCharactersFromSets()">🔍 開始掃描</button>
       <div id="char-scan-progress" style="font-size:12px;color:var(--muted);margin-top:6px"></div>
     </div>
     <div class="card">
       <div class="card-title">🏷 套用標籤</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">勾選角色並儲存後，點下方按鈕將角色標籤套用到 DB 中對應零件。<br>通用零件（出現在 ≥4 個啟用角色）不貼標籤。</div>
-      <button class="btn btn-green" style="width:100%;margin-bottom:6px" onclick="applyCharacterTagsToItems()">🏷 套用標籤到現有零件</button>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+        ▸ <b>系列標籤</b>：自動偵測 designId 前綴和名稱關鍵字（如 njo→Ninjago），不需掃描<br>
+        ▸ <b>角色標籤</b>：需先掃描套件並勾選角色（通用件出現在 ≥4 個角色則不貼）
+      </div>
+      <button class="btn btn-green" style="width:100%;margin-bottom:6px" onclick="applySeriesOnlyTags()">🎬 只套用系列標籤</button>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:6px" onclick="applyCharacterTagsToItems()">🎭 套用角色+系列標籤</button>
       <button class="btn" style="width:100%;font-size:12px" onclick="clearAllCharacterTags()">🗑 清除所有標籤</button>
     </div>
     <div id="char-list-container"></div>`;
   if(scannedCount>0) renderCharactersList();
+}
+
+function applySeriesOnlyTags(){
+  let tagged=0,skipped=0;
+  allItems.forEach(item=>{
+    const s=detectSeries(item);
+    if(!s){skipped++;return}
+    if(item.seriesTag===s)return;
+    item.seriesTag=s;
+    item.updatedAt=Date.now();
+    markDirty(item.id);
+    tagged++;
+  });
+  showToast(`✅ 已套用系列標籤 ${tagged} 件 | 跳過 ${skipped}`);
+  renderCharactersPage();
 }
 
 function getUniqueSets(){
@@ -4173,7 +4327,23 @@ async function scanCharactersFromSets(){
   }
   // Cache to localStorage to avoid re-scanning
   try{localStorage.setItem('bricksort_scanned_minifigs',JSON.stringify(window._scannedMinifigs))}catch(e){}
-  progressEl.innerHTML=`✅ 掃描完成！共 ${minifigs.length} 個人偶`;
+  // Auto-enable all scanned characters (user can untick unwanted ones)
+  if(!slotConfig.characters)slotConfig.characters={};
+  let autoEnabled=0;
+  minifigs.forEach(mf=>{
+    // Skip if already configured (respect user's previous choice)
+    if(slotConfig.characters[mf.minifigNum])return;
+    slotConfig.characters[mf.minifigNum]={
+      enabled:true,
+      name:mf.name,
+      minifigNum:mf.minifigNum,
+      imgUrl:mf.imgUrl,
+      partNums:mf.partNums,
+      bagType:mf.dbPartCount>=5?'dedicated':'shared'
+    };
+    autoEnabled++;
+  });
+  progressEl.innerHTML=`✅ 掃描完成！共 ${minifigs.length} 個人偶，自動啟用 ${autoEnabled} 個`;
   renderCharactersPage();
 }
 
@@ -4211,6 +4381,8 @@ function renderCharactersList(){
         ▸ 未勾選的角色配件會走一般分類流程
       </div>
       <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="selectAllCharacters(true)" style="font-size:11px">☑ 全選</button>
+        <button class="btn btn-sm" onclick="selectAllCharacters(false)" style="font-size:11px">☐ 全不選</button>
         <button class="btn btn-sm" onclick="autoSelectByPartCount(5)" style="font-size:11px">✨ ≥5件自動獨佔</button>
         <button class="btn btn-sm" onclick="clearAllCharacters()" style="font-size:11px">🗑 清除所有</button>
       </div>
@@ -4272,6 +4444,28 @@ function setCharacterBagType(mfNum,type){
   renderCharactersList();
 }
 
+function selectAllCharacters(enabled){
+  if(!slotConfig.characters)slotConfig.characters={};
+  let changed=0;
+  Object.values(window._scannedMinifigs).forEach(mf=>{
+    if(!slotConfig.characters[mf.minifigNum]){
+      slotConfig.characters[mf.minifigNum]={
+        enabled:enabled,
+        name:mf.name,
+        minifigNum:mf.minifigNum,
+        imgUrl:mf.imgUrl,
+        partNums:mf.partNums,
+        bagType:mf.dbPartCount>=5?'dedicated':'shared'
+      };
+    }else{
+      slotConfig.characters[mf.minifigNum].enabled=enabled;
+    }
+    changed++;
+  });
+  showToast(enabled?`已全選 ${changed} 個角色`:`已取消全選 ${changed} 個角色`);
+  renderCharactersList();
+}
+
 function autoSelectByPartCount(minCount){
   if(!slotConfig.characters)slotConfig.characters={};
   let enabled=0;
@@ -4317,7 +4511,7 @@ function applyCharacterTagsToItems(){
     });
   });
   // Apply tags: a part belongs to a character if exclusive OR if it appears in only this character's list
-  let tagged=0, skippedGeneric=0, alreadyTagged=0;
+  let tagged=0, skippedGeneric=0, alreadyTagged=0, seriesOnly=0;
   const EXCLUSIVITY_THRESHOLD=4; // Appears in ≥4 characters → generic
   allItems.forEach(item=>{
     const didLC=(item.designId||'').toLowerCase();
@@ -4326,32 +4520,57 @@ function applyCharacterTagsToItems(){
     // Find which characters this item matches
     const matchedChars=new Set();
     allLC.forEach(lc=>{(partToChars[lc]||[]).forEach(ch=>matchedChars.add(ch))});
-    if(matchedChars.size===0)return;
-    if(matchedChars.size>=EXCLUSIVITY_THRESHOLD){skippedGeneric++;return}
+    // Also detect series independently (keyword/prefix)
+    const derivedSeries=detectSeries(item);
+    if(matchedChars.size===0){
+      // No character match - try series only
+      if(derivedSeries&&item.seriesTag!==derivedSeries){
+        item.seriesTag=derivedSeries;
+        item.updatedAt=Date.now();
+        markDirty(item.id);
+        seriesOnly++;
+      }
+      return;
+    }
+    if(matchedChars.size>=EXCLUSIVITY_THRESHOLD){
+      // Generic - skip characterTag but still set seriesTag
+      if(derivedSeries&&item.seriesTag!==derivedSeries){
+        item.seriesTag=derivedSeries;
+        item.updatedAt=Date.now();
+        markDirty(item.id);
+        seriesOnly++;
+      }
+      skippedGeneric++;
+      return;
+    }
     // Assign to first matched character (by user's enable order)
     const firstMatch=Array.from(matchedChars)[0];
-    if(item.characterTag===firstMatch){alreadyTagged++;return}
+    // Derive series from the matched character's minifig prefix
+    const charSeries=derivedSeries||detectSeriesFromDesignId(firstMatch);
+    if(item.characterTag===firstMatch&&item.seriesTag===charSeries){alreadyTagged++;return}
     item.characterTag=firstMatch;
+    if(charSeries)item.seriesTag=charSeries;
     item.updatedAt=Date.now();
     markDirty(item.id);
     tagged++;
   });
-  showToast(`✅ 已標記 ${tagged} 個零件 | 跳過 ${skippedGeneric} 通用 | 已存在 ${alreadyTagged}`);
+  showToast(`✅ 貼角色 ${tagged} 件 | 通用 ${skippedGeneric} | 僅系列 ${seriesOnly} | 已存在 ${alreadyTagged}`);
   renderCharactersPage();
 }
 
 function clearAllCharacterTags(){
-  if(!confirm('清除所有零件的角色標籤？（不會刪除角色設定）'))return;
+  if(!confirm('清除所有零件的角色和系列標籤？（不會刪除角色設定）'))return;
   let cleared=0;
   allItems.forEach(item=>{
-    if(item.characterTag){
+    if(item.characterTag||item.seriesTag){
       delete item.characterTag;
+      delete item.seriesTag;
       item.updatedAt=Date.now();
       markDirty(item.id);
       cleared++;
     }
   });
-  showToast(`已清除 ${cleared} 個零件的角色標籤`);
+  showToast(`已清除 ${cleared} 個零件的標籤`);
 }
 
 // Load cached scan on page init
