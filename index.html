@@ -338,20 +338,20 @@ tr:hover{background:var(--accent-bg)}
   </div>
   <div id="result-dims-required" style="display:none;margin-bottom:12px">
     <div style="background:var(--orange-bg);border:1px solid var(--orange);border-radius:10px;padding:12px;margin-bottom:8px">
-      <div style="font-size:13px;font-weight:700;color:var(--orange);margin-bottom:6px">📐 確認零件尺寸 (cm)</div>
-      <div id="rdim-hint" style="font-size:12px;color:var(--muted)">AI 未提供尺寸，請輸入（單位：公分）</div>
+      <div style="font-size:13px;font-weight:700;color:var(--orange);margin-bottom:6px">📐 確認零件尺寸 (mm)</div>
+      <div id="rdim-hint" style="font-size:12px;color:var(--muted)">AI 未提供尺寸，請輸入（單位：公釐）</div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px">
       <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-bottom:10px">
         <span style="font-size:12px;color:var(--muted);text-align:right">寬 W</span>
-        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-w" placeholder="0.0" inputmode="decimal" step="0.1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">cm</span></div>
+        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-w" placeholder="0" inputmode="numeric" pattern="[0-9]*" step="1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">mm</span></div>
         <span style="font-size:12px;color:var(--muted);text-align:right">長 L</span>
-        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-l" placeholder="0.0" inputmode="decimal" step="0.1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">cm</span></div>
+        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-l" placeholder="0" inputmode="numeric" pattern="[0-9]*" step="1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">mm</span></div>
         <span style="font-size:12px;color:var(--muted);text-align:right">高 H</span>
-        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-h" placeholder="0.0" inputmode="decimal" step="0.1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">cm</span></div>
+        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-h" placeholder="0" inputmode="numeric" pattern="[0-9]*" step="1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">mm</span></div>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:8px">
-        <button class="btn btn-sm" onclick="pasteResultDims()" style="flex:1;font-size:11px">📋 貼上尺寸（BrickLink W×L×H cm）</button>
+        <button class="btn btn-sm" onclick="pasteResultDims()" style="flex:1;font-size:11px">📋 貼上尺寸（BrickLink W×L×H cm 自動轉mm）</button>
         <button class="btn btn-sm" onclick="openExternalLink('https://www.bricklink.com/catalogList.asp?q='+encodeURIComponent(pendingPart?.designId||''))" style="font-size:11px">🔍 查 BL</button>
       </div>
       <button class="btn btn-green" style="width:100%;padding:10px;font-size:14px" onclick="applyResultDims()">✓ 確認尺寸並分派位置</button>
@@ -713,7 +713,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17c';
+const APP_VERSION = '2026.04.17e';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -3169,13 +3169,13 @@ async function processResult(item){
   document.getElementById('result-confirm-btn').onclick=()=>confirmPart();
   document.getElementById('result-cancel-btn').style.display='';
   document.getElementById('result-qty-row').style.display='none';
-  // New item → always require dims confirmation (pre-fill with AI values if any)
+  // New item → always require dims confirmation (pre-fill with AI values if any, display in mm)
   if(!match){
-    document.getElementById('rdim-w').value=pendingPart.dimW>0?pendingPart.dimW:'';
-    document.getElementById('rdim-l').value=pendingPart.dimL>0?pendingPart.dimL:'';
-    document.getElementById('rdim-h').value=pendingPart.dimH>0?pendingPart.dimH:'';
+    document.getElementById('rdim-w').value=pendingPart.dimW>0?Math.round(pendingPart.dimW*10):'';
+    document.getElementById('rdim-l').value=pendingPart.dimL>0?Math.round(pendingPart.dimL*10):'';
+    document.getElementById('rdim-h').value=pendingPart.dimH>0?Math.round(pendingPart.dimH*10):'';
     const hasAI=(pendingPart.dimW||0)>0&&(pendingPart.dimL||0)>0&&(pendingPart.dimH||0)>0;
-    document.getElementById('rdim-hint').textContent=hasAI?'AI 估算：請確認或修正尺寸（cm）':'AI 未提供尺寸，請輸入（單位：公分）';
+    document.getElementById('rdim-hint').textContent=hasAI?'AI 估算：請確認或修正尺寸（mm）':'AI 未提供尺寸，請輸入（單位：公釐）';
     document.getElementById('result-dims-required').style.display='';
     document.getElementById('result-confirm-btn').style.display='none';
     document.getElementById('result-slot-override').style.display='none';
@@ -3302,25 +3302,26 @@ function pasteResultDims(){
   pasteFromClipboard(function(text){
     const m=text.match(/([\d.]+)\s*[x×X]\s*([\d.]+)\s*[x×X]\s*([\d.]+)/);
     if(!m){showToast('格式錯誤，需要 W x L x H','error');return}
-    // Auto-detect: if any value >= 10, assume it was mm — convert to cm
+    // Auto-detect: if any value < 10, assume it was cm — convert to mm
     let w=parseFloat(m[1]),l=parseFloat(m[2]),h=parseFloat(m[3]);
-    if(w>=10||l>=10||h>=10){w/=10;l/=10;h/=10}  // mm → cm
-    document.getElementById('rdim-w').value=Math.round(w*10)/10;
-    document.getElementById('rdim-l').value=Math.round(l*10)/10;
-    document.getElementById('rdim-h').value=Math.round(h*10)/10;
-    showToast('已貼上尺寸 '+(Math.round(w*10)/10)+'×'+(Math.round(l*10)/10)+'×'+(Math.round(h*10)/10)+' cm');
+    if(w<10&&l<10&&h<10){w*=10;l*=10;h*=10}  // cm → mm
+    document.getElementById('rdim-w').value=Math.round(w);
+    document.getElementById('rdim-l').value=Math.round(l);
+    document.getElementById('rdim-h').value=Math.round(h);
+    showToast('已貼上尺寸 '+Math.round(w)+'×'+Math.round(l)+'×'+Math.round(h)+' mm');
   });
 }
 function applyResultDims(){
   if(!pendingPart)return;
-  // Inputs are in cm (BrickLink standard), internal storage is cm
+  // Inputs are in mm (consistent with editor modal), internal storage is cm
   const w=parseFloat(document.getElementById('rdim-w').value)||0;
   const l=parseFloat(document.getElementById('rdim-l').value)||0;
   const h=parseFloat(document.getElementById('rdim-h').value)||0;
-  if(w<=0||l<=0||h<=0){showToast('請輸入完整尺寸（寬×長×高 cm）','error');return}
-  pendingPart.dimW=w;pendingPart.dimL=l;pendingPart.dimH=h;
-  // Volume: w*l*h cm³ = ml (directly, no /1000 because units are cm)
-  pendingPart.estimateVolumeMl=Math.round(w*l*h*10)/10;
+  if(w<=0||l<=0||h<=0){showToast('請輸入完整尺寸（寬×長×高 mm）','error');return}
+  // Store as cm (divide by 10)
+  pendingPart.dimW=w/10;pendingPart.dimL=l/10;pendingPart.dimH=h/10;
+  // Volume: w*l*h mm³ / 1000 = ml
+  pendingPart.estimateVolumeMl=Math.round(w*l*h/1000*10)/10;
   // Re-assign slot with correct dims
   const slotInfo=gatewayAssign(pendingPart);
   pendingPart.slot=slotInfo.slot;pendingPart.slotType=slotInfo.slotType;
