@@ -325,6 +325,7 @@ tr:hover{background:var(--accent-bg)}
     <div style="font-size:12px;color:var(--accent);font-family:var(--mono);margin-bottom:10px">收納位置 <span style="font-size:10px;color:var(--dim)">（點擊查看格子內容）</span></div>
     <div id="result-slot" class="slot-main"></div>
     <div id="result-slot-type" class="slot-type"></div>
+    <div id="result-slot-override" style="margin-top:8px"><button class="btn btn-sm" onclick="event.stopPropagation();showSlotOverride()" style="font-size:11px;padding:4px 10px">✏️ 變更收納位置</button></div>
   </div>
   <div id="result-minimap" style="margin-bottom:12px"></div>
   <div id="result-qty-row" style="display:none;margin-bottom:12px;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
@@ -676,7 +677,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16l';
+const APP_VERSION = '2026.04.16n';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1350,7 +1351,7 @@ function isMinifigure(item){
   if(/^[a-z]{2,4}\d{3,5}$/i.test(did)) return true;
   return false;
 }
-function fitsSmallSlot(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0)return true;const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=SLOT_H&&d[1]<=SLOT_W}
+function fitsSmallSlot(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0){const vol=item.estimateVolumeMl||0;return vol<=SLOT_ML}const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=SLOT_H&&d[1]<=SLOT_W}
 
 // ═══════════════════════════════════════════════════
 // SORT & FILTER & TABLE (from editor)
@@ -2086,6 +2087,7 @@ async function cameraRecognize(base64,imgSrc){
       document.getElementById('result-confirm-btn').textContent='← 返回';
       document.getElementById('result-confirm-btn').onclick=()=>goBack();
       document.getElementById('result-cancel-btn').style.display='none';
+      document.getElementById('result-slot-override').style.display='none';
       document.getElementById('result-qty-row').style.display='flex';
       document.getElementById('result-qty').value='1';
       document.getElementById('result-qty-save').textContent='✓ 追加';
@@ -2148,6 +2150,7 @@ async function cameraRecognize(base64,imgSrc){
     document.getElementById('result-confirm-btn').textContent='← 返回';
     document.getElementById('result-confirm-btn').onclick=()=>goBack();
     document.getElementById('result-cancel-btn').style.display='none';
+    document.getElementById('result-slot-override').style.display='none';
     document.getElementById('result-qty-row').style.display='flex';
     document.getElementById('result-qty').value='1';
     document.getElementById('result-qty-save').textContent='✓ 追加';
@@ -2682,9 +2685,71 @@ async function processResult(item){
   // Reset buttons to default (catalog mode)
   document.getElementById('result-confirm-btn').textContent='✓ 確認儲存';
   document.getElementById('result-confirm-btn').onclick=()=>confirmPart();
+  document.getElementById('result-slot-override').style.display='';cancelSlotOverride();
   document.getElementById('result-cancel-btn').style.display='';
   document.getElementById('result-qty-row').style.display='none';
   showScreen('s-result');
+}
+
+function showSlotOverride(){
+  if(!pendingPart)return;
+  const current=pendingPart.slot||'?';
+  const curType=pendingPart.slotType||'small';
+  const el=document.getElementById('result-slot-override');
+  el.innerHTML=`
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:8px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">變更收納位置（目前：${current}）</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="applySlotOverride('bag')" style="font-size:12px">📦 收納袋</button>
+        <button class="btn btn-sm" onclick="applySlotOverride('small')" style="font-size:12px">🗄 小抽屜</button>
+        <button class="btn btn-sm" onclick="applySlotOverride('large')" style="font-size:12px">📦 大抽屜</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input type="text" id="slot-override-input" placeholder="手動輸入（如 B01、420a、L05）" value="" style="flex:1;background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:13px;font-family:var(--mono)">
+        <button class="btn btn-green btn-sm" onclick="applySlotOverrideManual()" style="font-size:12px;padding:8px 12px">✓</button>
+      </div>
+      <button class="btn btn-sm" onclick="cancelSlotOverride()" style="margin-top:6px;font-size:11px;width:100%">取消</button>
+    </div>`;
+}
+function cancelSlotOverride(){
+  document.getElementById('result-slot-override').innerHTML='<button class="btn btn-sm" onclick="event.stopPropagation();showSlotOverride()" style="font-size:11px;padding:4px 10px">✏️ 變更收納位置</button>';
+}
+function applySlotOverride(type){
+  if(!pendingPart)return;
+  const cg=getCatGroup(pendingPart.featureTags||[],normalizeCategory(pendingPart.bricklinkCategory||''));
+  const vol=(pendingPart.estimateVolumeMl||2)*(pendingPart.quantity||1);
+  let slot,slotType;
+  if(type==='bag'){
+    const r=assignToBag(vol,cg);slot=r.slot;slotType='bag';
+  }else if(type==='large'){
+    // Find first available large drawer
+    const usedL=new Set(allItems.filter(i=>i.slotType==='large').map(i=>i.slot));
+    for(let n=1;n<=LARGE_COUNT;n++){const l='L'+String(n).padStart(2,'0');if(!usedL.has(l)){slot=l;break}}
+    if(!slot){showToast('大抽屜已滿，改分配到收納袋','warn');const r=assignToBag(vol,cg);slot=r.slot;slotType='bag'}
+    else slotType='large';
+  }else{
+    const r=gatewayAssign(pendingPart);slot=r.slot;slotType=r.slotType;
+  }
+  pendingPart.slot=slot;pendingPart.slotType=slotType;
+  document.getElementById('result-slot').textContent=slot;
+  document.getElementById('result-slot-type').textContent=slotType==='large'?'大抽屜':slotType==='bag'?'收納袋':'小抽屜分格';
+  cancelSlotOverride();
+  renderMiniMap(slot,slotType);
+}
+function applySlotOverrideManual(){
+  if(!pendingPart)return;
+  const val=(document.getElementById('slot-override-input').value||'').trim();
+  if(!val){showToast('請輸入收納位置','error');return}
+  let slotType='small';
+  if(/^B\d+$/i.test(val))slotType='bag';
+  else if(/^L\d+$/i.test(val))slotType='large';
+  else if(/^\d+[ab]?$/.test(val))slotType='small';
+  else{showToast('格式錯誤（例：B01、420a、L05）','error');return}
+  pendingPart.slot=val;pendingPart.slotType=slotType;
+  document.getElementById('result-slot').textContent=val;
+  document.getElementById('result-slot-type').textContent=slotType==='large'?'大抽屜':slotType==='bag'?'收納袋':'小抽屜分格';
+  cancelSlotOverride();
+  renderMiniMap(val,slotType);
 }
 
 async function confirmPart(){
