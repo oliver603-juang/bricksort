@@ -713,7 +713,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16z';
+const APP_VERSION = '2026.04.17a';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1745,6 +1745,20 @@ function editorSaveItem(){
     const oldOverflow=i.overflowSlot||'';
     const newSlot=document.getElementById('m-slot').value.trim();
     const newSlotType=document.getElementById('m-slotType').value;
+    // Bounds check for manual slot edits
+    if(newSlotType==='small'){
+      const m=newSlot.match(/^0*(\d+)[ab]?$/);
+      if(!m){showToast('小抽屜格式錯誤（例 420a）','error');return}
+      const n=parseInt(m[1]);
+      if(n<1||n>450){showToast('小抽屜編號超出範圍 (1-450)，超過請改用收納袋','error');return}
+    }else if(newSlotType==='large'){
+      const m=newSlot.match(/^L(\d+)$/i);
+      if(!m){showToast('大抽屜格式錯誤（例 L05）','error');return}
+      const n=parseInt(m[1]);
+      if(n<1||n>27){showToast('大抽屜編號超出範圍 (L01-L27)','error');return}
+    }else if(newSlotType==='bag'){
+      if(!/^B\d+$/i.test(newSlot)){showToast('收納袋格式錯誤（例 B01）','error');return}
+    }
     // If user manually changed slot → move ALL to new slot, clear overflow
     if(newSlot!==oldSlot||newSlotType!==i.slotType){
       i.slot=newSlot;i.slotType=newSlotType;
@@ -1895,8 +1909,16 @@ function applyEditorManual(){
   if(!val){showToast('請輸入位置','error');return}
   let slotType='small';
   if(/^B\d+$/i.test(val))slotType='bag';
-  else if(/^L\d+$/i.test(val))slotType='large';
-  else if(/^\d+[ab]?$/.test(val))slotType='small';
+  else if(/^L\d+$/i.test(val)){
+    slotType='large';
+    const n=parseInt(val.replace(/[^\d]/g,''));
+    if(n<1||n>27){showToast('大抽屜編號超出範圍 (L01-L27)','error');return}
+  }
+  else if(/^\d+[ab]?$/.test(val)){
+    slotType='small';
+    const n=parseInt(val.replace(/[a-z]/g,''));
+    if(n<1||n>450){showToast('小抽屜編號超出範圍 (1-450)，超過請改用收納袋','error');return}
+  }
   else{showToast('格式錯誤（例：B01、420a、L05）','error');return}
   applyEditorMove(val,slotType);
 }
@@ -3336,8 +3358,16 @@ function applySlotOverrideManual(){
   if(!val){showToast('請輸入收納位置','error');return}
   let slotType='small';
   if(/^B\d+$/i.test(val))slotType='bag';
-  else if(/^L\d+$/i.test(val))slotType='large';
-  else if(/^\d+[ab]?$/.test(val))slotType='small';
+  else if(/^L\d+$/i.test(val)){
+    slotType='large';
+    const n=parseInt(val.replace(/[^\d]/g,''));
+    if(n<1||n>27){showToast('大抽屜編號超出範圍 (L01-L27)','error');return}
+  }
+  else if(/^\d+[ab]?$/.test(val)){
+    slotType='small';
+    const n=parseInt(val.replace(/[a-z]/g,''));
+    if(n<1||n>450){showToast('小抽屜編號超出範圍 (1-450)，超過請改用收納袋','error');return}
+  }
   else{showToast('格式錯誤（例：B01、420a、L05）','error');return}
   pendingPart.slot=val;pendingPart.slotType=slotType;
   // Manual override = move ALL to new slot, clear overflow
@@ -4949,6 +4979,34 @@ function importFullData(event){
       // Helper: extract timestamp from id, fallback to now
       const nowTs=Date.now();
       const idTs=(id)=>{const m=(id||'').match(/^lego_(\d+)/);return m?parseInt(m[1]):nowTs};
+      // Sanitize: reject out-of-range slots (but DON'T move to avoid reshuffling physical drawers)
+      let outOfRange=0;
+      items.forEach(item=>{
+        const s=item.slot||'';
+        if(item.slotType==='small'||/^\d+[ab]?$/.test(s)){
+          const m=s.match(/^0*(\d+)[ab]?$/);
+          if(m){
+            const n=parseInt(m[1]);
+            if(n>450||n<1){
+              // Skip: don't import this slot assignment, warn
+              outOfRange++;
+              // Preserve item but mark for manual review (move to placeholder bag)
+              item._slotOutOfRange=true;
+              item.slot='B01';  // temporary - user must manually reassign
+              item.slotType='bag';
+            }
+          }
+        }else if(item.slotType==='large'||/^L\d+$/i.test(s)){
+          const m=s.match(/^L(\d+)$/i);
+          if(m){
+            const n=parseInt(m[1]);
+            if(n>27||n<1){outOfRange++;item._slotOutOfRange=true;item.slot='B01';item.slotType='bag'}
+          }
+        }
+      });
+      if(outOfRange>0){
+        statusEl.innerHTML+='<br><span style="color:var(--orange)">⚠ '+outOfRange+' 筆超出範圍的 slot 已移到 B01 (請手動處理)</span>';
+      }
       if(mode==='merge'){
         if(!confirm('目前已有 '+allItems.length+' 筆資料。\n\n選擇匯入模式：\n• 確定 = 合併（保留現有 + 加入新的，按 designId 比對避免重複）\n• 取消 = 放棄匯入')){
           statusEl.textContent='已取消';statusEl.style.color='var(--muted)';return;
