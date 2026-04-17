@@ -317,6 +317,7 @@ tr:hover{background:var(--accent-bg)}
       <div style="flex:1"><div id="result-name" style="font-size:18px;font-weight:700"></div><div id="result-designid" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></div></div>
     </div>
     <div id="result-desc" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
+    <div id="result-lens-summary" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:var(--muted);line-height:1.5"></div>
     <div id="result-tags"></div>
     <div id="result-series-char" style="margin-top:6px"></div>
     <div id="result-volume" style="margin-top:8px;font-size:12px;color:var(--muted);font-family:var(--mono)"></div>
@@ -712,13 +713,20 @@ tr:hover{background:var(--accent-bg)}
 <div id="toast" class="toast"></div>
 
 <script>
-// ═══ Force clear any cached service workers / PWA cache ═══
-if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(regs=>{regs.forEach(r=>r.unregister())})}
+// ═══ Service Worker registration (for Web Share Target) ═══
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').then(reg=>{
+    console.log('[SW] registered:', reg.scope);
+  }).catch(err=>{
+    console.warn('[SW] register failed:', err);
+  });
+}
+// Clear any old app caches (we don't cache app shell, only SW for share_target)
 if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete(n))})}
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17j';
+const APP_VERSION = '2026.04.17k';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -811,6 +819,61 @@ function init(){
   _loadPromise=loadData();
   // Bluetooth shutter listener (calibrated click + Enter/Camera key)
   initBtShutter();
+  // Check for shared content (from Web Share Target)
+  checkSharedContent();
+}
+
+// Check IndexedDB for image shared via Web Share Target and process it
+async function checkSharedContent(){
+  const params=new URLSearchParams(location.search);
+  if(params.get('share')!=='received')return;
+  // Clean URL (don't re-trigger on reload)
+  history.replaceState({},'',location.pathname);
+  try{
+    const payload=await readSharedInbox();
+    if(!payload){showToast('未收到分享內容','error');return}
+    if(payload.image){
+      // Wait for data load then process
+      await _loadPromise;
+      const reader=new FileReader();
+      reader.onload=async e=>{
+        const resized=await resizeImage(e.target.result,800);
+        currentImageData=resized;
+        showScreen('s-processing');
+        setProcessingMsg('📷 收到分享圖片，辨識中…');
+        try{
+          await cameraRecognize(resized.split(',')[1],resized);
+        }catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}
+      };
+      reader.readAsDataURL(payload.image);
+      showToast('已收到分享圖片，開始辨識…');
+    }else if(payload.text){
+      showToast('收到文字分享：'+payload.text.substring(0,40));
+    }
+  }catch(err){
+    console.error('[share] read inbox failed:',err);
+    showToast('讀取分享失敗: '+err.message,'error');
+  }
+}
+
+function readSharedInbox(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open('bricksort-share',1);
+    req.onupgradeneeded=()=>{req.result.createObjectStore('inbox',{keyPath:'id'})};
+    req.onsuccess=()=>{
+      const db2=req.result;
+      const tx=db2.transaction('inbox','readwrite');
+      const store=tx.objectStore('inbox');
+      const getReq=store.get('latest');
+      getReq.onsuccess=()=>{
+        const data=getReq.result;
+        if(data)store.delete('latest'); // consume
+        tx.oncomplete=()=>{db2.close();resolve(data||null)};
+      };
+      getReq.onerror=()=>reject(getReq.error);
+    };
+    req.onerror=()=>reject(req.error);
+  });
 }
 
 let btShutterEnabled=false;
@@ -2527,6 +2590,7 @@ async function parseLensScreenshot(dataUrl){
     if(lensId)item.design_id=lensId;
     if(lensName)item.name=lensName;
     if(lensNameCN)item.name_cn=lensNameCN;
+    if(lensSummary)item.lens_summary=lensSummary;
 
     // Step 3.5: Construct thumbnail URL (skip API for invalid IDs)
     if(lensId&&/^\d{3,6}[a-d]?$/i.test(lensId)){
@@ -2606,6 +2670,9 @@ async function cameraRecognize(base64,imgSrc){
       const matchMethod=matchType==='exact'?'ID: '+bkId:matchType==='variant-confirmed'?'變體: '+bkId+'→'+match.designId:matchType==='mold-variant'?'模具: '+bkId+'→'+match.designId:matchType==='bk-name'?'BK名稱':matchType==='name-fuzzy'?'名稱相似':'ID: '+bkId;
       document.getElementById('result-designid').innerHTML=(match.designId?'Design ID: '+match.designId:'')+' <span style="font-size:10px;padding:2px 6px;background:rgba(76,175,80,0.15);border:1px solid var(--green);color:var(--green);border-radius:4px">⚡ '+bkResult.score+'% '+matchMethod+'</span>';
       document.getElementById('result-desc').textContent=match.description||'';
+      const lensEl1=document.getElementById('result-lens-summary');
+      if(match.lens_summary&&lensEl1){lensEl1.textContent='🔍 Lens: '+match.lens_summary;lensEl1.style.display=''}
+      else if(lensEl1){lensEl1.style.display='none'}
       document.getElementById('result-tags').innerHTML=(match.featureTags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
       document.getElementById('result-volume').textContent='佔位體積 ≈ '+(match.estimateVolumeMl||0)+'ml';
       document.getElementById('result-slot').textContent=match.slot;
@@ -2671,6 +2738,9 @@ async function cameraRecognize(base64,imgSrc){
     document.getElementById('result-name').textContent=dbMatch.nameCN||dbMatch.name||'';
     document.getElementById('result-designid').innerHTML='Design ID: '+(dbMatch.designId||'')+' <span style="font-size:10px;padding:2px 6px;background:rgba(76,175,80,0.15);border:1px solid var(--green);color:var(--green);border-radius:4px">🤖 AI 比對</span>';
     document.getElementById('result-desc').textContent=dbMatch.description||'';
+    const lensEl2=document.getElementById('result-lens-summary');
+    if(dbMatch.lens_summary&&lensEl2){lensEl2.textContent='🔍 Lens: '+dbMatch.lens_summary;lensEl2.style.display=''}
+    else if(lensEl2){lensEl2.style.display='none'}
     document.getElementById('result-tags').innerHTML=(dbMatch.featureTags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
     document.getElementById('result-volume').textContent='佔位體積 ≈ '+(dbMatch.estimateVolumeMl||0)+'ml';
     document.getElementById('result-slot').textContent=dbMatch.slot;
@@ -3207,6 +3277,11 @@ async function processResult(item){
   document.getElementById('result-name').textContent=item.name_cn||item.name||'未知零件';
   document.getElementById('result-designid').textContent=designId?'Design ID: '+designId:'';
   document.getElementById('result-desc').textContent=item.description||'';
+  const lensEl=document.getElementById('result-lens-summary');
+  if(item.lens_summary&&lensEl){
+    lensEl.textContent='🔍 Lens: '+item.lens_summary;
+    lensEl.style.display='';
+  }else if(lensEl){lensEl.style.display='none'}
   document.getElementById('result-tags').innerHTML=(item.feature_tags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
   // Series + character badges
   const badgeHtml=[];
@@ -3450,7 +3525,7 @@ function applySlotOverrideManual(){
 async function confirmPart(){
   if(!pendingPart)return;
   const now=Date.now();
-  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,seriesTag:pendingPart.seriesTag||'',characterTag:pendingPart.characterTag||'',brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],quantity:1,updatedAt:now};
+  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,seriesTag:pendingPart.seriesTag||'',characterTag:pendingPart.characterTag||'',brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],lens_summary:pendingPart.lens_summary||'',quantity:1,updatedAt:now};
   if(pendingPart.isUpdate&&pendingPart.matchedId){
     item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);
     item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;
@@ -3727,7 +3802,7 @@ async function startBatch(files){
       const thumbnailUrl=rbImgUrl||(match?match.thumbnailUrl:'')||'';
       let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...parsed,estimateVolumeMl:vol,quantity:1,featureTags:parsed.feature_tags||[],dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0});
       const now=Date.now();
-      const savedItem={name:parsed.name||'',nameCN:parsed.name_cn||'',designId,description:parsed.description||'',featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:thumbnailUrl?'':(currentImageData||''),quantity:1,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,id:match?match.id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),createdAt:match?(match.createdAt||now):now,updatedAt:now};
+      const savedItem={name:parsed.name||'',nameCN:parsed.name_cn||'',designId,description:parsed.description||'',featureTags:parsed.feature_tags||[],bricklinkCategory:normalizeCategory(parsed.bricklink_category||''),estimateVolumeMl:vol,slot:slotInfo.slot,slotType:slotInfo.slotType||'small',thumbnailUrl,imageData:thumbnailUrl?'':(currentImageData||''),quantity:1,dimW:parsed._dimW||0,dimL:parsed._dimL||0,dimH:parsed._dimH||0,lens_summary:lensSummary||'',id:match?match.id:'lego_'+now+'_'+Math.random().toString(36).slice(2,5),createdAt:match?(match.createdAt||now):now,updatedAt:now};
 if(match)Object.assign(match,savedItem);else allItems.unshift(savedItem);
       markDirty(savedItem.id);await fbSaveItem(savedItem);item.result=savedItem;item.status='done';done++;
     }catch(err){item.error=err.message;item.status='error';errors++}
