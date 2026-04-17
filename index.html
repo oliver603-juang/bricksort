@@ -713,7 +713,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16v';
+const APP_VERSION = '2026.04.16x';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1649,7 +1649,12 @@ function recalcVol(){
       let warn='⚠ 格子容量超出！<b>'+currentItem.slot+'</b> 上限 '+cap+'ml';
       if(otherVol>0)warn+='<br>同格其他物品佔 '+Math.round(otherVol*10)/10+'ml，剩餘空間 '+Math.round(availCap*10)/10+'ml';
       warn+='<br>此物品 '+tv+'ml，格子總計 <b>'+slotTotal+'ml</b>';
-      if(oq>0)warn+='<br>建議留 '+fq+' 件，溢出 '+oq+' 件到收納袋<br><span style="font-size:11px;color:var(--muted)">💡 儲存時會自動溢出</span>';
+      if(oq>0){
+        warn+='<br>建議留 '+fq+' 件，溢出 '+oq+' 件到收納袋<br>';
+        warn+='<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">';
+        warn+='<button class="btn btn-sm" onclick="moveAllToBag()" style="font-size:11px;padding:4px 10px">📦 全部移到收納袋</button>';
+        warn+='<span style="font-size:11px;color:var(--muted);align-self:center">💡 或直接儲存會自動溢出</span></div>';
+      }
       else warn+='<br>此物品不需溢出，但同格其他物品可能需要調整';
       warnEl.innerHTML='<div class="overflow-warn">'+warn+'</div>';
     }else warnEl.innerHTML='';
@@ -1733,11 +1738,26 @@ function editorSaveItem(){
   i.nameCN=document.getElementById('m-nameCN').value.trim();
   i.designId=document.getElementById('m-did').value.trim();i.updatedAt=Date.now();
   if(isNewItem){const r=gatewayAssign(i);i.slot=r.slot;i.slotType=r.slotType;i.createdAt=Date.now();allItems.unshift(i);showToast('新零件編入 '+i.slot+'（'+i.slotType+'）')}
-  else{i.slot=document.getElementById('m-slot').value.trim();i.slotType=document.getElementById('m-slotType').value;
-    // Auto-overflow check on save
-    const ovResult=autoOverflowCheck(i);
-    if(ovResult){showToast('已儲存 → 溢出 '+ovResult.overQty+' 件到 '+ovResult.bagSlot)}
-    else{showToast('已暫存（點回傳上傳）')}
+  else{
+    const oldSlot=i.slot;
+    const oldOverflow=i.overflowSlot||'';
+    const newSlot=document.getElementById('m-slot').value.trim();
+    const newSlotType=document.getElementById('m-slotType').value;
+    // If user manually changed slot → move ALL to new slot, clear overflow
+    if(newSlot!==oldSlot||newSlotType!==i.slotType){
+      i.slot=newSlot;i.slotType=newSlotType;
+      if(oldOverflow){
+        i.overflowSlot='';i.overflowQty=0;
+        showToast('已移到 '+newSlot+'（清除原溢出 '+oldOverflow+'）');
+      }else{
+        showToast('已移到 '+newSlot);
+      }
+    }else{
+      // Slot unchanged → auto-overflow check (expand if qty increased)
+      const ovResult=autoOverflowCheck(i);
+      if(ovResult){showToast('已儲存 → 溢出 '+ovResult.overQty+' 件到 '+ovResult.bagSlot)}
+      else{showToast('已暫存（點回傳上傳）')}
+    }
   }
   markDirty(i.id);closeModal();renderStats();applyFilter();
 }
@@ -1749,6 +1769,34 @@ function deleteItem(){
   fbDeleteItem(currentItem.id).then(()=>showToast('已刪除')).catch(e=>showToast('刪除失敗','error'));
   allItems=allItems.filter(i=>i.id!==currentItem.id);dirty.delete(currentItem.id);
   closeModal();renderStats();applyFilter();
+}
+
+// Case A/B: move ALL of this item to a new bag, releasing the original slot
+function moveAllToBag(){
+  if(!currentItem)return;
+  const i=currentItem;
+  const oldSlot=i.slot;
+  const oldType=i.slotType;
+  const oldOverflow=i.overflowSlot||'';
+  const vt=(i.estimateVolumeMl||0)*(i.quantity||1);
+  const cg=getCatGroup(i.featureTags||[],normalizeCategory(i.bricklinkCategory||''));
+  const charTag=i.characterTag||null;
+  const seriesTag=i.seriesTag||detectSeries(i)||null;
+  const r=assignToBag(vt,cg,charTag,seriesTag);
+  i.slot=r.slot;
+  i.slotType='bag';
+  i.overflowSlot='';
+  i.overflowQty=0;
+  i.updatedAt=Date.now();
+  // Update modal display
+  document.getElementById('m-slot').value=r.slot;
+  document.getElementById('m-slotType').value='bag';
+  recalcVol();
+  markDirty(i.id);
+  let msg='✅ 已全部移到 '+r.slot+'（原 '+oldSlot+'/'+oldType+' 釋出';
+  if(oldOverflow)msg+='，清除原溢出 '+oldOverflow;
+  msg+='）';
+  showToast(msg);
 }
 
 // ═══════════════════════════════════════════════════
@@ -3059,19 +3107,23 @@ function applySlotOverride(type){
   if(!pendingPart)return;
   const cg=getCatGroup(pendingPart.featureTags||[],normalizeCategory(pendingPart.bricklinkCategory||''));
   const vol=(pendingPart.estimateVolumeMl||2)*(pendingPart.quantity||1);
+  const charTag=pendingPart.characterTag||null;
+  const seriesTag=pendingPart.seriesTag||detectSeries(pendingPart)||null;
   let slot,slotType;
   if(type==='bag'){
-    const r=assignToBag(vol,cg);slot=r.slot;slotType='bag';
+    const r=assignToBag(vol,cg,charTag,seriesTag);slot=r.slot;slotType='bag';
   }else if(type==='large'){
     // Find first available large drawer
     const usedL=new Set(allItems.filter(i=>i.slotType==='large').map(i=>i.slot));
     for(let n=1;n<=LARGE_COUNT;n++){const l='L'+String(n).padStart(2,'0');if(!usedL.has(l)){slot=l;break}}
-    if(!slot){showToast('大抽屜已滿，改分配到收納袋','warn');const r=assignToBag(vol,cg);slot=r.slot;slotType='bag'}
+    if(!slot){showToast('大抽屜已滿，改分配到收納袋','warn');const r=assignToBag(vol,cg,charTag,seriesTag);slot=r.slot;slotType='bag'}
     else slotType='large';
   }else{
     const r=gatewayAssign(pendingPart);slot=r.slot;slotType=r.slotType;
   }
   pendingPart.slot=slot;pendingPart.slotType=slotType;
+  // Manual override = move ALL to new slot, clear overflow
+  pendingPart.overflowSlot='';pendingPart.overflowQty=0;
   document.getElementById('result-slot').textContent=slot;
   document.getElementById('result-slot-type').textContent=slotType==='large'?'大抽屜':slotType==='bag'?'收納袋':'小抽屜分格';
   cancelSlotOverride();
@@ -3087,6 +3139,8 @@ function applySlotOverrideManual(){
   else if(/^\d+[ab]?$/.test(val))slotType='small';
   else{showToast('格式錯誤（例：B01、420a、L05）','error');return}
   pendingPart.slot=val;pendingPart.slotType=slotType;
+  // Manual override = move ALL to new slot, clear overflow
+  pendingPart.overflowSlot='';pendingPart.overflowQty=0;
   document.getElementById('result-slot').textContent=val;
   document.getElementById('result-slot-type').textContent=slotType==='large'?'大抽屜':slotType==='bag'?'收納袋':'小抽屜分格';
   cancelSlotOverride();
@@ -4670,27 +4724,52 @@ function importFullData(event){
       // Validate: items should have slot field
       const hasSlot=items.filter(i=>i.slot).length;
       const mode=allItems.length>0?'merge':'replace';
+      // Helper: extract timestamp from id, fallback to now
+      const nowTs=Date.now();
+      const idTs=(id)=>{const m=(id||'').match(/^lego_(\d+)/);return m?parseInt(m[1]):nowTs};
       if(mode==='merge'){
-        if(!confirm('目前已有 '+allItems.length+' 筆資料。\n\n選擇匯入模式：\n• 確定 = 合併（保留現有 + 加入新的）\n• 取消 = 放棄匯入')){
+        if(!confirm('目前已有 '+allItems.length+' 筆資料。\n\n選擇匯入模式：\n• 確定 = 合併（保留現有 + 加入新的，按 designId 比對避免重複）\n• 取消 = 放棄匯入')){
           statusEl.textContent='已取消';statusEl.style.color='var(--muted)';return;
         }
-        // Merge: add new items, update existing by id
-        let added=0,updated=0;
-        const existingIds=new Set(allItems.map(i=>i.id));
-        items.forEach(item=>{
-          if(!item.id)item.id='lego_'+Date.now()+'_'+Math.random().toString(36).slice(2,5);
-          if(existingIds.has(item.id)){
-            const existing=allItems.find(i=>i.id===item.id);
-            if(existing){Object.assign(existing,item);updated++}
-          } else {
-            allItems.push(item);added++;
-          }
-          markDirty(item.id);
+        // Merge: by designId (not by id) to prevent duplicates
+        let added=0,updated=0,skippedDup=0;
+        const existingByDesign=new Map();
+        allItems.forEach(i=>{
+          const did=(i.designId||'').trim();
+          if(did&&!existingByDesign.has(did))existingByDesign.set(did,i);
         });
-        statusEl.innerHTML='<span style="color:var(--green)">✅ 合併完成：新增 '+added+' 筆，更新 '+updated+' 筆（共 '+allItems.length+' 筆）</span>';
+        items.forEach(item=>{
+          // Ensure createdAt (critical - missing createdAt caused epoch-0 duplicates)
+          if(!item.createdAt||item.createdAt<86400000)item.createdAt=idTs(item.id);
+          if(!item.updatedAt)item.updatedAt=item.createdAt;
+          const did=(item.designId||'').trim();
+          if(did&&existingByDesign.has(did)){
+            // Same designId exists - keep newer, skip old
+            const existing=existingByDesign.get(did);
+            if((item.updatedAt||0)>(existing.updatedAt||0)){
+              // Update existing with newer data (but keep id/slot/createdAt)
+              Object.assign(existing,item,{id:existing.id,slot:existing.slot,createdAt:existing.createdAt});
+              markDirty(existing.id);updated++;
+            }else{
+              skippedDup++;
+            }
+          }else{
+            // New item
+            if(!item.id)item.id='lego_'+nowTs+'_'+Math.random().toString(36).slice(2,5);
+            allItems.push(item);
+            if(did)existingByDesign.set(did,item);
+            markDirty(item.id);added++;
+          }
+        });
+        statusEl.innerHTML='<span style="color:var(--green)">✅ 合併完成：新增 '+added+'，更新 '+updated+'，跳過重複 '+skippedDup+'（共 '+allItems.length+' 筆）</span>';
       } else {
-        // Replace: clear and load
-        allItems=items.map(i=>{if(!i.id)i.id='lego_'+Date.now()+'_'+Math.random().toString(36).slice(2,5);return i});
+        // Replace: clear and load, ensure all have createdAt
+        allItems=items.map(i=>{
+          if(!i.id)i.id='lego_'+nowTs+'_'+Math.random().toString(36).slice(2,5);
+          if(!i.createdAt||i.createdAt<86400000)i.createdAt=idTs(i.id);
+          if(!i.updatedAt)i.updatedAt=i.createdAt;
+          return i;
+        });
         allItems.forEach(i=>markDirty(i.id));
         statusEl.innerHTML='<span style="color:var(--green)">✅ 已載入 '+allItems.length+' 筆零件</span>';
       }
