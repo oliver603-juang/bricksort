@@ -332,7 +332,7 @@ tr:hover{background:var(--accent-bg)}
   <div id="result-qty-row" style="display:none;margin-bottom:12px;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
     <label style="font-size:13px;color:var(--muted);white-space:nowrap">追加數量</label>
     <button onclick="var el=document.getElementById('result-qty');el.value=Math.max(0,(parseInt(el.value)||0)-1)" style="width:36px;height:36px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:18px;cursor:pointer">−</button>
-    <input type="number" id="result-qty" value="1" min="0" max="999" inputmode="numeric" pattern="[0-9]*" style="width:60px;text-align:center;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:8px;border-radius:8px;font-size:18px;font-weight:700;font-family:var(--mono)" onfocus="if(this.value==='1'||this.value==='0')this.value=''" onblur="if(!this.value)this.value='0'">
+    <input type="text" id="result-qty" value="1" readonly inputmode="none" onfocus="openNumpad(this,null,'int')" style="width:60px;text-align:center;background:var(--surface);border:1px solid var(--border);color:var(--accent);padding:8px;border-radius:8px;font-size:18px;font-weight:700;font-family:var(--mono);caret-color:var(--accent)">
     <button onclick="var el=document.getElementById('result-qty');el.value=(parseInt(el.value)||0)+1" style="width:36px;height:36px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:18px;cursor:pointer">+</button>
     <button id="result-qty-save" class="btn btn-green" style="flex:1;padding:8px;font-size:13px" onclick="saveResultQty()">✓ 追加</button>
   </div>
@@ -344,11 +344,11 @@ tr:hover{background:var(--accent-bg)}
     <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px">
       <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-bottom:10px">
         <span style="font-size:12px;color:var(--muted);text-align:right">寬 W</span>
-        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-w" placeholder="0" inputmode="numeric" pattern="[0-9]*" step="1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">mm</span></div>
+        <div style="display:flex;align-items:center;gap:4px"><input type="text" id="rdim-w" readonly inputmode="none" placeholder="0" onfocus="openNumpad(this,null,'int')" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center;caret-color:var(--accent)"><span style="font-size:11px;color:var(--muted);width:20px">mm</span></div>
         <span style="font-size:12px;color:var(--muted);text-align:right">長 L</span>
-        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-l" placeholder="0" inputmode="numeric" pattern="[0-9]*" step="1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">mm</span></div>
+        <div style="display:flex;align-items:center;gap:4px"><input type="text" id="rdim-l" readonly inputmode="none" placeholder="0" onfocus="openNumpad(this,null,'int')" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center;caret-color:var(--accent)"><span style="font-size:11px;color:var(--muted);width:20px">mm</span></div>
         <span style="font-size:12px;color:var(--muted);text-align:right">高 H</span>
-        <div style="display:flex;align-items:center;gap:4px"><input type="number" id="rdim-h" placeholder="0" inputmode="numeric" pattern="[0-9]*" step="1" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center"><span style="font-size:11px;color:var(--muted);width:20px">mm</span></div>
+        <div style="display:flex;align-items:center;gap:4px"><input type="text" id="rdim-h" readonly inputmode="none" placeholder="0" onfocus="openNumpad(this,null,'int')" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center;caret-color:var(--accent)"><span style="font-size:11px;color:var(--muted);width:20px">mm</span></div>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:8px">
         <button class="btn btn-sm" onclick="pasteResultDims()" style="flex:1;font-size:11px">📋 貼上尺寸（BrickLink W×L×H cm 自動轉mm）</button>
@@ -384,7 +384,7 @@ tr:hover{background:var(--accent-bg)}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <label style="font-size:14px;font-weight:600;white-space:nowrap">數量</label>
       <button onclick="var el=document.getElementById('st-qty');el.value=Math.max(0,(parseInt(el.value)||0)-1)" style="width:44px;height:44px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:22px;cursor:pointer">−</button>
-      <input type="number" id="st-qty" inputmode="numeric" pattern="[0-9]*" style="flex:1;text-align:center;background:var(--surface);border:2px solid var(--accent);color:var(--accent);padding:10px;border-radius:10px;font-size:28px;font-weight:900;font-family:var(--mono)" onfocus="this.select()">
+      <input type="text" id="st-qty" readonly inputmode="none" onfocus="openNumpad(this,null,'int')" style="flex:1;text-align:center;background:var(--surface);border:2px solid var(--accent);color:var(--accent);padding:10px;border-radius:10px;font-size:28px;font-weight:900;font-family:var(--mono);caret-color:var(--accent)">
       <button onclick="var el=document.getElementById('st-qty');el.value=(parseInt(el.value)||0)+1" style="width:44px;height:44px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:22px;cursor:pointer">+</button>
     </div>
     <div id="st-diff" style="font-size:13px;font-family:var(--mono);text-align:center;margin-bottom:8px"></div>
@@ -426,9 +426,9 @@ tr:hover{background:var(--accent-bg)}
   <div class="field" style="margin-bottom:16px">
     <label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block">範圍</label>
     <div style="display:flex;gap:8px;align-items:center">
-      <input type="number" id="st-from" inputmode="numeric" value="1" min="1" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center">
+      <input type="text" id="st-from" readonly inputmode="none" value="1" onfocus="openNumpad(this,null,'int')" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center;caret-color:var(--accent)">
       <span style="color:var(--muted)">～</span>
-      <input type="number" id="st-to" inputmode="numeric" value="450" min="1" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center">
+      <input type="text" id="st-to" readonly inputmode="none" value="450" onfocus="openNumpad(this,null,'int')" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center;caret-color:var(--accent)">
     </div>
   </div>
   <div id="st-setup-count" style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:12px"></div>
@@ -713,7 +713,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17e';
+const APP_VERSION = '2026.04.17f';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
