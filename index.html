@@ -713,7 +713,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17b';
+const APP_VERSION = '2026.04.17c';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1159,14 +1159,20 @@ function repairSlotConfig(){
       const n=parseInt(bagMatch[1]);
       if(n>maxBagNum)maxBagNum=n;
     }
-    // Also scan overflow bags
-    (item.overflowSlot||'').split(',').forEach(s=>{
-      const m=(s||'').trim().match(/^B(\d+)$/i);
-      if(m){
-        const n=parseInt(m[1]);
-        if(n>maxBagNum)maxBagNum=n;
-      }
-    });
+    // Only count overflow bags if overflowQty > 0 (real overflow, not stale references)
+    if((item.overflowQty||0)>0){
+      (item.overflowSlot||'').split(',').forEach(s=>{
+        const m=(s||'').trim().match(/^B(\d+)$/i);
+        if(m){
+          const n=parseInt(m[1]);
+          if(n>maxBagNum)maxBagNum=n;
+        }
+      });
+    }else if(item.overflowSlot){
+      // Clean up stale overflowSlot when qty is 0 (defensive)
+      item.overflowSlot='';
+      markDirty(item.id);
+    }
   });
   // Fix nextSmallSlot
   const curSmall=slotConfig.nextSmallSlot||'001a';
@@ -3735,7 +3741,11 @@ function autoOverflowCheck(item){
   if(item.slotType==='bag'&&vol1>0){
     const piecesPerBag=Math.max(1,Math.floor(cap/vol1));
     if(qty<=piecesPerBag){
-      // Fits in one bag — keep existing overflow bags (don't clear)
+      // Fits in one bag — clear stale overflow if overflowQty now 0
+      if((item.overflowQty||0)===0&&item.overflowSlot){
+        item.overflowSlot='';
+        markDirty(item.id);
+      }
       return null;
     }
     const bagsNeeded=Math.ceil(qty/piecesPerBag);
@@ -3758,7 +3768,14 @@ function autoOverflowCheck(item){
   const otherVol=allItems.filter(i=>i.slot===item.slot&&i.id!==item.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
   const availCap=Math.max(0,cap-otherVol);
   const tv=vol1*qty;
-  if(otherVol+tv<=cap)return null; // fits, keep existing overflow bags
+  if(otherVol+tv<=cap){
+    // fits now — clear stale overflow if overflowQty is 0
+    if((item.overflowQty||0)===0&&item.overflowSlot){
+      item.overflowSlot='';
+      markDirty(item.id);
+    }
+    return null;
+  }
   const fitsQty=Math.max(0,Math.floor(availCap/(vol1||1)));
   const overQty=qty-fitsQty;
   if(overQty<=0)return null;
