@@ -538,6 +538,11 @@ tr:hover{background:var(--accent-bg)}
     <button class="btn" style="width:100%" onclick="exportForLabels()">🏷 匯出標籤列印資料 (JSON)</button>
   </div>
   <div class="card">
+    <div class="card-title">🎭 角色標籤（進階）</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">把主角和專屬配件放在同一收納袋，方便找配件。例：Lloyd 頭髮/軀幹/專屬武器 → B-Lloyd 袋</div>
+    <button class="btn" style="width:100%" onclick="showScreen('s-characters');renderCharactersPage()">🎭 開啟角色管理</button>
+  </div>
+  <div class="card">
     <div class="card-title">📦 離線備份 / 還原</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">Firebase 無法使用時，可匯出完整資料到手機，之後再匯入還原。</div>
     <button class="btn btn-green" style="width:100%;margin-bottom:8px" onclick="exportFullData()">📤 匯出完整資料 (JSON)</button>
@@ -583,6 +588,15 @@ tr:hover{background:var(--accent-bg)}
     <div id="lock-status"></div>
   </div>
 </div>
+</div>
+
+<!-- ═══ CHARACTERS MANAGEMENT ═══ -->
+<div id="s-characters" class="screen">
+<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+  <button class="btn btn-sm" onclick="goBack()">← 返回</button>
+  <span style="font-family:var(--mono);font-size:14px;color:var(--accent);margin-left:4px">🎭 角色管理</span>
+</div>
+<div class="content" id="characters-content"></div>
 </div>
 
 <!-- ═══ VARIANT CONFIRM MODAL ═══ -->
@@ -698,7 +712,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.16p';
+const APP_VERSION = '2026.04.16r';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1225,26 +1239,44 @@ function getBagSuperGroup(bagSlot){
   }
   return null; // no super-group items in this bag
 }
-function findBagForOverflow(vol,catGroup){
+function findBagForOverflow(vol,catGroup,characterTag){
   const cap=BAG_ML_DEFAULT;const lastBag=slotConfig.nextBagSlot||'B01';const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
+  // Phase 0: character-tag routing
+  if(characterTag){
+    const char=(slotConfig.characters||{})[characterTag];
+    if(char&&char.enabled){
+      if(char.bagType==='dedicated'){
+        const existing=findCharacterBag(characterTag);
+        if(existing&&getBagVol(existing)+vol<=cap)return existing;
+        return allocateNewCharacterBag(characterTag,false);
+      }
+      if(char.bagType==='shared'){
+        const existing=findSharedCharacterBag(vol);
+        if(existing)return existing;
+        return allocateNewCharacterBag(characterTag,true);
+      }
+    }
+  }
   const superGroup=catGroup?BAG_SUPER_GROUPS[catGroup]:null;
   // Phase 1: find bag with same super-group (for minifig parts)
   if(superGroup){
     for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');if(getBagSuperGroup(label)===superGroup&&getBagVol(label)+vol<=cap)return label}
   }
-  // Phase 2: find bag with same catGroup
+  // Phase 2: find bag with same catGroup (skip character-tagged bags)
   if(catGroup){
     for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
       const bagSG=getBagSuperGroup(label);
-      if(bagSG)continue; // skip super-group dedicated bags
+      if(bagSG)continue;
+      if(isBagCharacterTagged(label))continue;
       const items=allItems.filter(i=>i.slot===label&&i.slotType==='bag');
       const hasSameCat=items.some(i=>getCatGroup(i.featureTags,i.bricklinkCategory)===catGroup);
       if(hasSameCat&&getBagVol(label)+vol<=cap)return label;
     }
   }
-  // Phase 3: find any bag with space (but skip super-group dedicated bags)
+  // Phase 3: find any bag with space (skip super-group and character-tagged bags)
   for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
     if(getBagSuperGroup(label))continue;
+    if(isBagCharacterTagged(label))continue;
     if(getBagVol(label)+vol<=cap)return label;
   }
   // Phase 4: allocate new bag
@@ -1574,29 +1606,88 @@ function deleteItem(){
 // ═══════════════════════════════════════════════════
 // GATEWAY ASSIGN (single-item, pointer-based)
 // ═══════════════════════════════════════════════════
-function assignToBag(vt,catGroup){
+// ═══ 角色袋路由（Phase 0）═══
+function findCharacterBag(charTag){
+  // Find existing dedicated bag for this character
+  const char=(slotConfig.characters||{})[charTag];
+  if(!char||!char.enabled)return null;
+  const cap=BAG_ML_DEFAULT;
+  const bagSlots=char.bagSlots||[];
+  for(const slot of bagSlots){if(getBagVol(slot)<cap)return slot}
+  return null;
+}
+function findSharedCharacterBag(vt){
+  const cap=BAG_ML_DEFAULT;
+  const sharedBags=slotConfig.sharedCharacterBags||[];
+  for(const slot of sharedBags){if(getBagVol(slot)+vt<=cap)return slot}
+  return null;
+}
+function allocateNewCharacterBag(charTag,isShared){
+  const lastBag=slotConfig.nextBagSlot||'B01';
+  slotConfig.nextBagSlot=advanceBag(lastBag);
+  markDirty('__config__');
+  if(isShared){
+    if(!slotConfig.sharedCharacterBags)slotConfig.sharedCharacterBags=[];
+    slotConfig.sharedCharacterBags.push(lastBag);
+  }else{
+    const char=slotConfig.characters[charTag];
+    if(!char.bagSlots)char.bagSlots=[];
+    char.bagSlots.push(lastBag);
+  }
+  return lastBag;
+}
+
+function assignToBag(vt,catGroup,characterTag){
   const cap=BAG_ML_DEFAULT;const lastBag=slotConfig.nextBagSlot||'B01';const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
+  // Phase 0: character-tag routing (takes precedence over all other phases)
+  if(characterTag){
+    const char=(slotConfig.characters||{})[characterTag];
+    if(char&&char.enabled){
+      if(char.bagType==='dedicated'){
+        const existing=findCharacterBag(characterTag);
+        if(existing&&getBagVol(existing)+vt<=cap)return{slot:existing,slotType:'bag'};
+        const newBag=allocateNewCharacterBag(characterTag,false);
+        return{slot:newBag,slotType:'bag'};
+      }
+      if(char.bagType==='shared'){
+        const existing=findSharedCharacterBag(vt);
+        if(existing)return{slot:existing,slotType:'bag'};
+        const newBag=allocateNewCharacterBag(characterTag,true);
+        return{slot:newBag,slotType:'bag'};
+      }
+    }
+  }
   const superGroup=catGroup?BAG_SUPER_GROUPS[catGroup]:null;
   // Phase 1: find bag with same super-group
   if(superGroup){
     for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');if(getBagSuperGroup(label)===superGroup&&getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'}}
   }
-  // Phase 2: find bag with same catGroup
+  // Phase 2: find bag with same catGroup (skip character-tagged bags)
   if(catGroup){
     for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
       const bagSG=getBagSuperGroup(label);if(bagSG)continue;
+      if(isBagCharacterTagged(label))continue;
       const items=allItems.filter(i=>i.slot===label&&i.slotType==='bag');
       if(items.some(i=>getCatGroup(i.featureTags,i.bricklinkCategory)===catGroup)&&getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'};
     }
   }
-  // Phase 3: any bag with space (skip super-group dedicated)
+  // Phase 3: any bag with space (skip super-group dedicated + character-tagged)
   for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
     if(getBagSuperGroup(label))continue;
+    if(isBagCharacterTagged(label))continue;
     if(getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'};
   }
   // Phase 4: new bag
   slotConfig.nextBagSlot=advanceBag(lastBag);markDirty('__config__');
   return{slot:slotConfig.nextBagSlot,slotType:'bag'};
+}
+function isBagCharacterTagged(bagSlot){
+  // Check if bag is reserved for characters (dedicated or shared)
+  const chars=slotConfig.characters||{};
+  for(const c of Object.values(chars)){
+    if((c.bagSlots||[]).includes(bagSlot))return true;
+  }
+  return (slotConfig.sharedCharacterBags||[]).includes(bagSlot);
 }
 
 // ═══ 智慧分流：小抽屜優先，滿了才進袋 ═══
@@ -1622,13 +1713,20 @@ function gatewayAssign(item){
   const vol=item.estimateVolumeMl||2,qty=item.quantity||1;
   const catGroup=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
   const vt=Math.round(vol*qty*10)/10;
+  const charTag=item.characterTag||null;
+
+  // 0. 有角色標籤 → 強制進角色袋（無論體積/分類）
+  if(charTag){
+    const char=(slotConfig.characters||{})[charTag];
+    if(char&&char.enabled)return assignToBag(vt,catGroup,charTag);
+  }
 
   // 1. 人偶/超大/不合尺寸 → 收納袋
   if(isMinifigure(item)||!fitsSmallSlot(item)||vt>DRAWER_ML){
-    return assignToBag(vt,catGroup);
+    return assignToBag(vt,catGroup,charTag);
   }
   // 1b. 人偶身體部件 → 強制收納袋
-  if(BAG_SUPER_GROUPS[catGroup]&&vol>=MINIFIG_BAG_VOL1){return assignToBag(vt,catGroup)}
+  if(BAG_SUPER_GROUPS[catGroup]&&vol>=MINIFIG_BAG_VOL1){return assignToBag(vt,catGroup,charTag)}
 
   // 2. 單件體積 > 41ml 或 總體積 > MERGE_LIMIT → 不融合
   if(vt<=MERGE_LIMIT&&vol<=MERGE_VOL1_MAX){
@@ -1642,7 +1740,7 @@ function gatewayAssign(item){
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot+'a',slotType:'small'};
     // 小抽屜全滿 → 收納袋
-    return assignToBag(vt,catGroup);
+    return assignToBag(vt,catGroup,charTag);
   }
 
   // 3. 體積 MERGE_LIMIT~SLOT_ML → 獨佔半格(a/b)
@@ -1653,17 +1751,17 @@ function gatewayAssign(item){
     // 開新格子
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot+'a',slotType:'small'};
-    return assignToBag(vt,catGroup);
+    return assignToBag(vt,catGroup,charTag);
   }
 
   // 4. 體積 SLOT_ML~DRAWER_ML → 獨佔整抽屜
   if(vt<=DRAWER_ML){
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot,slotType:'small'};
-    return assignToBag(vt,catGroup);
+    return assignToBag(vt,catGroup,charTag);
   }
 
-  return assignToBag(vt,catGroup);
+  return assignToBag(vt,catGroup,charTag);
 }
 
 // 找有空間的融合格子
@@ -3204,6 +3302,7 @@ function autoOverflowCheck(item){
   if(overQty<=0)return null;
   const ovVol=vol1*overQty;
   const itemCg2=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
+  const itemTag=item.characterTag||null;
   const bagCap=BAG_ML_DEFAULT;
   const piecesPerBag=vol1>0?Math.max(1,Math.floor(bagCap/vol1)):overQty;
   const ovBagsNeeded=Math.ceil(overQty/piecesPerBag);
@@ -3211,7 +3310,7 @@ function autoOverflowCheck(item){
 
   if(ovBagsNeeded===1&&existingOvBags.length===0){
     // Single bag: find existing bag with capacity, or allocate new
-    const bagSlot=findBagForOverflow(ovVol,itemCg2);
+    const bagSlot=findBagForOverflow(ovVol,itemCg2,itemTag);
     item.overflowSlot=bagSlot;
     item.overflowQty=Math.max(overQty,item.overflowQty||0);
     return{bagSlot,overQty,fitsQty};
@@ -3227,7 +3326,7 @@ function autoOverflowCheck(item){
       return{bagSlot:existingOvBags.join(','),overQty,fitsQty};
     }
     // Existing bag full → allocate new
-    const newBag=findBagForOverflow(ovVol,itemCg2);
+    const newBag=findBagForOverflow(ovVol,itemCg2,itemTag);
     existingOvBags.push(newBag);
     item.overflowSlot=existingOvBags.join(',');
     item.overflowQty=Math.max(overQty,item.overflowQty||0);
@@ -3977,6 +4076,287 @@ async function writeAssignToFirebase(){
 // ═══════════════════════════════════════════════════
 // TOAST
 // ═══════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+// CHARACTER MANAGEMENT (Phase 1: Scan & Select)
+// ═══════════════════════════════════════════════════
+// slotConfig.characters = { [minifigNum]: { name, imgUrl, bagType:'dedicated'|'shared', partIds:[], enabled:true } }
+window._scannedMinifigs={}; // { [minifigNum]: { minifigNum, name, imgUrl, setIds:[], partNums:[], dbPartCount } }
+function renderCharactersPage(){
+  const el=document.getElementById('characters-content');
+  const savedChars=slotConfig.characters||{};
+  const enabledChars=Object.values(savedChars).filter(c=>c.enabled);
+  const savedCount=enabledChars.length;
+  const dedicatedCount=enabledChars.filter(c=>c.bagType==='dedicated').length;
+  const sharedCount=enabledChars.filter(c=>c.bagType==='shared').length;
+  const scannedCount=Object.keys(window._scannedMinifigs).length;
+  const taggedCount=allItems.filter(i=>i.characterTag).length;
+  el.innerHTML=`
+    <div class="card">
+      <div class="card-title">狀態</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.8">
+        ▸ 已啟用角色：<b style="color:var(--accent)">${savedCount}</b> 個 (🌟獨佔 ${dedicatedCount} · 👥共用 ${sharedCount})<br>
+        ▸ 已掃描人偶：<b style="color:var(--accent)">${scannedCount}</b> 個<br>
+        ▸ DB 套件數：<b style="color:var(--accent)">${getUniqueSets().length}</b> 個<br>
+        ▸ 已貼標籤零件：<b style="color:${taggedCount>0?'var(--green)':'var(--muted)'}">${taggedCount}</b> 個
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">🔍 掃描套件</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">從 Rebrickable 拉取你擁有套件的所有人偶，並統計每個人偶在你 DB 中的配件數。第一次掃描需約 2 分鐘。</div>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="scanCharactersFromSets()">🔍 開始掃描</button>
+      <div id="char-scan-progress" style="font-size:12px;color:var(--muted);margin-top:6px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🏷 套用標籤</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">勾選角色並儲存後，點下方按鈕將角色標籤套用到 DB 中對應零件。<br>通用零件（出現在 ≥4 個啟用角色）不貼標籤。</div>
+      <button class="btn btn-green" style="width:100%;margin-bottom:6px" onclick="applyCharacterTagsToItems()">🏷 套用標籤到現有零件</button>
+      <button class="btn" style="width:100%;font-size:12px" onclick="clearAllCharacterTags()">🗑 清除所有標籤</button>
+    </div>
+    <div id="char-list-container"></div>`;
+  if(scannedCount>0) renderCharactersList();
+}
+
+function getUniqueSets(){
+  const sets=new Set();
+  allItems.forEach(i=>{(i.setSource||'').split(',').forEach(s=>{s=s.trim();if(s)sets.add(s)})});
+  return Array.from(sets);
+}
+
+async function scanCharactersFromSets(){
+  const sets=getUniqueSets();
+  if(!sets.length){showToast('沒有套件資料可掃描','error');return}
+  const rbKey=(cfg.rbKey||DEFAULT_RB_KEY);
+  if(!rbKey){showToast('請先設定 Rebrickable API Key','error');return}
+  const progressEl=document.getElementById('char-scan-progress');
+  window._scannedMinifigs={};
+  // Step 1: Fetch minifigs per set
+  progressEl.innerHTML='📡 第一階段：讀取套件人偶清單...';
+  for(let i=0;i<sets.length;i++){
+    const setNum=sets[i];
+    progressEl.innerHTML=`📡 [${i+1}/${sets.length}] 套件 ${setNum}...`;
+    try{
+      const r=await fetch(`https://rebrickable.com/api/v3/lego/sets/${setNum}/minifigs/?key=${rbKey}`);
+      const data=await r.json();
+      if(data.results){
+        data.results.forEach(m=>{
+          const mfNum=m.set_num;
+          if(!window._scannedMinifigs[mfNum]){
+            window._scannedMinifigs[mfNum]={minifigNum:mfNum,name:m.set_name,imgUrl:m.set_img_url||'',setIds:[],partNums:[],dbPartCount:0};
+          }
+          if(!window._scannedMinifigs[mfNum].setIds.includes(setNum))window._scannedMinifigs[mfNum].setIds.push(setNum);
+        });
+      }
+    }catch(e){}
+    await new Promise(r=>setTimeout(r,150)); // rate limit
+  }
+  const minifigs=Object.values(window._scannedMinifigs);
+  // Step 2: Fetch parts per minifig
+  progressEl.innerHTML=`📡 第二階段：讀取 ${minifigs.length} 個人偶的配件...`;
+  for(let i=0;i<minifigs.length;i++){
+    const mf=minifigs[i];
+    progressEl.innerHTML=`📡 [${i+1}/${minifigs.length}] ${mf.name}...`;
+    try{
+      const r=await fetch(`https://rebrickable.com/api/v3/lego/minifigs/${mf.minifigNum}/parts/?key=${rbKey}&page_size=100`);
+      const data=await r.json();
+      if(data.results){
+        mf.partNums=data.results.map(p=>(p.part||{}).part_num||'').filter(Boolean);
+        // Count parts in DB
+        const lcSet=new Set(mf.partNums.map(p=>p.toLowerCase()));
+        mf.dbPartCount=allItems.filter(it=>{
+          if(lcSet.has((it.designId||'').toLowerCase()))return true;
+          if((it.altIds||[]).some(a=>lcSet.has((a||'').toLowerCase())))return true;
+          return false;
+        }).length;
+      }
+    }catch(e){}
+    await new Promise(r=>setTimeout(r,150));
+  }
+  // Cache to localStorage to avoid re-scanning
+  try{localStorage.setItem('bricksort_scanned_minifigs',JSON.stringify(window._scannedMinifigs))}catch(e){}
+  progressEl.innerHTML=`✅ 掃描完成！共 ${minifigs.length} 個人偶`;
+  renderCharactersPage();
+}
+
+function loadCachedScan(){
+  try{
+    const cached=localStorage.getItem('bricksort_scanned_minifigs');
+    if(cached){window._scannedMinifigs=JSON.parse(cached);return true}
+  }catch(e){}
+  return false;
+}
+
+function renderCharactersList(){
+  const el=document.getElementById('char-list-container');
+  if(!el)return;
+  const minifigs=Object.values(window._scannedMinifigs);
+  const savedChars=slotConfig.characters||{};
+  // Sort: most parts first
+  minifigs.sort((a,b)=>b.dbPartCount-a.dbPartCount);
+  // Group by theme (minifigNum prefix)
+  const themes={};
+  minifigs.forEach(m=>{
+    const mt=m.minifigNum.match(/^([a-z]+)/i);
+    const theme=mt?mt[1].toLowerCase():'other';
+    if(!themes[theme])themes[theme]=[];
+    themes[theme].push(m);
+  });
+  const themeNames={njo:'Ninjago 忍者',sw:'Star Wars',jw:'Jurassic',dreamzzz:'DreamZzz',sh:'Super Heroes',hp:'Harry Potter',fst:'Fusion',col:'Collectible',cty:'City',frnd:'Friends',idea:'Ideas',mar:'Marvel',dc:'DC',disney:'Disney'};
+  const sortedThemes=Object.entries(themes).sort((a,b)=>b[1].length-a[1].length);
+  el.innerHTML=`
+    <div class="card">
+      <div class="card-title">🎭 角色清單（按配件數排序）</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+        ▸ 勾選=啟用角色標籤 ▸ 🌟=獨佔袋 👥=共用袋<br>
+        ▸ 配件數 ≥5 建議獨佔，<5 建議共用<br>
+        ▸ 未勾選的角色配件會走一般分類流程
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="autoSelectByPartCount(5)" style="font-size:11px">✨ ≥5件自動獨佔</button>
+        <button class="btn btn-sm" onclick="clearAllCharacters()" style="font-size:11px">🗑 清除所有</button>
+      </div>
+      ${sortedThemes.map(([theme,items])=>`
+        <div style="margin-top:12px;padding:8px;background:var(--surface);border-radius:8px">
+          <div style="font-size:12px;color:var(--accent);margin-bottom:6px;font-weight:700">${themeNames[theme]||theme} (${items.length})</div>
+          ${items.map(m=>{
+            const saved=savedChars[m.minifigNum]||{};
+            const enabled=!!saved.enabled;
+            const bagType=saved.bagType||(m.dbPartCount>=5?'dedicated':'shared');
+            return `
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border)">
+                <input type="checkbox" ${enabled?'checked':''} onchange="toggleCharacter('${m.minifigNum}',this.checked)" style="flex-shrink:0;width:18px;height:18px">
+                ${m.imgUrl?`<img src="${m.imgUrl}" style="width:32px;height:32px;border-radius:4px;object-fit:cover;background:var(--bg);flex-shrink:0">`:'<div style="width:32px;height:32px;background:var(--card);border-radius:4px;flex-shrink:0"></div>'}
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12px;color:var(--text);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.minifigNum}</div>
+                  <div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.name}</div>
+                  <div style="font-size:10px;color:${m.dbPartCount>0?'var(--green)':'var(--dim)'}">DB 配件: ${m.dbPartCount} 個</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
+                  <button class="btn" style="font-size:10px;padding:2px 6px;background:${bagType==='dedicated'?'var(--accent)':'var(--surface)'};color:${bagType==='dedicated'?'#111':'var(--text)'}" onclick="setCharacterBagType('${m.minifigNum}','dedicated')">🌟獨佔</button>
+                  <button class="btn" style="font-size:10px;padding:2px 6px;background:${bagType==='shared'?'var(--accent)':'var(--surface)'};color:${bagType==='shared'?'#111':'var(--text)'}" onclick="setCharacterBagType('${m.minifigNum}','shared')">👥共用</button>
+                </div>
+              </div>`;
+          }).join('')}
+        </div>`).join('')}
+      <button class="btn btn-primary" style="width:100%;margin-top:16px" onclick="saveCharacterConfig()">💾 儲存設定</button>
+    </div>`;
+}
+
+function toggleCharacter(mfNum,enabled){
+  if(!slotConfig.characters)slotConfig.characters={};
+  const mf=window._scannedMinifigs[mfNum];
+  if(!mf)return;
+  if(enabled){
+    const existing=slotConfig.characters[mfNum]||{};
+    slotConfig.characters[mfNum]={
+      ...existing,
+      enabled:true,
+      name:mf.name,
+      minifigNum:mfNum,
+      imgUrl:mf.imgUrl,
+      partNums:mf.partNums,
+      bagType:existing.bagType||(mf.dbPartCount>=5?'dedicated':'shared')
+    };
+  }else{
+    if(slotConfig.characters[mfNum])slotConfig.characters[mfNum].enabled=false;
+  }
+}
+
+function setCharacterBagType(mfNum,type){
+  if(!slotConfig.characters)slotConfig.characters={};
+  if(!slotConfig.characters[mfNum]){
+    const mf=window._scannedMinifigs[mfNum];
+    if(!mf)return;
+    slotConfig.characters[mfNum]={enabled:false,name:mf.name,minifigNum:mfNum,imgUrl:mf.imgUrl,partNums:mf.partNums};
+  }
+  slotConfig.characters[mfNum].bagType=type;
+  renderCharactersList();
+}
+
+function autoSelectByPartCount(minCount){
+  if(!slotConfig.characters)slotConfig.characters={};
+  let enabled=0;
+  Object.values(window._scannedMinifigs).forEach(mf=>{
+    if(mf.dbPartCount>=minCount){
+      slotConfig.characters[mf.minifigNum]={enabled:true,name:mf.name,minifigNum:mf.minifigNum,imgUrl:mf.imgUrl,partNums:mf.partNums,bagType:'dedicated'};
+      enabled++;
+    }
+  });
+  showToast(`已自動啟用 ${enabled} 個角色（配件 ≥${minCount}）`);
+  renderCharactersList();
+}
+
+function clearAllCharacters(){
+  if(!confirm('清除所有角色設定？'))return;
+  slotConfig.characters={};
+  renderCharactersList();
+  showToast('已清除所有角色設定');
+}
+
+async function saveCharacterConfig(){
+  markDirty('__config__');
+  try{
+    await db.collection(FB_COL).doc(FB_CONFIG_DOC).set({characters:slotConfig.characters||{}},{merge:true});
+    showToast('✅ 角色設定已儲存');
+  }catch(e){
+    showToast('❌ 儲存失敗：'+e.message,'error');
+  }
+}
+
+// Phase 2: Apply character tags to existing DB parts
+function applyCharacterTagsToItems(){
+  const chars=slotConfig.characters||{};
+  const enabledChars=Object.values(chars).filter(c=>c.enabled);
+  if(!enabledChars.length){showToast('沒有啟用的角色','error');return}
+  // Build part → [characters] mapping to detect exclusivity
+  const partToChars={};
+  enabledChars.forEach(c=>{
+    (c.partNums||[]).forEach(pn=>{
+      const key=pn.toLowerCase();
+      if(!partToChars[key])partToChars[key]=[];
+      partToChars[key].push(c.minifigNum);
+    });
+  });
+  // Apply tags: a part belongs to a character if exclusive OR if it appears in only this character's list
+  let tagged=0, skippedGeneric=0, alreadyTagged=0;
+  const EXCLUSIVITY_THRESHOLD=4; // Appears in ≥4 characters → generic
+  allItems.forEach(item=>{
+    const didLC=(item.designId||'').toLowerCase();
+    const altLC=(item.altIds||[]).map(a=>(a||'').toLowerCase());
+    const allLC=[didLC,...altLC].filter(Boolean);
+    // Find which characters this item matches
+    const matchedChars=new Set();
+    allLC.forEach(lc=>{(partToChars[lc]||[]).forEach(ch=>matchedChars.add(ch))});
+    if(matchedChars.size===0)return;
+    if(matchedChars.size>=EXCLUSIVITY_THRESHOLD){skippedGeneric++;return}
+    // Assign to first matched character (by user's enable order)
+    const firstMatch=Array.from(matchedChars)[0];
+    if(item.characterTag===firstMatch){alreadyTagged++;return}
+    item.characterTag=firstMatch;
+    item.updatedAt=Date.now();
+    markDirty(item.id);
+    tagged++;
+  });
+  showToast(`✅ 已標記 ${tagged} 個零件 | 跳過 ${skippedGeneric} 通用 | 已存在 ${alreadyTagged}`);
+  renderCharactersPage();
+}
+
+function clearAllCharacterTags(){
+  if(!confirm('清除所有零件的角色標籤？（不會刪除角色設定）'))return;
+  let cleared=0;
+  allItems.forEach(item=>{
+    if(item.characterTag){
+      delete item.characterTag;
+      item.updatedAt=Date.now();
+      markDirty(item.id);
+      cleared++;
+    }
+  });
+  showToast(`已清除 ${cleared} 個零件的角色標籤`);
+}
+
+// Load cached scan on page init
+loadCachedScan();
+
 function exportForLabels(){
   if(!allItems.length){showToast('沒有資料可匯出','error');return}
   const data=allItems.map(i=>({slot:i.slot||'',slotType:i.slotType||'small',name:i.name||'',nameCN:i.nameCN||'',designId:i.designId||'',thumbnailUrl:i.thumbnailUrl||'',quantity:i.quantity||1}));
