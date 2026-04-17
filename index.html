@@ -693,8 +693,12 @@ tr:hover{background:var(--accent-bg)}
           <option value="bag">收納袋</option><option value="box">紙箱</option>
         </select>
       </div>
+      <div style="margin-top:6px;display:flex;gap:6px">
+        <button class="btn btn-sm" onclick="showEditorMoveList('move_all')" style="flex:1;font-size:12px;padding:8px">🔄 變更位置（Top 5 最空）</button>
+        <button class="btn btn-sm" onclick="showEditorMoveList('overflow')" style="flex:1;font-size:12px;padding:8px">➕ 指派第二位置</button>
+      </div>
+      <div id="editor-move-list" style="margin-top:8px"></div>
     </div>
-    <div id="m-overflow-warn"></div>
   </div>
   <div class="modal-footer">
     <button class="btn" onclick="closeModal()">取消</button>
@@ -713,7 +717,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17f';
+const APP_VERSION = '2026.04.17g';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1614,7 +1618,7 @@ function renderTable(){
 // ═══════════════════════════════════════════════════
 // EDITOR MODAL (from editor)
 // ═══════════════════════════════════════════════════
-function openItem(id){currentItem=allItems.find(i=>i.id===id);if(!currentItem)return;isNewItem=false;populateModal(currentItem);document.getElementById('overlay').classList.add('open')}
+function openItem(id){currentItem=allItems.find(i=>i.id===id);if(!currentItem)return;isNewItem=false;populateModal(currentItem);const ml=document.getElementById('editor-move-list');if(ml)ml.innerHTML='';document.getElementById('overlay').classList.add('open')}
 
 function populateModal(i){
   const did=i.designId||'',baseId=did.replace(/(pb|pr|pat)\d+.*$/i,'');
@@ -1643,7 +1647,11 @@ function populateModal(i){
   if(i.overflowSlot&&(i.overflowQty||0)>0){const mainQty=(i.quantity||1)-(i.overflowQty||0);ovEl.innerHTML='📦 溢出：主位 <b>'+i.slot+'</b> 留 '+mainQty+' 件，溢出 <b>'+i.overflowSlot+'</b> 放 '+i.overflowQty+' 件';ovEl.style.display=''}else ovEl.style.display='none';
   document.getElementById('m-overflow-warn').innerHTML='';recalcVol();
 }
-function closeModal(){document.getElementById('overlay').classList.remove('open');currentItem=null;isNewItem=false}
+function closeModal(){
+  document.getElementById('overlay').classList.remove('open');
+  const el=document.getElementById('editor-move-list');if(el)el.innerHTML='';
+  currentItem=null;isNewItem=false;
+}
 function recalcVol(){
   const w=parseFloat(document.getElementById('m-dimW').value)||0,l=parseFloat(document.getElementById('m-dimL').value)||0,h=parseFloat(document.getElementById('m-dimH').value)||0,qty=parseInt(document.getElementById('m-qty').value)||1;
   let vol=0;if(w>0&&l>0&&h>0)vol=Math.round(w*l*h/1000*10)/10;else if(currentItem)vol=currentItem.estimateVolumeMl||0;
@@ -1666,7 +1674,6 @@ function recalcVol(){
         warn+='<button class="btn btn-sm btn-primary" onclick="showEditorMoveList(\'move_all\')" style="font-size:12px;padding:8px 10px">🔄 全部移到新位置（清除原格）</button>';
         warn+='<button class="btn btn-sm" onclick="showEditorMoveList(\'overflow\')" style="font-size:12px;padding:8px 10px">➕ 指派第二位置（部分溢出，保留原格）</button>';
         warn+='<span style="font-size:11px;color:var(--muted);text-align:center">💡 或直接儲存 → 系統自動溢出到最空的袋</span></div>';
-        warn+='<div id="editor-move-list" style="margin-top:8px"></div>';
       }
       else warn+='<br>此物品不需溢出，但同格其他物品可能需要調整';
       warnEl.innerHTML='<div class="overflow-warn">'+warn+'</div>';
