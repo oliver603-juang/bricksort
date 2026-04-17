@@ -713,7 +713,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17a';
+const APP_VERSION = '2026.04.17b';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1123,6 +1123,8 @@ async function loadData(){
     document.getElementById('status-text').textContent='✅ '+allItems.length+'筆';
     // Clean runtime flags that may have leaked to Firebase
     allItems.forEach(item=>{Object.keys(item).filter(k=>k.startsWith('_')&&k!=='_id').forEach(k=>delete item[k])});
+    // Also strip legacy fields (defensive - in case Firebase still has them from old versions)
+    allItems.forEach(item=>{LEGACY_FIELDS.forEach(f=>delete item[f])});
     repairSlotConfig();
   }catch(e){document.getElementById('status-text').textContent='❌ '+e.message;allItems=[]}
   document.getElementById('loading').style.display='none';
@@ -1131,8 +1133,11 @@ async function loadData(){
   const btToggle=document.getElementById('bt-shutter-toggle');if(btToggle)btToggle.checked=btShutterEnabled;renderBtPosStatus();
 }
 
+// Legacy fields that should never be written to Firebase (from old versions)
+const LEGACY_FIELDS=['overflowBag','packedVolumeMl','packingFactor','dim_verified','dim_verified_at','fullPartNum','isIrregular','totalVol'];
+
 async function fbSaveItem(item){
-  if(db){const clean={};Object.keys(item).forEach(k=>{if(!k.startsWith('_'))clean[k]=item[k]});await db.collection(FB_COL).doc(item.id).set(clean,{merge:true})}
+  if(db){const clean={};Object.keys(item).forEach(k=>{if(!k.startsWith('_')&&LEGACY_FIELDS.indexOf(k)<0)clean[k]=item[k]});await db.collection(FB_COL).doc(item.id).set(clean,{merge:true})}
 }
 
 // Auto-repair slotConfig pointers based on actual allItems data
@@ -1196,8 +1201,8 @@ async function saveAllToFirebase(){
   let written=0,errors=0;
   for(let i=0;i<toSave.length;i+=100){
     const chunk=toSave.slice(i,i+100);
-    try{const b=db.batch();chunk.forEach(item=>{const clean={};Object.keys(item).forEach(k=>{if(!k.startsWith('_'))clean[k]=item[k]});b.set(db.collection(FB_COL).doc(item.id),clean,{merge:true})});await b.commit();written+=chunk.length}
-    catch(e){for(const item of chunk){try{const clean={};Object.keys(item).forEach(k=>{if(!k.startsWith('_'))clean[k]=item[k]});await db.collection(FB_COL).doc(item.id).set(clean,{merge:true});written++}catch(e2){errors++}}}
+    try{const b=db.batch();chunk.forEach(item=>{const clean={};Object.keys(item).forEach(k=>{if(!k.startsWith('_')&&LEGACY_FIELDS.indexOf(k)<0)clean[k]=item[k]});b.set(db.collection(FB_COL).doc(item.id),clean,{merge:true})});await b.commit();written+=chunk.length}
+    catch(e){for(const item of chunk){try{const clean={};Object.keys(item).forEach(k=>{if(!k.startsWith('_')&&LEGACY_FIELDS.indexOf(k)<0)clean[k]=item[k]});await db.collection(FB_COL).doc(item.id).set(clean,{merge:true});written++}catch(e2){errors++}}}
     st.textContent='上傳中 '+written+'/'+total+(errors?' ('+errors+'失敗)':'')+'…';
     if(i+100<toSave.length) await new Promise(r=>setTimeout(r,1000));
   }
