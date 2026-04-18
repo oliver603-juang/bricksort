@@ -726,7 +726,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17m';
+const APP_VERSION = '2026.04.17o';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -4110,17 +4110,86 @@ function searchDrawer(d){
   }
 
   if(sides.full.length>0){
-    // Full drawer (no a/b split)
+    // Full drawer (no a/b split) — offer split button
     html+=renderSide(pad,sides.full,drawerCap);
+    html+='<div style="background:var(--card);border:1px dashed var(--border);border-radius:10px;padding:10px;margin-bottom:8px;text-align:center">';
+    html+='<button class="btn btn-sm btn-primary" onclick="splitDrawer('+d+')" style="font-size:12px;padding:8px 16px">✂️ 分割為 '+pad+'a / '+pad+'b（原物品→ '+pad+'a）</button>';
+    html+='<div style="font-size:10px;color:var(--muted);margin-top:6px">分割後 b 分格為空，可放新物品</div>';
+    html+='</div>';
   } else {
     html+=renderSide(pad+'a',sides.a,slotCap);
     html+=renderSide(pad+'b',sides.b,slotCap);
+    // Offer "擴展獨佔" button only when:
+    //   - One side has EXACTLY 1 item
+    //   - The other side is EMPTY
+    // This prevents multi-item full-drawer bugs.
+    const aEmpty=sides.a.length===0, bEmpty=sides.b.length===0;
+    const canExpand=(aEmpty&&sides.b.length===1)||(bEmpty&&sides.a.length===1);
+    if(canExpand){
+      const soleItem=aEmpty?sides.b[0]:sides.a[0];
+      const fromSide=aEmpty?'b':'a';
+      html+='<div style="background:var(--card);border:1px dashed var(--green);border-radius:10px;padding:10px;margin-bottom:8px;text-align:center">';
+      html+='<button class="btn btn-sm btn-green" onclick="mergeDrawer('+d+')" style="font-size:12px;padding:8px 16px">🔗 擴展獨佔整格 '+pad+'（容量 124→248ml）</button>';
+      html+='<div style="font-size:10px;color:var(--muted);margin-top:6px">「'+((soleItem.nameCN||soleItem.name||'').substring(0,20))+'」將從 '+pad+fromSide+' 移到 '+pad+'（整格）</div>';
+      html+='</div>';
+    }else if((aEmpty&&!bEmpty)||(!aEmpty&&bEmpty)){
+      // Side has >1 items — can't merge (would create multi-item full-drawer bug)
+      const occupiedSide=aEmpty?'b':'a';
+      const cnt=aEmpty?sides.b.length:sides.a.length;
+      html+='<div style="background:var(--card);border:1px dashed var(--border);border-radius:10px;padding:10px;margin-bottom:8px;text-align:center">';
+      html+='<div style="font-size:11px;color:var(--orange)">⚠ '+pad+occupiedSide+' 有 '+cnt+' 件物品，無法擴展為獨佔整格</div>';
+      html+='<div style="font-size:10px;color:var(--muted);margin-top:6px">獨佔整格只能放單一物品。請先移走其他物品</div>';
+      html+='</div>';
+    }
   }
 
   document.getElementById('search-title').textContent='抽屜 '+d+'：'+results.length+' 筆';
   document.getElementById('search-results').innerHTML=html;
   showScreen('s-search');
   attachSwipeNav(prev,next);
+}
+
+// Split a full drawer "249" into "249a" (keeps all original items) + "249b" (empty)
+async function splitDrawer(d){
+  const pad=String(d).padStart(3,'0'), plain=String(d);
+  const items=allItems.filter(i=>i.slot===pad||i.slot===plain);
+  if(items.length===0){showToast('抽屜 '+pad+' 沒有物品','error');return}
+  if(!confirm('將抽屜 '+pad+' 分割為 '+pad+'a / '+pad+'b\n\n原 '+items.length+' 件物品會移到 '+pad+'a\n'+pad+'b 會空出來可放新物品\n\n繼續？'))return;
+  const now=Date.now();
+  items.forEach(i=>{i.slot=pad+'a';i.updatedAt=now;markDirty(i.id)});
+  // Save to Firebase immediately
+  try{
+    const batch=db.batch();
+    items.forEach(i=>{batch.update(db.collection(FB_COL).doc(i.id),{slot:pad+'a',updatedAt:now})});
+    await batch.commit();
+    showToast('✅ 抽屜 '+pad+' 已分割，'+items.length+' 件物品移到 '+pad+'a');
+  }catch(e){showToast('已本地更新，Firebase 寫入失敗: '+e.message,'error')}
+  // Re-render
+  searchDrawer(d);
+}
+
+// Merge a split drawer back to full drawer (STRICT: only 1 item in occupied side, other empty)
+async function mergeDrawer(d){
+  const pad=String(d).padStart(3,'0'), plain=String(d);
+  const aItems=allItems.filter(i=>i.slot===pad+'a'||i.slot===plain+'a');
+  const bItems=allItems.filter(i=>i.slot===pad+'b'||i.slot===plain+'b');
+  const fullItems=allItems.filter(i=>i.slot===pad||i.slot===plain);
+  // Safety checks — prevent multi-item full-drawer bug
+  if(aItems.length>0&&bItems.length>0){showToast('兩邊都有物品無法擴展','error');return}
+  if(fullItems.length>0){showToast('整格已有物品，無法再擴展','error');return}
+  const occupied=aItems.length>0?aItems:bItems;
+  if(occupied.length===0){showToast('整個抽屜是空的，無需擴展','error');return}
+  if(occupied.length>1){showToast('該分格有 '+occupied.length+' 件物品，獨佔整格只能放單一物品','error');return}
+  const fromSide=aItems.length>0?'a':'b';
+  const theItem=occupied[0];
+  if(!confirm('擴展抽屜 '+pad+' 為獨佔整格\n\n物品「'+((theItem.nameCN||theItem.name||'').substring(0,20))+'」將從 '+pad+fromSide+' 移到 '+pad+'（整格）\n容量上限從 124ml → 248ml\n\n繼續？'))return;
+  const now=Date.now();
+  theItem.slot=pad;theItem.updatedAt=now;markDirty(theItem.id);
+  try{
+    await db.collection(FB_COL).doc(theItem.id).update({slot:pad,updatedAt:now});
+    showToast('✅ 抽屜 '+pad+' 已擴展為獨佔整格');
+  }catch(e){showToast('已本地更新，Firebase 寫入失敗: '+e.message,'error')}
+  searchDrawer(d);
 }
 
 // View contents of a bag (B01-B999)
