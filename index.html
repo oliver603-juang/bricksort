@@ -726,7 +726,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17o';
+const APP_VERSION = '2026.04.17p';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1708,8 +1708,51 @@ function populateModal(i){
   document.getElementById('m-bl-link').href=did?'https://www.bricklink.com/v2/catalog/catalogitem.page?P='+did:'#';
   document.getElementById('m-rb-link').href=did?'https://rebrickable.com/parts/'+did+'/':'#';
   const ovEl=document.getElementById('m-overflow-info');
-  if(i.overflowSlot&&(i.overflowQty||0)>0){const mainQty=(i.quantity||1)-(i.overflowQty||0);ovEl.innerHTML='📦 溢出：主位 <b>'+i.slot+'</b> 留 '+mainQty+' 件，溢出 <b>'+i.overflowSlot+'</b> 放 '+i.overflowQty+' 件';ovEl.style.display=''}else ovEl.style.display='none';
+  if(i.overflowSlot&&(i.overflowQty||0)>0){
+    const mainQty=(i.quantity||1)-(i.overflowQty||0);
+    const ovBags=i.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean);
+    let html='📦 溢出：主位 <b>'+i.slot+'</b> 留 '+mainQty+' 件<br>';
+    html+='<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">';
+    ovBags.forEach((bag,idx)=>{
+      html+='<span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface);padding:3px 6px 3px 8px;border-radius:6px;font-size:11px"><b>'+bag+'</b>';
+      html+='<button onclick="event.stopPropagation();removeOverflowBag(\''+bag+'\')" style="background:transparent;border:none;color:var(--red);font-size:14px;line-height:1;cursor:pointer;padding:0 2px" title="從溢出中移除 '+bag+'">×</button></span>';
+    });
+    html+='</div>';
+    html+='<div style="font-size:11px;color:var(--muted);margin-top:4px">共溢出 '+i.overflowQty+' 件 · 點 × 移除單袋 (物品將重算溢出)</div>';
+    ovEl.innerHTML=html;
+    ovEl.style.display='';
+  }else ovEl.style.display='none';
   document.getElementById('m-overflow-warn').innerHTML='';recalcVol();
+}
+
+// Remove a single bag from current item's overflow list
+function removeOverflowBag(bag){
+  if(!currentItem)return;
+  const i=currentItem;
+  const existing=(i.overflowSlot||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(!existing.includes(bag)){showToast('找不到 '+bag,'error');return}
+  if(!confirm('從溢出中移除 '+bag+' 嗎？\n\n注意：該位置若真的有物品，您需要實體手動移動。\n\n系統只會更新溢出紀錄。'))return;
+  const filtered=existing.filter(s=>s!==bag);
+  i.overflowSlot=filtered.join(',');
+  // Recalculate overflowQty: how many pieces can fit in the remaining overflow bags
+  const vol1=i.estimateVolumeMl||0;
+  if(filtered.length===0){
+    // No more overflow — reduce overflowQty to 0, but keep quantity (might overflow main slot)
+    i.overflowQty=0;
+  }else{
+    // Keep overflow but cap qty to what remaining bags can hold
+    const bagCap=BAG_ML_DEFAULT;
+    const piecesPerBag=vol1>0?Math.max(1,Math.floor(bagCap/vol1)):(i.overflowQty||0);
+    const maxOverQty=piecesPerBag*filtered.length;
+    if((i.overflowQty||0)>maxOverQty){
+      i.overflowQty=maxOverQty;
+    }
+  }
+  i.updatedAt=Date.now();
+  markDirty(i.id);
+  // Refresh the modal UI
+  populateModal(i);
+  showToast('已從溢出中移除 '+bag);
 }
 function closeModal(){
   document.getElementById('overlay').classList.remove('open');
@@ -3976,48 +4019,68 @@ function autoOverflowCheck(item){
   const cap=getSlotCap(item.slot,item.slotType);
   if(cap===Infinity)return null;
 
-  // BAG items: only expand overflow, never shrink (reset only via full reallocation)
+  // BAG items: expand OR shrink overflow based on current qty
   if(item.slotType==='bag'&&vol1>0){
     const piecesPerBag=Math.max(1,Math.floor(cap/vol1));
     if(qty<=piecesPerBag){
-      // Fits in one bag — clear stale overflow if overflowQty now 0
-      if((item.overflowQty||0)===0&&item.overflowSlot){
+      // Fits in one bag — clear stale overflow
+      if(item.overflowSlot||item.overflowQty){
+        const released=(item.overflowSlot||'').split(',').map(s=>s.trim()).filter(Boolean);
         item.overflowSlot='';
+        item.overflowQty=0;
         markDirty(item.id);
+        if(released.length>0){
+          console.log('[autoOverflowCheck] '+item.designId+' released bags: '+released.join(','));
+        }
       }
       return null;
     }
     const bagsNeeded=Math.ceil(qty/piecesPerBag);
     const ovBagsNeeded=bagsNeeded-1;
     const existingOvBags=item.overflowSlot?item.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean):[];
-    // Allocate new consecutive bags (don't mix with existing items)
+    // Expand if needed
     while(existingOvBags.length<ovBagsNeeded){
       const nextBag=slotConfig.nextBagSlot||'B01';
       slotConfig.nextBagSlot=advanceBag(nextBag);
       markDirty('__config__');
       existingOvBags.push(nextBag);
     }
+    // Shrink if too many (qty went down)
+    if(existingOvBags.length>ovBagsNeeded){
+      existingOvBags.length=ovBagsNeeded;
+    }
     const overQty=qty-piecesPerBag;
     item.overflowSlot=existingOvBags.join(',');
-    item.overflowQty=Math.max(overQty,item.overflowQty||0);
+    item.overflowQty=overQty;
     return{bagSlot:existingOvBags.join(','),overQty,fitsQty:piecesPerBag};
   }
 
-  // DRAWER items: overflow to bag(s) — only expand, never shrink
+  // DRAWER items: expand OR shrink overflow based on current qty
   const otherVol=allItems.filter(i=>i.slot===item.slot&&i.id!==item.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
   const availCap=Math.max(0,cap-otherVol);
   const tv=vol1*qty;
   if(otherVol+tv<=cap){
-    // fits now — clear stale overflow if overflowQty is 0
-    if((item.overflowQty||0)===0&&item.overflowSlot){
+    // Fits in primary slot now — release all overflow
+    if(item.overflowSlot||item.overflowQty){
+      const released=(item.overflowSlot||'').split(',').map(s=>s.trim()).filter(Boolean);
       item.overflowSlot='';
+      item.overflowQty=0;
       markDirty(item.id);
+      if(released.length>0){
+        console.log('[autoOverflowCheck] '+item.designId+' released bags: '+released.join(','));
+      }
     }
     return null;
   }
   const fitsQty=Math.max(0,Math.floor(availCap/(vol1||1)));
   const overQty=qty-fitsQty;
-  if(overQty<=0)return null;
+  if(overQty<=0){
+    // Same as above — release overflow
+    if(item.overflowSlot||item.overflowQty){
+      item.overflowSlot='';item.overflowQty=0;markDirty(item.id);
+    }
+    return null;
+  }
   const ovVol=vol1*overQty;
   const itemCg2=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
   const itemTag=item.characterTag||null;
@@ -4031,35 +4094,41 @@ function autoOverflowCheck(item){
     // Single bag: find existing bag with capacity, or allocate new
     const bagSlot=findBagForOverflow(ovVol,itemCg2,itemTag,itemSeries);
     item.overflowSlot=bagSlot;
-    item.overflowQty=Math.max(overQty,item.overflowQty||0);
+    item.overflowQty=overQty;
     return{bagSlot,overQty,fitsQty};
   }
   if(ovBagsNeeded===1&&existingOvBags.length>=1){
-    // Already has overflow bag(s) — check if first bag still has capacity
+    // Already has overflow bag(s) — shrink if too many, reuse if fits
     const eb=existingOvBags[0];
     const currentOvVol=vol1*(item.overflowQty||0);
     const bagVolWithout=getBagVol(eb)-currentOvVol;
     if(bagVolWithout+ovVol<=bagCap){
+      // Shrink if we had more bags previously
+      existingOvBags.length=1;
       item.overflowSlot=existingOvBags.join(',');
-      item.overflowQty=Math.max(overQty,item.overflowQty||0);
+      item.overflowQty=overQty;
       return{bagSlot:existingOvBags.join(','),overQty,fitsQty};
     }
     // Existing bag full → allocate new
     const newBag=findBagForOverflow(ovVol,itemCg2,itemTag,itemSeries);
     existingOvBags.push(newBag);
     item.overflowSlot=existingOvBags.join(',');
-    item.overflowQty=Math.max(overQty,item.overflowQty||0);
+    item.overflowQty=overQty;
     return{bagSlot:existingOvBags.join(','),overQty,fitsQty};
   }
-  // Multi-bag: allocate new consecutive bags (don't mix with existing items)
+  // Multi-bag needed
   while(existingOvBags.length<ovBagsNeeded){
     const nextBag=slotConfig.nextBagSlot||'B01';
     slotConfig.nextBagSlot=advanceBag(nextBag);
     markDirty('__config__');
     existingOvBags.push(nextBag);
   }
+  // Shrink if too many
+  if(existingOvBags.length>ovBagsNeeded){
+    existingOvBags.length=ovBagsNeeded;
+  }
   item.overflowSlot=existingOvBags.join(',');
-  item.overflowQty=Math.max(overQty,item.overflowQty||0);
+  item.overflowQty=overQty;
   return{bagSlot:existingOvBags.join(','),overQty,fitsQty};
 }
 function searchDrawer(d){
