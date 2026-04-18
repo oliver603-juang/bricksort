@@ -726,7 +726,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17k';
+const APP_VERSION = '2026.04.17m';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1923,15 +1923,17 @@ function showEditorMoveList(mode){
   const label=mode==='move_all'?'🔄 選擇新位置（會釋出原格）':'➕ 選擇第二位置（溢出去處）';
   let html='<div style="background:var(--card);border:1px solid var(--accent);border-radius:8px;padding:10px;margin-top:4px">';
   html+='<div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px">'+label+'</div>';
-  html+='<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">';
-  html+='<button class="btn btn-sm" onclick="renderEditorMoveOptions(\'bag\')" style="font-size:11px;flex:1">📦 收納袋</button>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">';
+  html+='<button class="btn btn-sm" onclick="renderEditorMoveOptions(\'bag\')" style="font-size:11px">📦 收納袋</button>';
   if(mode==='move_all'){
-    html+='<button class="btn btn-sm" onclick="renderEditorMoveOptions(\'small\')" style="font-size:11px;flex:1">🗄 小抽屜</button>';
-    html+='<button class="btn btn-sm" onclick="renderEditorMoveOptions(\'large\')" style="font-size:11px;flex:1">📦 大抽屜</button>';
+    html+='<button class="btn btn-sm" onclick="renderEditorMoveOptions(\'drawer\')" style="font-size:11px">🗄️ 格子 (a+b)</button>';
+    html+='<button class="btn btn-sm" onclick="renderEditorMoveOptions(\'small\')" style="font-size:11px">🗄 小抽屜分格</button>';
+    html+='<button class="btn btn-sm" onclick="renderEditorMoveOptions(\'large\')" style="font-size:11px">📦 大抽屜</button>';
   }
   html+='</div>';
   html+='<div id="editor-move-options"></div>';
-  html+='<div style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="text" id="editor-manual-slot" placeholder="手動輸入（例 B01、420a、L05）" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:12px;font-family:var(--mono)"><button class="btn btn-green btn-sm" onclick="applyEditorManual()" style="font-size:11px">✓</button></div>';
+  html+='<div style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="text" id="editor-manual-slot" placeholder="手動輸入（例 B01、421、421a、L05）" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:12px;font-family:var(--mono)"><button class="btn btn-green btn-sm" onclick="applyEditorManual()" style="font-size:11px">✓</button></div>';
+  html+='<div style="font-size:10px;color:var(--muted);margin-top:4px">💡 輸入 421 = 整個格子 (a+b)；421a = 單分格</div>';
   html+='<button class="btn btn-sm" onclick="cancelEditorMove()" style="width:100%;margin-top:6px;font-size:11px">取消</button>';
   html+='</div>';
   listEl.innerHTML=html;
@@ -1941,20 +1943,26 @@ function renderEditorMoveOptions(slotType){
   const topSlots=getTopEmptySlots(slotType,5);
   const el=document.getElementById('editor-move-options');
   if(!el)return;
-  let html='<div style="font-size:11px;color:var(--muted);margin:4px 0">Top 5 最空 (點選直接套用)：</div>';
+  const title=slotType==='drawer'?'Top 5 全空抽屜 (整格 a+b)：':'Top 5 最空 (點選直接套用)：';
+  let html='<div style="font-size:11px;color:var(--muted);margin:4px 0">'+title+'</div>';
   if(!topSlots.length){
-    html+='<div style="font-size:11px;color:var(--muted);text-align:center;padding:6px">無現有可用位置</div>';
+    html+='<div style="font-size:11px;color:var(--muted);text-align:center;padding:6px">'+(slotType==='drawer'?'無完全空的整格抽屜':'無現有可用位置')+'</div>';
   }else{
     topSlots.forEach(s=>{
+      const label=slotType==='drawer'?s.slot+' (整格)':s.slot;
       html+='<div onclick="applyEditorMove(\''+s.slot+'\',\''+slotType+'\')" style="display:flex;justify-content:space-between;padding:6px 8px;background:var(--surface);border-radius:6px;margin-bottom:3px;cursor:pointer">';
-      html+='<span style="font-family:var(--mono);font-weight:700;color:var(--accent)">'+s.slot+'</span>';
+      html+='<span style="font-family:var(--mono);font-weight:700;color:var(--accent)">'+label+'</span>';
       html+='<span style="font-size:10px;color:var(--muted)">餘 '+s.remaining+'/'+s.cap+'ml</span>';
       html+='</div>';
     });
   }
   if(slotType==='small'){
     const ns=slotConfig.nextSmallSlot||'001a';
-    html+='<div onclick="applyEditorMove(\''+ns+'\',\'small\')" style="padding:6px 8px;background:var(--green-bg);border:1px dashed var(--green);border-radius:6px;cursor:pointer;text-align:center;font-family:var(--mono);color:var(--green);font-weight:700;font-size:12px;margin-top:4px">✨ '+ns+' (新抽屜)</div>';
+    html+='<div onclick="applyEditorMove(\''+ns+'\',\'small\')" style="padding:6px 8px;background:var(--green-bg);border:1px dashed var(--green);border-radius:6px;cursor:pointer;text-align:center;font-family:var(--mono);color:var(--green);font-weight:700;font-size:12px;margin-top:4px">✨ '+ns+' (新分格)</div>';
+  }else if(slotType==='drawer'){
+    const ns=slotConfig.nextSmallSlot||'001a';
+    const nsBare=ns.replace(/[a-z]/g,'');
+    html+='<div onclick="applyEditorMove(\''+nsBare+'\',\'drawer\')" style="padding:6px 8px;background:var(--green-bg);border:1px dashed var(--green);border-radius:6px;cursor:pointer;text-align:center;font-family:var(--mono);color:var(--green);font-weight:700;font-size:12px;margin-top:4px">✨ '+nsBare+' (新整格)</div>';
   }else if(slotType==='bag'){
     const ns=slotConfig.nextBagSlot||'B01';
     html+='<div onclick="applyEditorMove(\''+ns+'\',\'bag\')" style="padding:6px 8px;background:var(--green-bg);border:1px dashed var(--green);border-radius:6px;cursor:pointer;text-align:center;font-family:var(--mono);color:var(--green);font-weight:700;font-size:12px;margin-top:4px">✨ '+ns+' (新袋)</div>';
@@ -1986,33 +1994,79 @@ function applyEditorMove(slot,slotType){
   if(!currentItem)return;
   const i=currentItem;
   const mode=i._moveMode||'move_all';
+  // "drawer" = full drawer (no a/b suffix) — store as bare 3-digit number, slotType='small'
+  // The slot string itself (e.g. "421") already has no suffix; slotType stays 'small'
+  let storeSlot=slot;
+  let storeType=slotType;
+  if(slotType==='drawer'){
+    storeSlot=String(parseInt(slot)).padStart(3,'0'); // ensure "421" not "421a"
+    storeType='small';
+  }
   // Auto-advance pointer if new slot
-  if(slotType==='small'&&slot===(slotConfig.nextSmallSlot||'')){
-    const num=parseInt(slot.replace(/[a-z]/g,''));
-    slotConfig.nextSmallSlot=String(num+1).padStart(3,'0')+'a';
-    markDirty('__config__');
-  }else if(slotType==='bag'&&slot===(slotConfig.nextBagSlot||'')){
+  if(storeType==='small'&&(slot===(slotConfig.nextSmallSlot||'')||slotType==='drawer')){
+    const curNextNum=parseInt((slotConfig.nextSmallSlot||'001a').replace(/[a-z]/g,''));
+    const targetNum=parseInt(storeSlot);
+    if(targetNum>=curNextNum){
+      slotConfig.nextSmallSlot=String(targetNum+1).padStart(3,'0')+'a';
+      markDirty('__config__');
+    }
+  }else if(storeType==='bag'&&slot===(slotConfig.nextBagSlot||'')){
     slotConfig.nextBagSlot=advanceBag(slot);
     markDirty('__config__');
   }
+  // Auto-split: if target is an a/b side (e.g. "249b") but the full drawer ("249") has items,
+  // migrate the full-drawer items to the OPPOSITE side to free up the requested side.
+  let splitMsg='';
+  if(storeType==='small'){
+    const abMatch=storeSlot.match(/^(\d+)([ab])$/);
+    if(abMatch){
+      const drawerNum=abMatch[1], targetSide=abMatch[2];
+      const oppositeSide=targetSide==='a'?'b':'a';
+      const bareDrawer=String(parseInt(drawerNum)).padStart(3,'0');
+      const bareDrawerPlain=String(parseInt(drawerNum));
+      // Find items stored at the bare (full-drawer) slot — excluding current item
+      const fullDrawerItems=allItems.filter(x=>x.id!==i.id&&(x.slot===bareDrawer||x.slot===bareDrawerPlain));
+      if(fullDrawerItems.length>0){
+        // Migrate those items to opposite side
+        fullDrawerItems.forEach(x=>{
+          x.slot=bareDrawer+oppositeSide;
+          x.updatedAt=Date.now();
+          markDirty(x.id);
+        });
+        splitMsg='\n📦 抽屜 '+bareDrawer+' 自動拆分：原 '+fullDrawerItems.length+' 件物品移到 '+bareDrawer+oppositeSide;
+      }
+    }
+    // Reverse: if selecting full-drawer (e.g. "249") but a or b has items, block unless confirmed
+    else if(/^\d+$/.test(storeSlot)){
+      const bareDrawer=String(parseInt(storeSlot)).padStart(3,'0');
+      const sideItems=allItems.filter(x=>x.id!==i.id&&(x.slot===bareDrawer+'a'||x.slot===bareDrawer+'b'||x.slot===storeSlot+'a'||x.slot===storeSlot+'b'));
+      if(sideItems.length>0){
+        const ok=confirm('⚠ 抽屜 '+bareDrawer+' 的 a 或 b 分格已有 '+sideItems.length+' 件物品。\n\n選擇「整格」會與那些物品共用空間。\n\n繼續嗎？');
+        if(!ok){delete i._moveMode;cancelEditorMove();return}
+        splitMsg='\n⚠ 抽屜 '+bareDrawer+' 與 '+sideItems.length+' 件分格物品共用空間';
+      }
+    }
+  }
   if(mode==='move_all'){
     const oldSlot=i.slot,oldOv=i.overflowSlot||'';
-    i.slot=slot;i.slotType=slotType;
+    i.slot=storeSlot;i.slotType=storeType;
     i.overflowSlot='';i.overflowQty=0;
     i.updatedAt=Date.now();
-    document.getElementById('m-slot').value=slot;
-    document.getElementById('m-slotType').value=slotType;
+    document.getElementById('m-slot').value=storeSlot;
+    document.getElementById('m-slotType').value=storeType;
     // Mirror sync: also move Left/Right partner
     const partner=findMirrorPartner(i);
-    let msg='✅ 已全部移到 '+slot+'（原 '+oldSlot+' 釋出'+(oldOv?'，清除原溢出 '+oldOv:'')+'）';
+    const destLabel=slotType==='drawer'?storeSlot+' (整格 a+b)':storeSlot;
+    let msg='✅ 已全部移到 '+destLabel+'（原 '+oldSlot+' 釋出'+(oldOv?'，清除原溢出 '+oldOv:'')+'）';
     if(partner){
       const pOldSlot=partner.slot;
-      partner.slot=slot;partner.slotType=slotType;
+      partner.slot=storeSlot;partner.slotType=storeType;
       partner.overflowSlot='';partner.overflowQty=0;
       partner.updatedAt=Date.now();
       markDirty(partner.id);
-      msg+='\n🔗 鏡射件「'+((partner.nameCN||partner.name||'').substring(0,18))+'」同步 '+pOldSlot+'→'+slot;
+      msg+='\n🔗 鏡射件「'+((partner.nameCN||partner.name||'').substring(0,18))+'」同步 '+pOldSlot+'→'+storeSlot;
     }
+    if(splitMsg)msg+=splitMsg;
     showToast(msg);
   }else{
     // overflow: append to overflowSlot, compute overflow qty
@@ -2023,10 +2077,10 @@ function applyEditorMove(slot,slotType){
     const fitsQty=Math.max(0,Math.floor(availCap/(v1||1)));
     const overQty=Math.max(0,(i.quantity||1)-fitsQty);
     const existing=(i.overflowSlot||'').split(',').map(s=>s.trim()).filter(Boolean);
-    if(!existing.includes(slot))existing.push(slot);
+    if(!existing.includes(storeSlot))existing.push(storeSlot);
     i.overflowSlot=existing.join(',');
     i.overflowQty=overQty;
-    showToast('✅ 溢出 '+overQty+' 件到 '+slot+'（主位 '+i.slot+' 保留 '+fitsQty+' 件）');
+    showToast('✅ 溢出 '+overQty+' 件到 '+storeSlot+'（主位 '+i.slot+' 保留 '+fitsQty+' 件）');
   }
   delete i._moveMode;
   i.updatedAt=Date.now();
@@ -2039,19 +2093,27 @@ function applyEditorManual(){
   const val=(document.getElementById('editor-manual-slot')?.value||'').trim();
   if(!val){showToast('請輸入位置','error');return}
   let slotType='small';
+  let passVal=val;
   if(/^B\d+$/i.test(val))slotType='bag';
   else if(/^L\d+$/i.test(val)){
     slotType='large';
     const n=parseInt(val.replace(/[^\d]/g,''));
     if(n<1||n>27){showToast('大抽屜編號超出範圍 (L01-L27)','error');return}
   }
-  else if(/^\d+[ab]?$/.test(val)){
+  else if(/^\d+$/.test(val)){
+    // No suffix → whole drawer (a+b combined)
+    slotType='drawer';
+    const n=parseInt(val);
+    if(n<1||n>450){showToast('小抽屜編號超出範圍 (1-450)，超過請改用收納袋','error');return}
+    passVal=String(n).padStart(3,'0');
+  }
+  else if(/^\d+[ab]$/.test(val)){
     slotType='small';
     const n=parseInt(val.replace(/[a-z]/g,''));
     if(n<1||n>450){showToast('小抽屜編號超出範圍 (1-450)，超過請改用收納袋','error');return}
   }
-  else{showToast('格式錯誤（例：B01、420a、L05）','error');return}
-  applyEditorMove(val,slotType);
+  else{showToast('格式錯誤（例：B01、421、421a、L05）','error');return}
+  applyEditorMove(passVal,slotType);
 }
 
 function cancelEditorMove(){
@@ -3337,6 +3399,21 @@ function getTopEmptySlots(slotType, limit){
         if(remaining>=5) results.push({slot,used:Math.round(used*10)/10,remaining:Math.round(remaining*10)/10,cap});
       });
     }
+  }else if(slotType==='drawer'){
+    // Full drawer (entire a+b). Only consider drawers that are COMPLETELY empty
+    // (both a-side and b-side have nothing).
+    const maxD=parseInt((slotConfig.nextSmallSlot||'001a').replace(/[a-z]/g,''));
+    for(let d=1;d<=Math.min(maxD,450);d++){
+      const pad=String(d).padStart(3,'0');
+      const plain=String(d);
+      const itemsInDrawer=allItems.filter(i=>{
+        const s=i.slot||'';
+        return s===pad||s===plain||s===pad+'a'||s===pad+'b'||s===plain+'a'||s===plain+'b';
+      });
+      if(itemsInDrawer.length===0){
+        results.push({slot:pad,used:0,remaining:DRAWER_ML,cap:DRAWER_ML});
+      }
+    }
   }else if(slotType==='large'){
     const usedL=new Set(allItems.filter(i=>i.slotType==='large').map(i=>i.slot));
     for(let n=1;n<=27;n++){
@@ -3517,7 +3594,8 @@ function applySlotOverrideManual(){
   // Manual override = move ALL to new slot, clear overflow
   pendingPart.overflowSlot='';pendingPart.overflowQty=0;
   document.getElementById('result-slot').textContent=val;
-  document.getElementById('result-slot-type').textContent=slotType==='large'?'大抽屜':slotType==='bag'?'收納袋':'小抽屜分格';
+  const isFullDrawer=slotType==='small'&&/^\d+$/.test(val);
+  document.getElementById('result-slot-type').textContent=slotType==='large'?'大抽屜':slotType==='bag'?'收納袋':isFullDrawer?'小抽屜（整格 a+b）':'小抽屜分格';
   cancelSlotOverride();
   renderMiniMap(val,slotType);
 }
