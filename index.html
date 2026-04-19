@@ -733,7 +733,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17x';
+const APP_VERSION = '2026.04.17y';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -2513,7 +2513,8 @@ function assignFrequent(item){
   const totalVol = v1 * qty;
   const catGroup = getCatGroup(item.featureTags||[], normalizeCategory(item.bricklinkCategory||''));
   const charTag = item.characterTag || null;
-  const seriesTag = item.seriesTag || detectSeries(item);
+  // v17y: 只用明確 seriesTag，避免 detectSeries 誤判通用零件為某系列
+  const seriesTag = item.seriesTag || null;
   
   // === 情境 A: 總量夠小，全量進抽屜 (無 pickup) ===
   // 依總體積選最小合適抽屜
@@ -2678,7 +2679,9 @@ function assignRegular(item){
   const catGroup=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
   const vt=Math.round(vol*qty*10)/10;
   const charTag=item.characterTag||null;
-  const seriesTag=item.seriesTag||detectSeries(item);
+  // v17y: 只用明確的 seriesTag，不要 detectSeries 猜測
+  //       (避免把「忍者頭盔」這種通用零件誤判為 Ninjago 系列)
+  const seriesTag=item.seriesTag||null;
 
   // 0. 有角色標籤 → 優先進角色袋 (即使同時有系列標籤)
   //    自動啟用: 若 slotConfig.characters 沒該角色設定，自動建 enabled:true, dedicated
@@ -2693,7 +2696,7 @@ function assignRegular(item){
     }
     return assignToBag(vt,catGroup,charTag,null); // 傳 null 阻止 seriesBag 優先
   }
-  // 0b. 有系列標籤但無角色 → 進系列袋
+  // 0b. 有明確系列標籤但無角色 → 進系列袋
   if(seriesTag){return assignToBag(vt,catGroup,null,seriesTag)}
   // 1. 人偶/超大/不合尺寸 → 收納袋
   if(isMinifigure(item)||!fitsSmallSlot(item)||vt>DRAWER_ML){return assignToBag(vt,catGroup,charTag,seriesTag)}
@@ -4837,7 +4840,7 @@ function autoOverflowCheck(item){
   const ovVol=vol1*overQty;
   const itemCg2=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
   const itemTag=item.characterTag||null;
-  const itemSeries=item.seriesTag||detectSeries(item)||null;
+  const itemSeries=item.seriesTag||null; // v17y: 不用 detectSeries 猜測
   const bagCap=BAG_ML_DEFAULT;
   const piecesPerBag=vol1>0?Math.max(1,Math.floor(bagCap/vol1)):overQty;
   const ovBagsNeeded=Math.ceil(overQty/piecesPerBag);
