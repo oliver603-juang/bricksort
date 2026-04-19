@@ -733,7 +733,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17y';
+const APP_VERSION = '2026.04.17z';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1632,6 +1632,10 @@ function isMinifigure(item){
   return false;
 }
 function fitsSmallSlot(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0){const vol=item.estimateVolumeMl||0;return vol<=SLOT_ML}const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=SLOT_H&&d[1]<=SLOT_W}
+// v17z: 整格尺寸檢查 (半格×2 = 寬 48 x 長 68×2=136 x 高 38)
+function fitsFullDrawer(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0){const vol=item.estimateVolumeMl||0;return vol<=DRAWER_ML}const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=SLOT_H&&d[1]<=SLOT_L&&d[2]<=SLOT_L}
+// 大抽屜尺寸檢查 (寬 108 x 長 136 x 高 53)
+function fitsLargeSlot(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0){const vol=item.estimateVolumeMl||0;return vol<=LARGE_ML}const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=53&&d[1]<=108&&d[2]<=136}
 
 // ═══ SERIES TAG DETECTION ═══
 // Maps from Rebrickable minifig prefix → series name
@@ -2698,10 +2702,27 @@ function assignRegular(item){
   }
   // 0b. 有明確系列標籤但無角色 → 進系列袋
   if(seriesTag){return assignToBag(vt,catGroup,null,seriesTag)}
-  // 1. 人偶/超大/不合尺寸 → 收納袋
-  if(isMinifigure(item)||!fitsSmallSlot(item)||vt>DRAWER_ML){return assignToBag(vt,catGroup,charTag,seriesTag)}
+  // 1. 人偶 → 收納袋 (人偶實體太複雜)
+  if(isMinifigure(item)){return assignToBag(vt,catGroup,charTag,seriesTag)}
   // 1b. 人偶身體部件 → 強制收納袋
   if(BAG_SUPER_GROUPS[catGroup]&&vol>=MINIFIG_BAG_VOL1){return assignToBag(vt,catGroup,charTag,seriesTag)}
+  // 1c. 總體積超過大抽屜 → 收納袋 (非常用大體積)
+  if(vt>LARGE_ML){return assignToBag(vt,catGroup,charTag,seriesTag)}
+  // 1d. 塞不下半格但能塞整格 → 獨佔整格 (新 v17z)
+  if(!fitsSmallSlot(item)){
+    if(fitsFullDrawer(item) && vt<=DRAWER_ML){
+      const newSlot=allocateNewSmallSlot();
+      if(newSlot)return{slot:newSlot,slotType:'small'};
+    }
+    // 塞不下整格 → 試大抽屜 (若尺寸和體積都適合)
+    if(fitsLargeSlot(item) && vt<=LARGE_ML){
+      // 不自動佔用大抽屜，因為大抽屜稀缺 → 進袋
+      // (使用者可以手動移到大抽屜)
+    }
+    return assignToBag(vt,catGroup,charTag,seriesTag);
+  }
+  // 1e. 總體積超過整格但塞得下半格 (不太可能) → 進袋
+  if(vt>DRAWER_ML){return assignToBag(vt,catGroup,charTag,seriesTag)}
   // 2. 單件體積 > 41ml 或 總體積 > MERGE_LIMIT → 不融合
   if(vt<=MERGE_LIMIT&&vol<=MERGE_VOL1_MAX){
     const mergeSlot=findMergeSlot(vt,catGroup,true);
