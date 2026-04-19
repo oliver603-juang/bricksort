@@ -249,6 +249,8 @@ tr:hover{background:var(--accent-bg)}
       <option value="updatedAt-asc">收納日期 ↑ 舊→新</option>
       <option value="name-asc">名稱 A→Z</option>
       <option value="name-desc">名稱 Z→A</option>
+	  <option value="rank-asc">常用度 ↓ 熱門→冷門</option>
+	  <option value="rank-desc">常用度 ↑ 冷門→熱門</option>
       <option value="designId-asc">Design ID ↑</option>
       <option value="designId-desc">Design ID ↓</option>
       <option value="vol-desc">單件體積 ↓ 大→小</option>
@@ -1745,6 +1747,7 @@ function applyFilter(){
     else if(key==='slot'){return(a.slot||'').localeCompare(b.slot||'',undefined,{numeric:true})*m}
     else if(key==='name'){return(a.name||a.nameCN||'').localeCompare(b.name||b.nameCN||'')*m}
     else if(key==='designId'){return(a.designId||'').localeCompare(b.designId||'',undefined,{numeric:true})*m}
+    else if(key==='rank'){va=a.rebrickableRank||999999;vb=b.rebrickableRank||999999}
     else{va=0;vb=0}return typeof va==='number'?(va-vb)*m:0});
   document.getElementById('count-label').textContent=filtered.length+'/'+allItems.length;
   renderTable();
