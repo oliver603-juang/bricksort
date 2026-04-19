@@ -733,7 +733,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17w';
+const APP_VERSION = '2026.04.17x';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -2624,19 +2624,25 @@ function assignFrequent(item){
       const overflowBagsNeeded = totalBagsNeeded - 1;
       overflowQtyCalc = remainQty - piecesPerBag;
       const ovBagList = [];
+      // v17x: 本地已用袋黑名單 (避免 findBagForOverflow 回傳相同袋)
+      const usedBags = [mainBag];
       for(let b = 0; b < overflowBagsNeeded; b++){
         const piecesLeft = remainQty - piecesPerBag - b * piecesPerBag;
         const volNeed = Math.min(bagCap, piecesLeft * v1);
-        const ovBag = findBagForOverflow(volNeed, catGroup, charTag, seriesTag);
-        if(ovBag && ovBag !== mainBag && ovBagList.indexOf(ovBag) === -1){
-          ovBagList.push(ovBag);
-        } else {
-          // 重複或同個袋 → 強制開新袋
-          const newBag = slotConfig.nextBagSlot || 'B01';
-          slotConfig.nextBagSlot = advanceBag(newBag);
+        let ovBag = findBagForOverflow(volNeed, catGroup, charTag, seriesTag);
+        // 檢查是否重複 (findBagForOverflow 可能回傳 mainBag 或剛加的 ovBag)
+        if(!ovBag || usedBags.indexOf(ovBag) >= 0){
+          // 強制開新袋，跳過已用的
+          let nextBag = slotConfig.nextBagSlot || 'B01';
+          while(usedBags.indexOf(nextBag) >= 0){
+            nextBag = advanceBag(nextBag);
+          }
+          slotConfig.nextBagSlot = advanceBag(nextBag);
           markDirty('__config__');
-          ovBagList.push(newBag);
+          ovBag = nextBag;
         }
+        ovBagList.push(ovBag);
+        usedBags.push(ovBag);
       }
       overflowBags = ovBagList.join(',');
     }
