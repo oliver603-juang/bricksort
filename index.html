@@ -733,7 +733,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17u';
+const APP_VERSION = '2026.04.17v';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -2368,7 +2368,13 @@ function assignToBag(vt,catGroup,characterTag,seriesTag){
   }
   // Phase 0b: character-tag routing (only if no series)
   if(characterTag){
-    const char=(slotConfig.characters||{})[characterTag];
+    // 自動註冊新角色 (不需手動勾選啟用)
+    if(!slotConfig.characters) slotConfig.characters={};
+    if(!slotConfig.characters[characterTag]){
+      slotConfig.characters[characterTag]={enabled:true,bagType:'dedicated'};
+      markDirty('__config__');
+    }
+    const char=slotConfig.characters[characterTag];
     if(char&&char.enabled){
       if(char.bagType==='dedicated'){
         const existing=findCharacterBag(characterTag);
@@ -2642,10 +2648,21 @@ function assignRegular(item){
   const charTag=item.characterTag||null;
   const seriesTag=item.seriesTag||detectSeries(item);
 
-  // 0. 有系列標籤 → 強制進系列袋
-  if(seriesTag){return assignToBag(vt,catGroup,charTag,seriesTag)}
-  // 0b. 有角色標籤但無系列 → 進角色袋
-  if(charTag){const char=(slotConfig.characters||{})[charTag];if(char&&char.enabled)return assignToBag(vt,catGroup,charTag,null)}
+  // 0. 有角色標籤 → 優先進角色袋 (即使同時有系列標籤)
+  //    自動啟用: 若 slotConfig.characters 沒該角色設定，自動建 enabled:true, dedicated
+  if(charTag){
+    if(!slotConfig.characters) slotConfig.characters={};
+    if(!slotConfig.characters[charTag]){
+      slotConfig.characters[charTag]={enabled:true,bagType:'dedicated'};
+      markDirty('__config__');
+    } else if(!slotConfig.characters[charTag].enabled){
+      slotConfig.characters[charTag].enabled=true;
+      markDirty('__config__');
+    }
+    return assignToBag(vt,catGroup,charTag,null); // 傳 null 阻止 seriesBag 優先
+  }
+  // 0b. 有系列標籤但無角色 → 進系列袋
+  if(seriesTag){return assignToBag(vt,catGroup,null,seriesTag)}
   // 1. 人偶/超大/不合尺寸 → 收納袋
   if(isMinifigure(item)||!fitsSmallSlot(item)||vt>DRAWER_ML){return assignToBag(vt,catGroup,charTag,seriesTag)}
   // 1b. 人偶身體部件 → 強制收納袋
