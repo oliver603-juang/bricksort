@@ -2983,6 +2983,15 @@ function findMergeSlot(newVt,catGroup,sameCategory){
       // ★ 常用零件獨佔: 半格含常用 → 禁止融合
       if(allItems.some(i=>i.slot===slot&&isItemFrequent(i)))continue;
       if(vol+newVt>SLOT_ML)continue; // 放不下
+      if(sameCategory){
+        const slotItems=allItems.filter(i=>i.slot===slot);
+        if(!slotItems.some(i=>i.catGroup===catGroup))continue;
+      }
+      return slot;
+    }
+  }
+  return null;
+}
 
 // 找同分類抽屜中空的 b 格
 function findEmptyHalf(catGroup){
