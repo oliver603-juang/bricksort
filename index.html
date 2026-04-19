@@ -554,6 +554,12 @@ tr:hover{background:var(--accent-bg)}
     <div id="import-status" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
   </div>
   <div class="card">
+    <div class="card-title">⭐ 常用零件快取分派</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">對所有 Top 500 常用零件執行雙層分派：分配「快取點」到抽屜方便取用，剩餘放主袋/主位。會產生搬運清單。</div>
+    <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="reassignAllFrequent()">🔄 重新分派所有常用零件</button>
+    <div id="reassign-status" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+  </div>
+  <div class="card">
     <div class="card-title">📏 螢幕像素校正</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">校正後可在零件詳情頁點擊縮圖，顯示 1:1 實體尺寸的立體線框圖來比對實品。</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
@@ -727,7 +733,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17s';
+const APP_VERSION = '2026.04.17t';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -2396,7 +2402,168 @@ function getSlotMaxVol(slot){
   },0);
 }
 
-function gatewayAssign(item){
+// ═══════════════════════════════════════════════════
+// FREQUENT ITEM ASSIGNMENT (v17t+) - 常用零件雙層分派
+// ═══════════════════════════════════════════════════
+// 策略: 快取點 (抽屜，方便取用) + 主庫存 (袋子/抽屜，大批量)
+// PICKUP_TARGET: 快取點目標件數 (30 件)
+//   小 v1 → 半格快取 (30 件 * v1 <= SLOT_ML)
+//   中 v1 → 整格快取
+//   大 v1 → 大抽屜快取
+const PICKUP_TARGET_QTY = 30;
+
+// 找完全空的半格小抽屜 (a 或 b)
+function findEmptyHalfSlot(){
+  const maxD = parseInt((slotConfig.nextSmallSlot||'001a').replace(/[a-z]/g,''));
+  for(let d=1; d<maxD; d++){
+    const pad = String(d).padStart(3,'0');
+    for(const suffix of ['a','b']){
+      const slot = pad + suffix;
+      // 半格空 + 對應整格不存在佔用
+      const hasItems = allItems.some(i => i.slot===slot || i.slot===pad || i.slot===String(d));
+      if(!hasItems && !allItems.some(i => (i.pickupSlot===slot))) return slot;
+    }
+  }
+  return null;
+}
+
+// 找完全空的整格小抽屜 (a+b 都空)
+function findEmptyFullDrawer(){
+  const maxD = parseInt((slotConfig.nextSmallSlot||'001a').replace(/[a-z]/g,''));
+  for(let d=1; d<=Math.min(maxD, 450); d++){
+    const pad = String(d).padStart(3,'0');
+    const plain = String(d);
+    const hasItems = allItems.some(i => {
+      const s = i.slot||'';
+      return s===pad || s===plain || s===pad+'a' || s===pad+'b' || s===plain+'a' || s===plain+'b';
+    });
+    const hasPickup = allItems.some(i => {
+      const p = i.pickupSlot||'';
+      return p===pad || p===pad+'a' || p===pad+'b';
+    });
+    if(!hasItems && !hasPickup) return pad;
+  }
+  return null;
+}
+
+// 找空大抽屜
+function findEmptyLargeSlot(){
+  for(let n=1; n<=27; n++){
+    const slot = 'L' + String(n).padStart(2,'0');
+    const hasItems = allItems.some(i => i.slot===slot && i.slotType==='large');
+    const hasPickup = allItems.some(i => i.pickupSlot===slot);
+    if(!hasItems && !hasPickup) return slot;
+  }
+  return null;
+}
+
+// 常用零件雙層分派
+// 回傳: {slot, slotType, pickupSlot, pickupType, pickupQty, overflowSlot, overflowQty}
+function assignFrequent(item){
+  const v1 = item.estimateVolumeMl || 2;
+  const qty = item.quantity || 1;
+  const totalVol = v1 * qty;
+  const catGroup = getCatGroup(item.featureTags||[], normalizeCategory(item.bricklinkCategory||''));
+  const charTag = item.characterTag || null;
+  const seriesTag = item.seriesTag || detectSeries(item);
+  
+  // === 情境 A: 總量夠小，全部進抽屜 (沒溢出) ===
+  if(totalVol <= SLOT_ML){
+    const halfSlot = findEmptyHalfSlot();
+    if(halfSlot) return { slot: halfSlot, slotType: 'small', pickupSlot: null, pickupType: null, pickupQty: 0, overflowSlot: '', overflowQty: 0 };
+  }
+  if(totalVol <= DRAWER_ML){
+    const fullDrawer = findEmptyFullDrawer();
+    if(fullDrawer) return { slot: fullDrawer, slotType: 'small', pickupSlot: null, pickupType: null, pickupQty: 0, overflowSlot: '', overflowQty: 0 };
+  }
+  if(totalVol <= LARGE_ML){
+    const largeSlot = findEmptyLargeSlot();
+    if(largeSlot) return { slot: largeSlot, slotType: 'large', pickupSlot: null, pickupType: null, pickupQty: 0, overflowSlot: '', overflowQty: 0 };
+  }
+  
+  // === 情境 B: 需要快取 + 主庫存 ===
+  // 依 v1 決定快取尺寸 (避免浪費)
+  const pickupTargetVol = v1 * PICKUP_TARGET_QTY;
+  let pickupSlot = null;
+  let pickupType = null;
+  let pickupCap = 0;
+  
+  if(pickupTargetVol <= SLOT_ML){
+    // 30 件 <= 124ml → 半格夠用 (小 v1)
+    pickupSlot = findEmptyHalfSlot();
+    pickupType = 'small';
+    pickupCap = SLOT_ML;
+    if(!pickupSlot){
+      // 升級嘗試整格
+      pickupSlot = findEmptyFullDrawer();
+      pickupCap = DRAWER_ML;
+      if(!pickupSlot){
+        pickupSlot = findEmptyLargeSlot();
+        pickupType = 'large';
+        pickupCap = LARGE_ML;
+      }
+    }
+  } else if(pickupTargetVol <= DRAWER_ML){
+    // 30 件 <= 248ml → 整格 (中 v1)
+    pickupSlot = findEmptyFullDrawer();
+    pickupType = 'small';
+    pickupCap = DRAWER_ML;
+    if(!pickupSlot){
+      pickupSlot = findEmptyLargeSlot();
+      pickupType = 'large';
+      pickupCap = LARGE_ML;
+      if(!pickupSlot){
+        // 降級半格
+        pickupSlot = findEmptyHalfSlot();
+        pickupCap = SLOT_ML;
+      }
+    }
+  } else {
+    // 30 件 > 248ml → 大抽屜 (大 v1)
+    pickupSlot = findEmptyLargeSlot();
+    pickupType = 'large';
+    pickupCap = LARGE_ML;
+    if(!pickupSlot){
+      // 降級整格
+      pickupSlot = findEmptyFullDrawer();
+      pickupType = 'small';
+      pickupCap = DRAWER_ML;
+      if(!pickupSlot){
+        pickupSlot = findEmptyHalfSlot();
+        pickupCap = SLOT_ML;
+      }
+    }
+  }
+  
+  if(!pickupSlot){
+    // 所有抽屜都滿 → fallback 全入袋
+    return assignRegular(item);
+  }
+  
+  // 計算快取件數 (不超過 cap，不超過 qty，趨近 PICKUP_TARGET_QTY)
+  const pickupMaxByCap = Math.floor(pickupCap / v1);
+  const pickupQty = Math.min(qty, Math.max(PICKUP_TARGET_QTY, Math.floor(pickupCap / v1 * 0.5)));
+  // 實際 pickupQty 上限是 pickupMaxByCap
+  const actualPickupQty = Math.min(pickupQty, pickupMaxByCap);
+  const remainQty = qty - actualPickupQty;
+  
+  // 主庫存去袋
+  const mainVol = v1 * remainQty;
+  const mainBag = findBagForOverflow(mainVol, catGroup, charTag, seriesTag);
+  
+  return {
+    slot: mainBag,
+    slotType: 'bag',
+    pickupSlot: pickupSlot,
+    pickupType: pickupType,
+    pickupQty: actualPickupQty,
+    overflowSlot: '',
+    overflowQty: 0
+  };
+}
+
+// 原本的分派 (非常用物品走這裡) - 即現有的 gatewayAssign 內容
+function assignRegular(item){
   const vol=item.estimateVolumeMl||2,qty=item.quantity||1;
   const catGroup=getCatGroup(item.featureTags||[],normalizeCategory(item.bricklinkCategory||''));
   const vt=Math.round(vol*qty*10)/10;
@@ -2404,57 +2571,178 @@ function gatewayAssign(item){
   const seriesTag=item.seriesTag||detectSeries(item);
 
   // 0. 有系列標籤 → 強制進系列袋
-  if(seriesTag){
-    return assignToBag(vt,catGroup,charTag,seriesTag);
-  }
-
+  if(seriesTag){return assignToBag(vt,catGroup,charTag,seriesTag)}
   // 0b. 有角色標籤但無系列 → 進角色袋
-  if(charTag){
-    const char=(slotConfig.characters||{})[charTag];
-    if(char&&char.enabled)return assignToBag(vt,catGroup,charTag,null);
-  }
-
+  if(charTag){const char=(slotConfig.characters||{})[charTag];if(char&&char.enabled)return assignToBag(vt,catGroup,charTag,null)}
   // 1. 人偶/超大/不合尺寸 → 收納袋
-  if(isMinifigure(item)||!fitsSmallSlot(item)||vt>DRAWER_ML){
-    return assignToBag(vt,catGroup,charTag,seriesTag);
-  }
+  if(isMinifigure(item)||!fitsSmallSlot(item)||vt>DRAWER_ML){return assignToBag(vt,catGroup,charTag,seriesTag)}
   // 1b. 人偶身體部件 → 強制收納袋
   if(BAG_SUPER_GROUPS[catGroup]&&vol>=MINIFIG_BAG_VOL1){return assignToBag(vt,catGroup,charTag,seriesTag)}
-
   // 2. 單件體積 > 41ml 或 總體積 > MERGE_LIMIT → 不融合
   if(vt<=MERGE_LIMIT&&vol<=MERGE_VOL1_MAX){
-    // Phase A: 找同分類格子
     const mergeSlot=findMergeSlot(vt,catGroup,true);
     if(mergeSlot)return{slot:mergeSlot,slotType:'small'};
-    // Phase B: 找任何有空間的融合格
     const anySlot=findMergeSlot(vt,catGroup,false);
     if(anySlot)return{slot:anySlot,slotType:'small'};
-    // Phase C: 開新格子
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot+'a',slotType:'small'};
-    // 小抽屜全滿 → 收納袋
     return assignToBag(vt,catGroup,charTag,seriesTag);
   }
-
   // 3. 體積 MERGE_LIMIT~SLOT_ML → 獨佔半格(a/b)
   if(vt<=SLOT_ML){
-    // 找同分類抽屜的空 b 格
     const halfSlot=findEmptyHalf(catGroup);
     if(halfSlot)return{slot:halfSlot,slotType:'small'};
-    // 開新格子
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot+'a',slotType:'small'};
     return assignToBag(vt,catGroup,charTag,seriesTag);
   }
-
   // 4. 體積 SLOT_ML~DRAWER_ML → 獨佔整抽屜
   if(vt<=DRAWER_ML){
     const newSlot=allocateNewSmallSlot();
     if(newSlot)return{slot:newSlot,slotType:'small'};
     return assignToBag(vt,catGroup,charTag,seriesTag);
   }
-
   return assignToBag(vt,catGroup,charTag,seriesTag);
+}
+
+// 主分派 Gateway - 依常用度路由
+function gatewayAssign(item){
+  if(isItemFrequent(item)){
+    return assignFrequent(item);
+  }
+  return assignRegular(item);
+}
+
+// 一次性重新分派所有常用零件
+async function reassignAllFrequent(){
+  const frequentItems = allItems.filter(i => isItemFrequent(i));
+  if(!frequentItems.length){showToast('沒有標為常用的零件','error');return}
+  
+  if(!confirm('將對 ' + frequentItems.length + ' 筆常用零件重新分派。\n\n' +
+              '• 每個會分配「快取點」(抽屜，方便取用) + 主庫存位置\n' +
+              '• 所有現有位置會被重算，可能產生大量實體搬運\n' +
+              '• 完成後會顯示搬運清單\n\n繼續？'))return;
+  
+  const statusEl = document.getElementById('reassign-status');
+  statusEl.textContent = '規劃中...';
+  
+  // 快照原位置 (用於 diff 報告)
+  const snapshot = frequentItems.map(i => ({
+    id: i.id,
+    designId: i.designId,
+    name: i.nameCN || i.name || '',
+    qty: i.quantity || 0,
+    oldSlot: i.slot,
+    oldSlotType: i.slotType,
+    oldPickup: i.pickupSlot || '',
+    oldOverflow: i.overflowSlot || ''
+  }));
+  
+  // === 關鍵: 先把所有常用零件的 slot/pickup 清空，讓 findEmpty* 正確運作 ===
+  frequentItems.forEach(i => {
+    i._origSlot = i.slot;
+    i._origSlotType = i.slotType;
+    i._origPickup = i.pickupSlot;
+    i._origPickupType = i.pickupType;
+    i._origPickupQty = i.pickupQty;
+    i._origOverflow = i.overflowSlot;
+    i._origOverflowQty = i.overflowQty;
+    i.slot = '';
+    i.slotType = '';
+    i.pickupSlot = '';
+    i.pickupType = '';
+    i.pickupQty = 0;
+    i.overflowSlot = '';
+    i.overflowQty = 0;
+  });
+  
+  // 依熱門度排序 (Top 1 先分派，佔最好位置)
+  frequentItems.sort((a,b) => (a.rebrickableRank||9999) - (b.rebrickableRank||9999));
+  
+  statusEl.textContent = '分派中 0/' + frequentItems.length;
+  
+  const results = [];
+  for(let idx=0; idx<frequentItems.length; idx++){
+    const item = frequentItems[idx];
+    const result = assignFrequent(item);
+    // 套用結果
+    item.slot = result.slot;
+    item.slotType = result.slotType;
+    item.pickupSlot = result.pickupSlot || '';
+    item.pickupType = result.pickupType || '';
+    item.pickupQty = result.pickupQty || 0;
+    item.overflowSlot = result.overflowSlot || '';
+    item.overflowQty = result.overflowQty || 0;
+    results.push(item);
+    if(idx % 50 === 0) statusEl.textContent = '分派中 ' + idx + '/' + frequentItems.length;
+  }
+  
+  // 清除暫時欄位
+  frequentItems.forEach(i => {
+    delete i._origSlot; delete i._origSlotType; 
+    delete i._origPickup; delete i._origPickupType; delete i._origPickupQty;
+    delete i._origOverflow; delete i._origOverflowQty;
+  });
+  
+  // 寫入 Firebase
+  statusEl.textContent = '寫入 Firebase...';
+  const now = Date.now();
+  let written = 0;
+  for(let i=0; i<frequentItems.length; i+=400){
+    const chunk = frequentItems.slice(i, i+400);
+    try{
+      const batch = db.batch();
+      chunk.forEach(item => {
+        item.updatedAt = now;
+        batch.update(db.collection(FB_COL).doc(item.id), {
+          slot: item.slot,
+          slotType: item.slotType,
+          pickupSlot: item.pickupSlot,
+          pickupType: item.pickupType,
+          pickupQty: item.pickupQty,
+          overflowSlot: item.overflowSlot,
+          overflowQty: item.overflowQty,
+          updatedAt: now
+        });
+      });
+      await batch.commit();
+      written += chunk.length;
+    }catch(e){console.error('batch fail:',e)}
+  }
+  
+  // 產生搬運報告
+  const moves = [];
+  snapshot.forEach(snap => {
+    const item = frequentItems.find(i => i.id === snap.id);
+    if(!item) return;
+    const oldPos = snap.oldSlot + (snap.oldPickup ? ' ✋'+snap.oldPickup : '') + (snap.oldOverflow ? ' ➕'+snap.oldOverflow : '');
+    const newPos = item.slot + (item.pickupSlot ? ' ✋'+item.pickupSlot : '') + (item.overflowSlot ? ' ➕'+item.overflowSlot : '');
+    if(oldPos !== newPos){
+      moves.push({
+        did: snap.designId,
+        name: snap.name.substring(0,16),
+        qty: snap.qty,
+        from: oldPos,
+        to: newPos
+      });
+    }
+  });
+  
+  window._reassignMoves = moves;
+  statusEl.innerHTML = '✅ 完成! 寫入 ' + written + ' 筆<br>需要搬運: ' + moves.length + ' 件<br>' +
+    '<a href="#" onclick="event.preventDefault();showReassignMoves();return false">查看搬運清單</a>';
+  showToast('重新分派完成，需搬運 ' + moves.length + ' 件');
+}
+
+// 顯示搬運清單 (新視窗或 console)
+function showReassignMoves(){
+  const moves = window._reassignMoves || [];
+  const html = '📋 搬運清單 (' + moves.length + ' 件)\n\n' +
+    moves.slice(0, 100).map(m =>
+      m.did + ' ×' + m.qty + ' ' + m.name + '\n    從: ' + m.from + '\n    到: ' + m.to
+    ).join('\n') +
+    (moves.length > 100 ? '\n\n...還有 ' + (moves.length-100) + ' 筆，見 window._reassignMoves' : '');
+  alert(html);
 }
 
 // 找有空間的融合格子
@@ -3876,7 +4164,7 @@ function applySlotOverrideManual(){
 async function confirmPart(){
   if(!pendingPart)return;
   const now=Date.now();
-  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,seriesTag:pendingPart.seriesTag||'',characterTag:pendingPart.characterTag||'',brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],lens_summary:pendingPart.lens_summary||'',rebrickableSets:(typeof pendingPart.rebrickableSets==='number'?pendingPart.rebrickableSets:null),isFrequent:pendingPart.isFrequent||false,quantity:1,updatedAt:now};
+  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,seriesTag:pendingPart.seriesTag||'',characterTag:pendingPart.characterTag||'',brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],lens_summary:pendingPart.lens_summary||'',rebrickableSets:(typeof pendingPart.rebrickableSets==='number'?pendingPart.rebrickableSets:null),isFrequent:pendingPart.isFrequent||false,pickupSlot:pendingPart.pickupSlot||'',pickupType:pendingPart.pickupType||'',pickupQty:pendingPart.pickupQty||0,overflowSlot:pendingPart.overflowSlot||'',overflowQty:pendingPart.overflowQty||0,quantity:1,updatedAt:now};
   if(pendingPart.isUpdate&&pendingPart.matchedId){
     item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);
     item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;
