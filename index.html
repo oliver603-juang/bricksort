@@ -2553,17 +2553,34 @@ function assignFrequent(item){
     pickupType = 'small';
     pickupCap = DRAWER_ML;
     if(!pickupSlot){
+      // 升級大抽屜
       pickupSlot = findEmptyLargeSlot();
       pickupType = 'large';
       pickupCap = LARGE_ML;
     }
-    // 不降級半格 (48 件塞不下)
+    if(!pickupSlot){
+      // 降級半格 (48件裝不下，但塞部分也比沒快取好)
+      pickupSlot = findEmptyHalfSlot();
+      pickupType = 'small';
+      pickupCap = SLOT_ML;
+    }
   } else {
     // 48件 > 248ml → 大抽屜 (大 v1)
     pickupSlot = findEmptyLargeSlot();
     pickupType = 'large';
     pickupCap = LARGE_ML;
-    // 不降級 (整格裝不下 48 件)
+    if(!pickupSlot){
+      // 降級整格 (快取件數變少)
+      pickupSlot = findEmptyFullDrawer();
+      pickupType = 'small';
+      pickupCap = DRAWER_ML;
+    }
+    if(!pickupSlot){
+      // 再降級半格 (快取件數很少，但仍有快取)
+      pickupSlot = findEmptyHalfSlot();
+      pickupType = 'small';
+      pickupCap = SLOT_ML;
+    }
   }
   
   if(!pickupSlot){
