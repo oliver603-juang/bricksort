@@ -209,12 +209,18 @@ tr:hover{background:var(--accent-bg)}
     <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="openGallery('lens')">🖼 建檔</button>
     <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="toggleInstructionMenu()">📋 說明書</button>
   </div>
+  
   <div id="instruction-menu" style="display:none;margin-bottom:6px">
-    <div style="display:flex;gap:8px">
-      <button class="btn" style="flex:1;padding:10px;font-size:13px" onclick="startInstructionCapture('camera')">📷 拍照</button>
-      <button class="btn" style="flex:1;padding:10px;font-size:13px" onclick="startInstructionCapture('gallery')">🖼 從圖庫選</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <button class="btn" style="padding:10px;font-size:13px" onclick="startInstructionCapture('camera')">📷 拍照</button>
+      <button class="btn" style="padding:10px;font-size:13px" onclick="startInstructionCapture('gallery')">🖼 從圖庫選</button>
+      <button class="btn" style="padding:10px;font-size:13px" onclick="startInstructionCapture('clipboard')">📋 貼上剪貼簿</button>
+      <button class="btn" style="padding:10px;font-size:13px" onclick="startInstructionCapture('capture')">🖥 擷取螢幕</button>
     </div>
+    <div style="font-size:10px;color:var(--dim);text-align:center;margin-top:4px">💡 筆電 Chrome：Win+Shift+S 截圖後按「貼上剪貼簿」最快</div>
   </div>
+  
+  
   <div style="font-size:10px;color:var(--dim);text-align:center;margin-bottom:10px">拍照：查位置 ｜ 建檔：Lens 截圖 ｜ 說明書：拍照或選圖→手動框選</div>
 
   <!-- Advanced panel -->
@@ -3687,25 +3693,97 @@ async function handleLensGallery(event){
 
 // ═══ INSTRUCTION: Camera → Manual Crop → BK/AI → Results ═══
 
-// Open instruction: show camera/gallery menu (web) or APK gallery
+
+// Open instruction: show camera/gallery/clipboard/capture menu (web) or APK gallery
 function startInstructionCapture(mode){
   hideInstructionMenu();
   if(window.BrickSortNative){
-    // APK: use native bridge
+    // APK: use native bridge (clipboard/capture not available on APK, fallback to gallery)
     window._galleryMode='instruction';
     if(mode==='camera'){
       BrickSortNative.openCamera();
-      // Override: APK camera normally calls cameraRecognize, 
-      // but for instruction we need instructionRecognize
       window._pendingInstructionMode=true;
     }else{
       BrickSortNative.openGalleryWithMode('instruction');
     }
   }else{
-    // Chrome: use file input
+    // Chrome web
+    if(mode==='clipboard'){pasteInstructionFromClipboard();return}
+    if(mode==='capture'){captureScreenForInstruction();return}
+    // camera / gallery: use file input
     document.getElementById(mode==='camera'?'instruction-camera':'instruction-gallery').click();
   }
 }
+
+// 📋 從剪貼簿讀取圖片 (Win+Shift+S 之後按這個)
+async function pasteInstructionFromClipboard(){
+  if(!navigator.clipboard||!navigator.clipboard.read){
+    showToast('此瀏覽器不支援剪貼簿讀取','error');return;
+  }
+  try{
+    const items=await navigator.clipboard.read();
+    let imgBlob=null;
+    for(const it of items){
+      for(const type of it.types){
+        if(type.startsWith('image/')){
+          imgBlob=await it.getType(type);break;
+        }
+      }
+      if(imgBlob)break;
+    }
+    if(!imgBlob){showToast('剪貼簿中沒有圖片 (先用 Win+Shift+S 截圖)','error');return}
+    const reader=new FileReader();
+    reader.onload=async e=>{
+      const resized=await resizeImage(e.target.result,1200);
+      showInstructionCrop(resized);
+    };
+    reader.readAsDataURL(imgBlob);
+  }catch(err){
+    if(err.name==='NotAllowedError'){
+      showToast('需要剪貼簿權限 — 請點網址列旁的🔒圖示允許','error',4000);
+    }else{
+      showToast('讀取剪貼簿失敗: '+err.message,'error');
+    }
+  }
+}
+
+// 🖥 擷取螢幕 (Chrome 會跳出選視窗/分頁對話框, 選完進入框選 UI)
+async function captureScreenForInstruction(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){
+    showToast('此瀏覽器不支援螢幕擷取','error');return;
+  }
+  let stream=null;
+  try{
+    stream=await navigator.mediaDevices.getDisplayMedia({video:{cursor:'never'},audio:false,preferCurrentTab:false});
+    // 擷取一幀
+    const track=stream.getVideoTracks()[0];
+    // Wait a tick for stream to stabilize
+    await new Promise(r=>setTimeout(r,300));
+    const video=document.createElement('video');
+    video.srcObject=stream;video.muted=true;
+    await video.play();
+    const canvas=document.createElement('canvas');
+    canvas.width=video.videoWidth;
+    canvas.height=video.videoHeight;
+    canvas.getContext('2d').drawImage(video,0,0);
+    const dataUrl=canvas.toDataURL('image/jpeg',0.9);
+    // Stop stream immediately
+    track.stop();stream.getTracks().forEach(t=>t.stop());
+    video.pause();video.srcObject=null;
+    // 進入框選 UI
+    const resized=await resizeImage(dataUrl,1600);
+    showInstructionCrop(resized);
+  }catch(err){
+    if(stream)stream.getTracks().forEach(t=>t.stop());
+    if(err.name==='NotAllowedError'){
+      showToast('已取消螢幕擷取','error');
+    }else{
+      showToast('擷取失敗: '+err.message,'error');
+    }
+  }
+}
+
+
 
 function toggleInstructionMenu(){
   const m=document.getElementById('instruction-menu');
