@@ -2977,15 +2977,17 @@ function findMergeSlot(newVt,catGroup,sameCategory){
   for(let d=1;d<maxDrawer;d++){
     for(const suffix of['a','b']){
       const slot=String(d).padStart(3,'0')+suffix;
-      const vol=getSlotVol(slot);
-      const count=getSlotItemCount(slot);
-      if(count===0)continue; // 空格不算融合
-      // ★ 常用零件獨佔: 半格含常用 → 禁止融合
-      if(allItems.some(i=>i.slot===slot&&isItemFrequent(i)))continue;
-      if(vol+newVt>SLOT_ML)continue; // 放不下
+      const slotItems=allItems.filter(i=>i.slot===slot);
+      if(slotItems.length===0)continue;
+      if(slotItems.some(i=>isItemFrequent(i)))continue; // 排除常用
+      const vol=slotItems.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+      if(vol+newVt>SLOT_ML)continue;
+      // ★ Fix 4: 件數上限 (模擬加入新物件後)
+      const predicted=slotItems.concat([{_vt:newVt}]);
+      const maxItems=getMergeMaxItems(predicted);
+      if(predicted.length>maxItems)continue;
       if(sameCategory){
-        const slotItems=allItems.filter(i=>i.slot===slot);
-        if(!slotItems.some(i=>i.catGroup===catGroup))continue;
+        if(!slotItems.some(i=>getCatGroup(i.featureTags||[],i.bricklinkCategory||'')===catGroup))continue;
       }
       return slot;
     }
