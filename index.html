@@ -733,7 +733,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17t';
+const APP_VERSION = '2026.04.17u';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1386,8 +1386,19 @@ function buildLocationsFromLegacy(item){
   if(!item||!item.slot)return [];
   const totalQty=item.quantity||1;
   const overflowQty=item.overflowQty||0;
-  const mainQty=Math.max(0,totalQty-overflowQty);
+  const pickupQty=item.pickupQty||0;
+  // Main qty = total - pickup - overflow
+  const mainQty=Math.max(0,totalQty-overflowQty-pickupQty);
   const locations=[];
+  // Pickup position (if any) — show FIRST as it's the convenient one
+  if(item.pickupSlot && pickupQty>0){
+    locations.push({
+      slot:item.pickupSlot,
+      type:item.pickupType||detectSlotType(item.pickupSlot),
+      qty:pickupQty,
+      role:'pickup'
+    });
+  }
   // Main position
   locations.push({
     slot:item.slot,
@@ -1886,17 +1897,24 @@ function recalcVol(){
   if(w>0&&l>0&&h>0)el.innerHTML='<div>佔位體積</div><div>'+w+' × '+l+' × '+h+' mm = <b>'+vol+' ml</b> × '+qty+' 件 = <b>'+tv+' ml</b></div>';
   else el.innerHTML='<div>佔位體積</div><div><b>'+vol+' ml</b> × '+qty+' 件 = <b>'+tv+' ml</b></div><div style="font-size:11px;color:var(--muted)">填入尺寸可精確計算</div>';
   if(currentItem&&!isNewItem&&currentItem.slot){
+    // Calculate volume actually in the MAIN slot (excluding pickup and overflow)
+    const pickupQty=currentItem.pickupQty||0;
+    const overflowQty=currentItem.overflowQty||0;
+    const mainQty=Math.max(0, qty - pickupQty - overflowQty);
+    const mainVol=Math.round(vol*mainQty*10)/10;
     const cap=getSlotCap(currentItem.slot,currentItem.slotType),warnEl=document.getElementById('m-overflow-warn');
-    const otherVol=allItems.filter(i=>i.slot===currentItem.slot&&i.id!==currentItem.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
-    const slotTotal=Math.round((otherVol+tv)*10)/10;
+    const otherVol=allItems.filter(i=>i.slot===currentItem.slot&&i.id!==currentItem.id).reduce((s,i)=>s+(i.estimateVolumeMl||0)*((i.quantity||1) - (i.pickupQty||0) - (i.overflowQty||0)),0);
+    const slotTotal=Math.round((otherVol+mainVol)*10)/10;
     const availCap=Math.max(0,cap-otherVol);
     if(slotTotal>cap&&cap<Infinity){
-      const fq=Math.max(0,Math.floor(availCap/(vol||1)));const oq=qty-fq;
-      let warn='⚠ 格子容量超出！<b>'+currentItem.slot+'</b> 上限 '+cap+'ml';
+      const fq=Math.max(0,Math.floor(availCap/(vol||1)));const oq=mainQty-fq;
+      let warn='⚠ 主位容量超出！<b>'+currentItem.slot+'</b> 上限 '+cap+'ml';
       if(otherVol>0)warn+='<br>同格其他物品佔 '+Math.round(otherVol*10)/10+'ml，剩餘空間 '+Math.round(availCap*10)/10+'ml';
-      warn+='<br>此物品 '+tv+'ml，格子總計 <b>'+slotTotal+'ml</b>';
+      warn+='<br>主位需放 '+mainQty+' 件 ('+mainVol+'ml)，格子總計 <b>'+slotTotal+'ml</b>';
+      if(pickupQty>0)warn+='<br><span style="font-size:11px">✋ 快取點 '+currentItem.pickupSlot+' 已分走 '+pickupQty+' 件</span>';
+      if(overflowQty>0)warn+='<br><span style="font-size:11px">➕ 溢出 '+currentItem.overflowSlot+' 已分走 '+overflowQty+' 件</span>';
       if(oq>0){
-        warn+='<br>建議留 '+fq+' 件，溢出 '+oq+' 件<br>';
+        warn+='<br>建議留 '+fq+' 件，再溢出 '+oq+' 件<br>';
         warn+='<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">';
         warn+='<button class="btn btn-sm btn-primary" onclick="showEditorMoveList(\'move_all\')" style="font-size:12px;padding:8px 10px">🔄 全部移到新位置（清除原格）</button>';
         warn+='<button class="btn btn-sm" onclick="showEditorMoveList(\'overflow\')" style="font-size:12px;padding:8px 10px">➕ 指派第二位置（部分溢出，保留原格）</button>';
@@ -2134,17 +2152,38 @@ function renderEditorMoveOptions(slotType){
 }
 
 // Find mirror partner (Left ↔ Right) by name matching
+// Find mirror partner (paired item that should be stored together)
+// Pairs recognized:
+//   Left ↔ Right / 左 ↔ 右
+//   Upper ↔ Lower / 上 ↔ 下 (hinges especially)
+//   Top ↔ Bottom
+//   Male ↔ Female / 公 ↔ 母 (connectors, hinges)
 function findMirrorPartner(item){
   if(!item)return null;
   const name=(item.name||'').trim();
   const nameCN=(item.nameCN||'').trim();
   const candidates=[];
-  // English Left ↔ Right (whole word)
-  if(/\bLeft\b/i.test(name)) candidates.push({name:name.replace(/\bLeft\b/i,'Right')});
-  else if(/\bRight\b/i.test(name)) candidates.push({name:name.replace(/\bRight\b/i,'Left')});
-  // Chinese 左 ↔ 右
-  if(/左/.test(nameCN)) candidates.push({nameCN:nameCN.replace(/左/g,'右')});
-  else if(/右/.test(nameCN)) candidates.push({nameCN:nameCN.replace(/右/g,'左')});
+  // Helper: add EN pair (whole word case-insensitive)
+  function addEnPair(w1, w2){
+    const re1=new RegExp('\\b'+w1+'\\b','i');
+    const re2=new RegExp('\\b'+w2+'\\b','i');
+    if(re1.test(name)) candidates.push({name:name.replace(re1, w2)});
+    else if(re2.test(name)) candidates.push({name:name.replace(re2, w1)});
+  }
+  // Helper: add CN pair (single char)
+  function addCnPair(c1, c2){
+    if(nameCN.indexOf(c1)>=0) candidates.push({nameCN:nameCN.split(c1).join(c2)});
+    else if(nameCN.indexOf(c2)>=0) candidates.push({nameCN:nameCN.split(c2).join(c1)});
+  }
+  // English paired variants
+  addEnPair('Left', 'Right');
+  addEnPair('Upper', 'Lower');
+  addEnPair('Top', 'Bottom');
+  addEnPair('Male', 'Female');
+  // Chinese paired variants
+  addCnPair('左', '右');
+  addCnPair('上', '下');
+  addCnPair('公', '母');
   if(!candidates.length)return null;
   // Find matching item (exclude self)
   return allItems.find(j=>{
@@ -2406,22 +2445,25 @@ function getSlotMaxVol(slot){
 // FREQUENT ITEM ASSIGNMENT (v17t+) - 常用零件雙層分派
 // ═══════════════════════════════════════════════════
 // 策略: 快取點 (抽屜，方便取用) + 主庫存 (袋子/抽屜，大批量)
-// PICKUP_TARGET: 快取點目標件數 (30 件)
-//   小 v1 → 半格快取 (30 件 * v1 <= SLOT_ML)
-//   中 v1 → 整格快取
-//   大 v1 → 大抽屜快取
-const PICKUP_TARGET_QTY = 30;
+// PICKUP_TARGET: 快取點目標件數 (48 件剛好超過半格臨界 v1>2.58)
+//   v1 ≤ 2.58ml → 半格快取 (48 件 × v1 ≤ 124ml)
+//   v1 ≤ 5.17ml → 整格快取 (48 件 × v1 ≤ 248ml)
+//   v1 > 5.17ml → 大抽屜快取
+const PICKUP_TARGET_QTY = 48;
+const PICKUP_FILL_RATIO = 0.9;  // 90% 填滿規則
 
 // 找完全空的半格小抽屜 (a 或 b)
 function findEmptyHalfSlot(){
   const maxD = parseInt((slotConfig.nextSmallSlot||'001a').replace(/[a-z]/g,''));
-  for(let d=1; d<maxD; d++){
+  for(let d=1; d<=Math.max(maxD, 450); d++){
     const pad = String(d).padStart(3,'0');
     for(const suffix of ['a','b']){
       const slot = pad + suffix;
-      // 半格空 + 對應整格不存在佔用
+      const otherHalf = pad + (suffix==='a'?'b':'a');
+      // 半格空 + 對應整格沒人占 + 另一半占用不阻止 (另一半有物品時這半還能用)
       const hasItems = allItems.some(i => i.slot===slot || i.slot===pad || i.slot===String(d));
-      if(!hasItems && !allItems.some(i => (i.pickupSlot===slot))) return slot;
+      const hasPickup = allItems.some(i => i.pickupSlot===slot || i.pickupSlot===pad);
+      if(!hasItems && !hasPickup) return slot;
     }
   }
   return null;
@@ -2430,7 +2472,7 @@ function findEmptyHalfSlot(){
 // 找完全空的整格小抽屜 (a+b 都空)
 function findEmptyFullDrawer(){
   const maxD = parseInt((slotConfig.nextSmallSlot||'001a').replace(/[a-z]/g,''));
-  for(let d=1; d<=Math.min(maxD, 450); d++){
+  for(let d=1; d<=Math.max(maxD, 450); d++){
     const pad = String(d).padStart(3,'0');
     const plain = String(d);
     const hasItems = allItems.some(i => {
@@ -2446,7 +2488,7 @@ function findEmptyFullDrawer(){
   return null;
 }
 
-// 找空大抽屜
+// 找空大抽屜 (完全沒 main 物品也沒 pickup)
 function findEmptyLargeSlot(){
   for(let n=1; n<=27; n++){
     const slot = 'L' + String(n).padStart(2,'0');
@@ -2457,8 +2499,8 @@ function findEmptyLargeSlot(){
   return null;
 }
 
-// 常用零件雙層分派
-// 回傳: {slot, slotType, pickupSlot, pickupType, pickupQty, overflowSlot, overflowQty}
+// 常用零件雙層分派 (v17u: 48件 + 90% 填滿 + 手動處理 fallback)
+// 回傳: {slot, slotType, pickupSlot, pickupType, pickupQty, overflowSlot, overflowQty, _needsManual?}
 function assignFrequent(item){
   const v1 = item.estimateVolumeMl || 2;
   const qty = item.quantity || 1;
@@ -2467,7 +2509,8 @@ function assignFrequent(item){
   const charTag = item.characterTag || null;
   const seriesTag = item.seriesTag || detectSeries(item);
   
-  // === 情境 A: 總量夠小，全部進抽屜 (沒溢出) ===
+  // === 情境 A: 總量夠小，全量進抽屜 (無 pickup) ===
+  // 依總體積選最小合適抽屜
   if(totalVol <= SLOT_ML){
     const halfSlot = findEmptyHalfSlot();
     if(halfSlot) return { slot: halfSlot, slotType: 'small', pickupSlot: null, pickupType: null, pickupQty: 0, overflowSlot: '', overflowQty: 0 };
@@ -2481,30 +2524,31 @@ function assignFrequent(item){
     if(largeSlot) return { slot: largeSlot, slotType: 'large', pickupSlot: null, pickupType: null, pickupQty: 0, overflowSlot: '', overflowQty: 0 };
   }
   
-  // === 情境 B: 需要快取 + 主庫存 ===
-  // 依 v1 決定快取尺寸 (避免浪費)
+  // === 情境 B: 需要 pickup + 主袋 (totalVol > LARGE_ML 或 情境 A 找不到空位) ===
+  // 依「48 件需多少 ml」決定 pickup 容器尺寸
   const pickupTargetVol = v1 * PICKUP_TARGET_QTY;
   let pickupSlot = null;
   let pickupType = null;
   let pickupCap = 0;
   
   if(pickupTargetVol <= SLOT_ML){
-    // 30 件 <= 124ml → 半格夠用 (小 v1)
+    // 48件 ≤ 124ml → 半格 (小 v1)
     pickupSlot = findEmptyHalfSlot();
     pickupType = 'small';
     pickupCap = SLOT_ML;
     if(!pickupSlot){
-      // 升級嘗試整格
+      // 升級整格
       pickupSlot = findEmptyFullDrawer();
       pickupCap = DRAWER_ML;
-      if(!pickupSlot){
-        pickupSlot = findEmptyLargeSlot();
-        pickupType = 'large';
-        pickupCap = LARGE_ML;
-      }
+    }
+    if(!pickupSlot){
+      // 再升級大抽屜
+      pickupSlot = findEmptyLargeSlot();
+      pickupType = 'large';
+      pickupCap = LARGE_ML;
     }
   } else if(pickupTargetVol <= DRAWER_ML){
-    // 30 件 <= 248ml → 整格 (中 v1)
+    // 48件 ≤ 248ml → 整格 (中 v1)
     pickupSlot = findEmptyFullDrawer();
     pickupType = 'small';
     pickupCap = DRAWER_ML;
@@ -2512,44 +2556,55 @@ function assignFrequent(item){
       pickupSlot = findEmptyLargeSlot();
       pickupType = 'large';
       pickupCap = LARGE_ML;
-      if(!pickupSlot){
-        // 降級半格
-        pickupSlot = findEmptyHalfSlot();
-        pickupCap = SLOT_ML;
-      }
     }
+    // 不降級半格 (48 件塞不下)
   } else {
-    // 30 件 > 248ml → 大抽屜 (大 v1)
+    // 48件 > 248ml → 大抽屜 (大 v1)
     pickupSlot = findEmptyLargeSlot();
     pickupType = 'large';
     pickupCap = LARGE_ML;
-    if(!pickupSlot){
-      // 降級整格
-      pickupSlot = findEmptyFullDrawer();
-      pickupType = 'small';
-      pickupCap = DRAWER_ML;
-      if(!pickupSlot){
-        pickupSlot = findEmptyHalfSlot();
-        pickupCap = SLOT_ML;
-      }
-    }
+    // 不降級 (整格裝不下 48 件)
   }
   
   if(!pickupSlot){
-    // 所有抽屜都滿 → fallback 全入袋
-    return assignRegular(item);
+    // ❌ 所有合適抽屜都滿 → 標記待手動處理 (不 fallback 到 assignRegular)
+    return {
+      slot: '',
+      slotType: '',
+      pickupSlot: null,
+      pickupType: null,
+      pickupQty: 0,
+      overflowSlot: '',
+      overflowQty: 0,
+      _needsManual: true,
+      _reason: '沒有合適空抽屜 (需要 ' + (pickupTargetVol <= SLOT_ML ? '半格' : pickupTargetVol <= DRAWER_ML ? '整格' : '大抽屜') + ')'
+    };
   }
   
-  // 計算快取件數 (不超過 cap，不超過 qty，趨近 PICKUP_TARGET_QTY)
-  const pickupMaxByCap = Math.floor(pickupCap / v1);
-  const pickupQty = Math.min(qty, Math.max(PICKUP_TARGET_QTY, Math.floor(pickupCap / v1 * 0.5)));
-  // 實際 pickupQty 上限是 pickupMaxByCap
-  const actualPickupQty = Math.min(pickupQty, pickupMaxByCap);
+  // === 計算 pickupQty: 塞到 90% 滿 ===
+  const pickupMaxByCap = Math.floor(pickupCap * PICKUP_FILL_RATIO / v1);
+  const actualPickupQty = Math.min(qty, pickupMaxByCap);
   const remainQty = qty - actualPickupQty;
   
-  // 主庫存去袋
-  const mainVol = v1 * remainQty;
-  const mainBag = findBagForOverflow(mainVol, catGroup, charTag, seriesTag);
+  // === 主庫存 (剩餘) 放袋 ===
+  let mainBag = '';
+  if(remainQty > 0){
+    const mainVol = v1 * remainQty;
+    mainBag = findBagForOverflow(mainVol, catGroup, charTag, seriesTag);
+  } else {
+    // 全部放快取 (不應該發生，因為 totalVol > LARGE_ML 時才走到這)
+    // 但可能情境 A 找不到空位而降級到這，此時 pickup 就夠了
+    mainBag = pickupSlot;
+    return {
+      slot: pickupSlot,
+      slotType: pickupType,
+      pickupSlot: null,
+      pickupType: null,
+      pickupQty: 0,
+      overflowSlot: '',
+      overflowQty: 0
+    };
+  }
   
   return {
     slot: mainBag,
@@ -2615,19 +2670,22 @@ function gatewayAssign(item){
 
 // 一次性重新分派所有常用零件
 async function reassignAllFrequent(){
-  const frequentItems = allItems.filter(i => isItemFrequent(i));
-  if(!frequentItems.length){showToast('沒有標為常用的零件','error');return}
+  const allToReassign = allItems.slice();
+  if(!allToReassign.length){showToast('沒有物品可重新分派','error');return}
   
-  if(!confirm('將對 ' + frequentItems.length + ' 筆常用零件重新分派。\n\n' +
-              '• 每個會分配「快取點」(抽屜，方便取用) + 主庫存位置\n' +
-              '• 所有現有位置會被重算，可能產生大量實體搬運\n' +
-              '• 完成後會顯示搬運清單\n\n繼續？'))return;
+  const freqCount = allToReassign.filter(i => isItemFrequent(i)).length;
+  const nonFreqCount = allToReassign.length - freqCount;
+  
+  if(!confirm('將對全部 ' + allToReassign.length + ' 筆物品重新分派 (2-pass):\n\n' +
+              '• Phase 1: ' + freqCount + ' 筆常用 → 優先配抽屜 (含快取)\n' +
+              '• Phase 2: ' + nonFreqCount + ' 筆非常用 → 剩餘空格\n\n' +
+              '所有現有位置會被重算，實體大搬運。\n完成後顯示搬運清單。\n\n繼續？'))return;
   
   const statusEl = document.getElementById('reassign-status');
   statusEl.textContent = '規劃中...';
   
-  // 快照原位置 (用於 diff 報告)
-  const snapshot = frequentItems.map(i => ({
+  // 快照原位置
+  const snapshot = allToReassign.map(i => ({
     id: i.id,
     designId: i.designId,
     name: i.nameCN || i.name || '',
@@ -2635,18 +2693,15 @@ async function reassignAllFrequent(){
     oldSlot: i.slot,
     oldSlotType: i.slotType,
     oldPickup: i.pickupSlot || '',
-    oldOverflow: i.overflowSlot || ''
+    oldPickupType: i.pickupType || '',
+    oldPickupQty: i.pickupQty || 0,
+    oldOverflow: i.overflowSlot || '',
+    oldOverflowQty: i.overflowQty || 0,
+    isFrequent: isItemFrequent(i)
   }));
   
-  // === 關鍵: 先把所有常用零件的 slot/pickup 清空，讓 findEmpty* 正確運作 ===
-  frequentItems.forEach(i => {
-    i._origSlot = i.slot;
-    i._origSlotType = i.slotType;
-    i._origPickup = i.pickupSlot;
-    i._origPickupType = i.pickupType;
-    i._origPickupQty = i.pickupQty;
-    i._origOverflow = i.overflowSlot;
-    i._origOverflowQty = i.overflowQty;
+  // === 全清: 清空所有位置 (in-memory) ===
+  allToReassign.forEach(i => {
     i.slot = '';
     i.slotType = '';
     i.pickupSlot = '';
@@ -2656,40 +2711,63 @@ async function reassignAllFrequent(){
     i.overflowQty = 0;
   });
   
-  // 依熱門度排序 (Top 1 先分派，佔最好位置)
-  frequentItems.sort((a,b) => (a.rebrickableRank||9999) - (b.rebrickableRank||9999));
+  // Reset slot config pointers so allocation starts fresh
+  const origNextSmall = slotConfig.nextSmallSlot;
+  const origNextBag = slotConfig.nextBagSlot;
   
-  statusEl.textContent = '分派中 0/' + frequentItems.length;
+  // === Phase 1: 常用零件按 rank 分派 ===
+  const freq = allToReassign.filter(i => isItemFrequent(i))
+    .sort((a,b) => (a.rebrickableRank||9999) - (b.rebrickableRank||9999));
   
-  const results = [];
-  for(let idx=0; idx<frequentItems.length; idx++){
-    const item = frequentItems[idx];
-    const result = assignFrequent(item);
-    // 套用結果
-    item.slot = result.slot;
-    item.slotType = result.slotType;
-    item.pickupSlot = result.pickupSlot || '';
-    item.pickupType = result.pickupType || '';
-    item.pickupQty = result.pickupQty || 0;
-    item.overflowSlot = result.overflowSlot || '';
-    item.overflowQty = result.overflowQty || 0;
-    results.push(item);
-    if(idx % 50 === 0) statusEl.textContent = '分派中 ' + idx + '/' + frequentItems.length;
+  const manualNeeded = [];
+  statusEl.textContent = 'Phase 1: 分派常用 0/' + freq.length;
+  
+  for(let idx=0; idx<freq.length; idx++){
+    const item = freq[idx];
+    const r = assignFrequent(item);
+    if(r._needsManual){
+      manualNeeded.push({item, reason: r._reason});
+      // 暫時塞袋作為應急位 (使用者之後手動調整)
+      const vt = (item.estimateVolumeMl||2) * (item.quantity||1);
+      const catGroup = getCatGroup(item.featureTags||[], normalizeCategory(item.bricklinkCategory||''));
+      const fallback = assignToBag(vt, catGroup, item.characterTag||null, item.seriesTag||null);
+      item.slot = fallback.slot;
+      item.slotType = fallback.slotType;
+    } else {
+      item.slot = r.slot;
+      item.slotType = r.slotType;
+      item.pickupSlot = r.pickupSlot || '';
+      item.pickupType = r.pickupType || '';
+      item.pickupQty = r.pickupQty || 0;
+      item.overflowSlot = r.overflowSlot || '';
+      item.overflowQty = r.overflowQty || 0;
+    }
+    if(idx % 50 === 0) statusEl.textContent = 'Phase 1: 分派常用 ' + idx + '/' + freq.length;
   }
   
-  // 清除暫時欄位
-  frequentItems.forEach(i => {
-    delete i._origSlot; delete i._origSlotType; 
-    delete i._origPickup; delete i._origPickupType; delete i._origPickupQty;
-    delete i._origOverflow; delete i._origOverflowQty;
-  });
+  // === Phase 2: 非常用零件走 assignRegular (用剩餘空間) ===
+  const nonFreq = allToReassign.filter(i => !isItemFrequent(i));
+  statusEl.textContent = 'Phase 2: 分派非常用 0/' + nonFreq.length;
   
-  // 寫入 Firebase
-  statusEl.textContent = '寫入 Firebase...';
+  for(let idx=0; idx<nonFreq.length; idx++){
+    const item = nonFreq[idx];
+    const r = assignRegular(item);
+    item.slot = r.slot;
+    item.slotType = r.slotType;
+    item.pickupSlot = '';
+    item.pickupType = '';
+    item.pickupQty = 0;
+    item.overflowSlot = '';
+    item.overflowQty = 0;
+    if(idx % 100 === 0) statusEl.textContent = 'Phase 2: 分派非常用 ' + idx + '/' + nonFreq.length;
+  }
+  
+  // === 寫入 Firebase ===
+  statusEl.textContent = '寫入 Firebase 中...';
   const now = Date.now();
   let written = 0;
-  for(let i=0; i<frequentItems.length; i+=400){
-    const chunk = frequentItems.slice(i, i+400);
+  for(let i=0; i<allToReassign.length; i+=400){
+    const chunk = allToReassign.slice(i, i+400);
     try{
       const batch = db.batch();
       chunk.forEach(item => {
@@ -2710,38 +2788,83 @@ async function reassignAllFrequent(){
     }catch(e){console.error('batch fail:',e)}
   }
   
-  // 產生搬運報告
+  // Write slot config if changed
+  try{
+    await db.collection(FB_COL).doc(FB_CONFIG_DOC).set({
+      nextSmallSlot: slotConfig.nextSmallSlot,
+      nextBagSlot: slotConfig.nextBagSlot
+    }, {merge: true});
+  }catch(e){}
+  
+  // === 產生搬運報告 ===
   const moves = [];
   snapshot.forEach(snap => {
-    const item = frequentItems.find(i => i.id === snap.id);
+    const item = allToReassign.find(i => i.id === snap.id);
     if(!item) return;
     const oldPos = snap.oldSlot + (snap.oldPickup ? ' ✋'+snap.oldPickup : '') + (snap.oldOverflow ? ' ➕'+snap.oldOverflow : '');
-    const newPos = item.slot + (item.pickupSlot ? ' ✋'+item.pickupSlot : '') + (item.overflowSlot ? ' ➕'+item.overflowSlot : '');
+    const newPos = item.slot + (item.pickupSlot ? ' ✋'+item.pickupSlot+'('+item.pickupQty+')' : '') + (item.overflowSlot ? ' ➕'+item.overflowSlot : '');
     if(oldPos !== newPos){
       moves.push({
         did: snap.designId,
-        name: snap.name.substring(0,16),
+        name: snap.name.substring(0,20),
         qty: snap.qty,
         from: oldPos,
-        to: newPos
+        to: newPos,
+        isFrequent: snap.isFrequent
       });
     }
   });
   
   window._reassignMoves = moves;
-  statusEl.innerHTML = '✅ 完成! 寫入 ' + written + ' 筆<br>需要搬運: ' + moves.length + ' 件<br>' +
-    '<a href="#" onclick="event.preventDefault();showReassignMoves();return false">查看搬運清單</a>';
-  showToast('重新分派完成，需搬運 ' + moves.length + ' 件');
+  window._reassignManualNeeded = manualNeeded;
+  
+  let msg = '✅ 完成!<br>' +
+    '  Phase 1 (常用): ' + freq.length + '<br>' +
+    '  Phase 2 (非常用): ' + nonFreq.length + '<br>' +
+    '  Firebase 寫入: ' + written + '<br>' +
+    '  需搬運: ' + moves.length + ' 件';
+  if(manualNeeded.length > 0){
+    msg += '<br>⚠ 待手動處理: ' + manualNeeded.length + ' 件 ' +
+      '<a href="#" onclick="event.preventDefault();showManualNeeded();return false">[查看]</a>';
+  }
+  msg += '<br><a href="#" onclick="event.preventDefault();showReassignMoves();return false">[搬運清單]</a>';
+  statusEl.innerHTML = msg;
+  showToast('重新分派完成 · 搬運 ' + moves.length + ' 件' + (manualNeeded.length ? ', 待手動 ' + manualNeeded.length : ''));
 }
 
-// 顯示搬運清單 (新視窗或 console)
+// 顯示搬運清單
 function showReassignMoves(){
   const moves = window._reassignMoves || [];
-  const html = '📋 搬運清單 (' + moves.length + ' 件)\n\n' +
-    moves.slice(0, 100).map(m =>
-      m.did + ' ×' + m.qty + ' ' + m.name + '\n    從: ' + m.from + '\n    到: ' + m.to
+  const freqMoves = moves.filter(m => m.isFrequent);
+  const nonFreqMoves = moves.filter(m => !m.isFrequent);
+  const html = '📋 搬運清單 (共 ' + moves.length + ' 件)\n' +
+    '  ⭐ 常用: ' + freqMoves.length + ' 件\n' +
+    '  ⚪ 非常用: ' + nonFreqMoves.length + ' 件\n\n' +
+    '=== 常用零件 (優先搬) ===\n' +
+    freqMoves.slice(0, 80).map(m =>
+      '⭐ ' + m.did + ' ×' + m.qty + ' ' + m.name + '\n    ' + m.from + ' → ' + m.to
     ).join('\n') +
-    (moves.length > 100 ? '\n\n...還有 ' + (moves.length-100) + ' 筆，見 window._reassignMoves' : '');
+    (freqMoves.length > 80 ? '\n  ...還有 ' + (freqMoves.length-80) + ' 筆' : '') +
+    '\n\n=== 非常用 (可延後) ===\n' +
+    nonFreqMoves.slice(0, 20).map(m =>
+      m.did + ' ×' + m.qty + ' ' + m.name + '\n    ' + m.from + ' → ' + m.to
+    ).join('\n') +
+    (nonFreqMoves.length > 20 ? '\n  ...還有 ' + (nonFreqMoves.length-20) + ' 筆，見 window._reassignMoves' : '');
+  alert(html);
+}
+
+// 顯示待手動處理清單
+function showManualNeeded(){
+  const list = window._reassignManualNeeded || [];
+  if(!list.length){alert('沒有待手動處理的物品');return}
+  const html = '⚠ 待手動處理清單 (' + list.length + ' 件)\n\n' +
+    '這些常用零件找不到合適空抽屜，暫時塞袋。請手動調整位置。\n\n' +
+    list.slice(0, 50).map(x => {
+      const i = x.item;
+      return '⭐ #' + i.rebrickableRank + ' ' + i.designId + ' ×' + i.quantity + ' ' +
+        (i.nameCN||i.name||'').substring(0,20) + ' @ ' + i.slot + '\n    原因: ' + x.reason;
+    }).join('\n') +
+    (list.length > 50 ? '\n  ...還有 ' + (list.length-50) + ' 筆，見 window._reassignManualNeeded' : '');
   alert(html);
 }
 
@@ -3873,8 +3996,40 @@ async function processResult(item){
   const vol=calcVolFromAI(item.name||item.name_cn||'',item);
   const seriesTag=item.series_tag||detectSeriesFromDesignId(item.design_id||'')||detectSeriesFromText({name:item.name,nameCN:item.name_cn,description:item.description})||'';
   const characterTag=item.character_tag||'';
-  let slotInfo;if(match)slotInfo={slot:match.slot,slotType:match.slotType||'small'};else slotInfo=gatewayAssign({...item,estimateVolumeMl:vol,quantity:1,featureTags:item.feature_tags||[],dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0,seriesTag,characterTag});
+  // === v17u: 同步取得 Rebrickable 熱門度，再做分派 (確保 isFrequent 正確) ===
+  // 只對新物品查詢 (match 已有資料)
+  let freqInfo=null;
+  if(!match && designId){
+    try{
+      // 顯示暫時 banner 提示正在查詢
+      document.getElementById('result-slot').textContent='查詢熱門度中...';
+      freqInfo=await checkFrequentAndSuggest({designId, rebrickableSets:null});
+    }catch(e){console.warn('Rebrickable 查詢失敗:', e)}
+  }
+  const baseItem={...item,estimateVolumeMl:vol,quantity:1,featureTags:item.feature_tags||[],dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0,seriesTag,characterTag,designId};
+  if(freqInfo){
+    baseItem.rebrickableSets=freqInfo.rebrickableSets;
+    baseItem.isFrequent=freqInfo.isFrequent;
+  }
+  let slotInfo;
+  if(match){
+    // 已存在物品: 保留原位置 (包含 pickup/overflow)
+    slotInfo={slot:match.slot,slotType:match.slotType||'small',pickupSlot:match.pickupSlot||'',pickupType:match.pickupType||'',pickupQty:match.pickupQty||0,overflowSlot:match.overflowSlot||'',overflowQty:match.overflowQty||0};
+  } else {
+    slotInfo=gatewayAssign(baseItem);
+    // Handle manual-needed fallback (常用零件找不到抽屜)
+    if(slotInfo._needsManual){
+      const vt=vol*1;
+      const catGroup=getCatGroup(baseItem.featureTags||[],normalizeCategory(item.bricklink_category||''));
+      const fb=assignToBag(vt,catGroup,characterTag||null,seriesTag||null);
+      slotInfo={slot:fb.slot,slotType:fb.slotType,_manualReason:slotInfo._reason};
+    }
+  }
   pendingPart={...item,...slotInfo,designId,thumbnailUrl,dimW:item._dimW||0,dimL:item._dimL||0,dimH:item._dimH||0,featureTags:item.feature_tags||[],bricklinkCategory:item.bricklink_category||'',estimateVolumeMl:vol,imageData:currentImageData||'',nameCN:item.name_cn||'',seriesTag,characterTag,isUpdate:!!match,matchedId:match?match.id:null};
+  if(freqInfo){
+    pendingPart.rebrickableSets=freqInfo.rebrickableSets;
+    pendingPart.isFrequent=freqInfo.isFrequent;
+  }
   // Render — use Lens crop as visual fallback if no thumbnail URL
   const resultImg=document.getElementById('result-img');
   resultImg.dataset.fb=currentImageData||'';
@@ -3921,23 +4076,22 @@ async function processResult(item){
     document.getElementById('result-confirm-btn').style.display='';
     document.getElementById('result-slot-override').style.display='';cancelSlotOverride();
   }
-  // Frequent part detection (async, non-blocking): pop banner if reaches threshold
+  // Frequent part banner: use pre-fetched freqInfo from sync call above
   const freqBanner=document.getElementById('frequent-banner');
   if(freqBanner){freqBanner.style.display='none';freqBanner.innerHTML=''}
-  if(!match){
-    // Only suggest for NEW items (not already-matched existing)
-    checkFrequentAndSuggest(pendingPart).then(r=>{
-      if(!r||!freqBanner)return;
-      if(r.isFrequent){
-        pendingPart.rebrickableSets=r.rebrickableSets;
-        pendingPart.isFrequent=true;
-        freqBanner.innerHTML='⭐ <b>常用零件</b>（Rebrickable: '+r.rebrickableSets+' 盒組使用）<br>'+
-          '<span style="font-size:11px;color:var(--muted)">建議放到抽屜方便取用 · 點「✏️ 變更收納位置」手動指派</span>';
-        freqBanner.style.display='';
-      }else if(r.rebrickableSets!==null){
-        pendingPart.rebrickableSets=r.rebrickableSets;
+  if(!match && freqBanner){
+    if(pendingPart.isFrequent){
+      let bannerHtml='⭐ <b>常用零件</b>（Rebrickable: '+pendingPart.rebrickableSets+' 盒組使用）<br>'+
+        '<span style="font-size:11px;color:var(--muted)">已配抽屜快取位置</span>';
+      if(pendingPart.pickupSlot){
+        bannerHtml+='<br><span style="font-size:11px">✋ 快取: '+pendingPart.pickupSlot+' · '+pendingPart.pickupQty+' 件 · 主位: '+pendingPart.slot+'</span>';
       }
-    }).catch(()=>{});
+      if(pendingPart._manualReason){
+        bannerHtml+='<br><span style="font-size:11px;color:var(--red)">⚠ '+pendingPart._manualReason+'，暫置袋內請手動調整</span>';
+      }
+      freqBanner.innerHTML=bannerHtml;
+      freqBanner.style.display='';
+    }
   }
   showScreen('s-result');
 }
@@ -4530,10 +4684,14 @@ async function saveResultQty(){
 }
 
 // Auto overflow: check if slot total exceeds cap, auto-assign bag
+// v17u: 常用零件的 pickupQty 永不被此函數改變 (快取固定)
+//       主位/overflow 只負責 (qty - pickupQty)
 function autoOverflowCheck(item){
   if(!item||!item.slot)return null;
   const vol1=item.estimateVolumeMl||0;
-  const qty=item.quantity||1;
+  const pickupQty=item.pickupQty||0;
+  // 扣除 pickupQty: 主位 + overflow 只負責剩餘件數
+  const qty=Math.max(0,(item.quantity||1)-pickupQty);
   const cap=getSlotCap(item.slot,item.slotType);
   if(cap===Infinity)return null;
 
