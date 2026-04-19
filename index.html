@@ -323,6 +323,7 @@ tr:hover{background:var(--accent-bg)}
     <div id="result-volume" style="margin-top:8px;font-size:12px;color:var(--muted);font-family:var(--mono)"></div>
   </div>
   <div id="match-banner" style="display:none;background:var(--green-bg);border:1px solid var(--green);border-radius:10px;padding:12px 14px;margin-bottom:12px"></div>
+  <div id="frequent-banner" style="display:none;background:rgba(251,191,36,0.15);border:1px solid var(--accent);border-radius:10px;padding:10px 14px;margin-bottom:12px"></div>
   <div class="slot-display" id="result-slot-display" style="cursor:pointer" onclick="jumpToSlotFromResult()">
     <div style="font-size:12px;color:var(--accent);font-family:var(--mono);margin-bottom:10px">收納位置 <span style="font-size:10px;color:var(--dim)">（點擊查看格子內容）</span></div>
     <div id="result-slot" class="slot-main"></div>
@@ -661,7 +662,7 @@ tr:hover{background:var(--accent-bg)}
   <div class="modal-drag"></div>
   <div class="modal-head">
     <img id="m-img" src="" onclick="show1to1Box()" style="cursor:zoom-in" title="點擊顯示 1:1 尺寸線框圖" onerror="if(this.dataset.fb){this.src=this.dataset.fb;this.dataset.fb=''}else this.style.display='none'">
-    <div class="modal-head-info"><h2 id="m-name"></h2><div class="sub" id="m-ids"></div></div>
+    <div class="modal-head-info"><h2 id="m-name"></h2><div class="sub" id="m-ids"></div><div id="m-frequent-badge" style="margin-top:4px"></div></div>
   </div>
   <div class="modal-body">
     <div id="m-overflow-warn"></div>
@@ -726,7 +727,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17p';
+const APP_VERSION = '2026.04.17s';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -1358,6 +1359,75 @@ function getBagVol(bagSlot){return allItems.reduce((s,i)=>{let v=0;const vol1=i.
   // Overflow bag: calculate per-bag qty
   if(i.overflowSlot){const ovBags=i.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean);const idx=ovBags.indexOf(bagSlot);if(idx>=0){const piecesPerBag=vol1>0?Math.max(1,Math.floor((BAG_ML_DEFAULT)/vol1)):1;const ovQty=i.overflowQty||0;const bagQty=idx<ovBags.length-1?Math.min(piecesPerBag,ovQty):Math.max(0,ovQty-piecesPerBag*(ovBags.length-1));v+=vol1*bagQty}}
   return s+v},0)}
+
+// ═══════════════════════════════════════════════════
+// LOCATIONS SYSTEM (v17q+) - unified position tracking
+// ═══════════════════════════════════════════════════
+// New data model: item.locations = [{slot, type, qty, role}]
+// role: 'main' (primary stock) | 'pickup' (小量取用) | 'spill' (額外位置)
+// Backward compat: if item.locations missing, derive from slot/overflowSlot/overflowQty
+
+function detectSlotType(slot){
+  if(!slot)return 'small';
+  if(/^B\d+$/i.test(slot))return 'bag';
+  if(/^L\d+$/i.test(slot))return 'large';
+  if(/^\d+[ab]?$/.test(slot))return 'small';
+  return 'small';
+}
+
+// Build locations array from legacy fields (slot/overflowSlot/overflowQty)
+function buildLocationsFromLegacy(item){
+  if(!item||!item.slot)return [];
+  const totalQty=item.quantity||1;
+  const overflowQty=item.overflowQty||0;
+  const mainQty=Math.max(0,totalQty-overflowQty);
+  const locations=[];
+  // Main position
+  locations.push({
+    slot:item.slot,
+    type:item.slotType||detectSlotType(item.slot),
+    qty:mainQty,
+    role:'main'
+  });
+  // Overflow positions
+  if(item.overflowSlot&&overflowQty>0){
+    const ovBags=item.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean);
+    const vol1=item.estimateVolumeMl||0;
+    const piecesPerBag=vol1>0?Math.max(1,Math.floor(BAG_ML_DEFAULT/vol1)):overflowQty;
+    let remaining=overflowQty;
+    ovBags.forEach((bag,idx)=>{
+      const isLast=idx===ovBags.length-1;
+      const q=isLast?remaining:Math.min(piecesPerBag,remaining);
+      if(q>0){
+        locations.push({
+          slot:bag,
+          type:detectSlotType(bag),
+          qty:q,
+          role:'spill'
+        });
+        remaining-=q;
+      }
+    });
+  }
+  return locations;
+}
+
+// Get locations array for an item (prefer new locations, fallback to legacy)
+function getItemLocations(item){
+  if(!item)return [];
+  if(Array.isArray(item.locations)&&item.locations.length>0){
+    // Return deep-copy so mutations don't corrupt
+    return item.locations.map(l=>({slot:l.slot,type:l.type,qty:l.qty||0,role:l.role||'main'}));
+  }
+  return buildLocationsFromLegacy(item);
+}
+
+// Role display helpers
+function locRoleIcon(role){return role==='main'?'★':role==='pickup'?'✋':role==='spill'?'➕':'•'}
+function locRoleLabel(role){return role==='main'?'主庫存':role==='pickup'?'取用點':role==='spill'?'額外位置':'位置'}
+function locTypeLabel(type){return type==='bag'?'收納袋':type==='large'?'大抽屜':'小抽屜'}
+
+
 // Get the bag super-group for a bag slot (checks what's already inside)
 function getBagSuperGroup(bagSlot){
   const items=allItems.filter(i=>i.slot===bagSlot&&i.slotType==='bag');
@@ -1693,6 +1763,27 @@ function populateModal(i){
   mImg.src=thumb;
   document.getElementById('m-name').textContent=i.name||i.nameCN||(isNewItem?'新零件':'未知零件');
   document.getElementById('m-ids').textContent=isNewItem?'新建檔':'Design ID: '+did+' · '+(i.slot||'?')+' · '+(i.slotType||'small');
+  // Frequent badge
+  const fBadge=document.getElementById('m-frequent-badge');
+  if(fBadge){
+    const isFreq=isItemFrequent(i);
+    const hasRebData=typeof i.rebrickableSets==='number';
+    const rebSets=i.rebrickableSets||0;
+    const rebRank=i.rebrickableRank||0;
+    const manual=i.manualFrequent;
+    let html='';
+    if(isFreq){
+      html='<button onclick="toggleItemFrequent()" style="background:var(--accent);color:#111;border:none;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer">⭐ 常用零件</button>';
+    }else{
+      html='<button onclick="toggleItemFrequent()" style="background:transparent;color:var(--muted);border:1px solid var(--border);padding:3px 10px;border-radius:12px;font-size:11px;cursor:pointer">☆ 標為常用</button>';
+    }
+    if(hasRebData){
+      html+=' <span style="font-size:10px;color:var(--muted);margin-left:6px">🌍 '+rebSets+' 盒組 (#'+rebRank+')</span>';
+    }
+    if(manual===true)html+=' <span style="font-size:9px;color:var(--orange);margin-left:4px">(手動)</span>';
+    else if(manual===false)html+=' <span style="font-size:9px;color:var(--orange);margin-left:4px">(手動排除)</span>';
+    fBadge.innerHTML=html;
+  }
   document.getElementById('m-qty').value=i.quantity||1;
   document.getElementById('m-dimW').value=i.dimW?Math.round(i.dimW*10):'';
   document.getElementById('m-dimL').value=i.dimL?Math.round(i.dimL*10):'';
@@ -1708,19 +1799,42 @@ function populateModal(i){
   document.getElementById('m-bl-link').href=did?'https://www.bricklink.com/v2/catalog/catalogitem.page?P='+did:'#';
   document.getElementById('m-rb-link').href=did?'https://rebrickable.com/parts/'+did+'/':'#';
   const ovEl=document.getElementById('m-overflow-info');
-  if(i.overflowSlot&&(i.overflowQty||0)>0){
-    const mainQty=(i.quantity||1)-(i.overflowQty||0);
-    const ovBags=i.overflowSlot.split(',').map(s=>s.trim()).filter(Boolean);
-    let html='📦 溢出：主位 <b>'+i.slot+'</b> 留 '+mainQty+' 件<br>';
-    html+='<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">';
-    ovBags.forEach((bag,idx)=>{
-      html+='<span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface);padding:3px 6px 3px 8px;border-radius:6px;font-size:11px"><b>'+bag+'</b>';
-      html+='<button onclick="event.stopPropagation();removeOverflowBag(\''+bag+'\')" style="background:transparent;border:none;color:var(--red);font-size:14px;line-height:1;cursor:pointer;padding:0 2px" title="從溢出中移除 '+bag+'">×</button></span>';
+  const locs=getItemLocations(i);
+  if(locs.length>=1){
+    // Always show locations (even just 1) — gives consistent UI
+    const totalQty=locs.reduce((s,l)=>s+(l.qty||0),0);
+    let html='<div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:6px">📍 收納位置 ('+locs.length+' 處 · 共 '+totalQty+' 件)</div>';
+    html+='<div style="display:flex;flex-direction:column;gap:4px">';
+    locs.forEach((loc,idx)=>{
+      const icon=locRoleIcon(loc.role);
+      const typeLabel=locTypeLabel(loc.type);
+      const isSpill=loc.role==='spill';
+      html+='<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--surface);border-radius:6px;font-size:12px">';
+      html+='<span style="font-size:14px;width:18px;text-align:center">'+icon+'</span>';
+      html+='<span style="font-family:var(--mono);font-weight:700;color:var(--accent);min-width:60px">'+loc.slot+'</span>';
+      html+='<span style="font-size:10px;color:var(--muted);min-width:48px">'+typeLabel+'</span>';
+      html+='<span style="flex:1;text-align:right;font-family:var(--mono);font-size:11px">'+loc.qty+' 件</span>';
+      if(isSpill){
+        html+='<button onclick="event.stopPropagation();removeOverflowBag(\''+loc.slot+'\')" style="background:transparent;border:none;color:var(--red);font-size:16px;line-height:1;cursor:pointer;padding:0 4px" title="移除此位置">×</button>';
+      }
+      html+='</div>';
     });
     html+='</div>';
-    html+='<div style="font-size:11px;color:var(--muted);margin-top:4px">共溢出 '+i.overflowQty+' 件 · 點 × 移除單袋 (物品將重算溢出)</div>';
+    if(locs.length>1){
+      html+='<div style="font-size:10px;color:var(--muted);margin-top:6px">★主庫存 · ✋取用點 · ➕額外位置 (可移除)</div>';
+    }
     ovEl.innerHTML=html;
     ovEl.style.display='';
+    // Remove the old purple styling when showing single location
+    if(locs.length===1){
+      ovEl.style.background='var(--card)';
+      ovEl.style.border='1px solid var(--border)';
+      ovEl.style.color='var(--text)';
+    }else{
+      ovEl.style.background='';
+      ovEl.style.border='';
+      ovEl.style.color='';
+    }
   }else ovEl.style.display='none';
   document.getElementById('m-overflow-warn').innerHTML='';recalcVol();
 }
@@ -2439,6 +2553,104 @@ async function rebrickableLookup(inputId){
     else{const resp=await fetch('https://rebrickable.com/api/v3/lego/parts/'+inputId+'/?key='+key);if(!resp.ok)return null;const d=await resp.json();return{designId:d.part_num||inputId,name:d.name||'',imgUrl:d.part_img_url||''}}
   }catch(e){return null}
 }
+
+// ═══════════════════════════════════════════════════
+// REBRICKABLE POPULARITY (per-item fetch + threshold check)
+// ═══════════════════════════════════════════════════
+// Fetches a single item's num_sets from Rebrickable /colors/ endpoint.
+// Returns the total num_sets across all colors, or null on failure.
+async function fetchSingleItemPopularity(designId){
+  if(!designId)return null;
+  const key=cfg.rbKey||DEFAULT_RB_KEY;
+  if(!key)return null;
+  try{
+    const resp=await fetch('https://rebrickable.com/api/v3/lego/parts/'+encodeURIComponent(designId)+'/colors/?key='+key);
+    if(!resp.ok){
+      // Retry with base design id (strip variant suffix)
+      const base=designId.replace(/pr?\d+$/i,'').replace(/[a-z]+$/i,'');
+      if(base&&base!==designId){
+        const r2=await fetch('https://rebrickable.com/api/v3/lego/parts/'+encodeURIComponent(base)+'/colors/?key='+key);
+        if(r2.ok){const d=await r2.json();return (d.results||[]).reduce((s,c)=>s+(c.num_sets||0),0)}
+      }
+      return null;
+    }
+    const d=await resp.json();
+    return (d.results||[]).reduce((s,c)=>s+(c.num_sets||0),0);
+  }catch(e){return null}
+}
+
+// Check if item should be flagged frequent + optionally fetch popularity
+// Returns: { isFrequent, rebrickableSets, threshold } — never throws.
+async function checkFrequentAndSuggest(item){
+  const threshold=slotConfig.rebrickableFrequentThreshold||0;
+  // Skip if already has popularity data
+  if(typeof item.rebrickableSets==='number'){
+    return {
+      isFrequent: threshold>0 && item.rebrickableSets>=threshold,
+      rebrickableSets: item.rebrickableSets,
+      threshold: threshold
+    };
+  }
+  const sets=await fetchSingleItemPopularity(item.designId);
+  if(sets===null)return {isFrequent:false,rebrickableSets:null,threshold};
+  item.rebrickableSets=sets;
+  const freq=threshold>0 && sets>=threshold;
+  item.isFrequent=freq;
+  return {isFrequent:freq, rebrickableSets:sets, threshold};
+}
+
+// Helper: determine if an item is frequent (with manual override support)
+function isItemFrequent(item){
+  if(!item)return false;
+  if(item.manualFrequent===true)return true;
+  if(item.manualFrequent===false)return false;
+  return item.isFrequent===true;
+}
+
+// Toggle manualFrequent state on current item (3-state cycle)
+// Cycle: if currently frequent → set manualFrequent=false (excluded)
+//        if currently excluded (manualFrequent===false) → clear (manualFrequent=null, back to auto)
+//        if currently not frequent (auto=false, manualFrequent=null) → set manualFrequent=true
+async function toggleItemFrequent(){
+  if(!currentItem)return;
+  const i=currentItem;
+  const isFreq=isItemFrequent(i);
+  const manual=i.manualFrequent;
+  let newManual;
+  let msg;
+  if(isFreq){
+    // Currently frequent → exclude it manually
+    newManual=false;
+    msg='☆ 已手動排除常用標記';
+  }else if(manual===false){
+    // Manually excluded → clear override (back to auto)
+    newManual=null;
+    msg=i.isFrequent?'⭐ 已恢復自動常用':'☆ 已恢復自動 (非常用)';
+  }else{
+    // Not frequent → add manual ⭐
+    newManual=true;
+    msg='⭐ 已手動標記為常用';
+  }
+  i.manualFrequent=newManual;
+  i.updatedAt=Date.now();
+  markDirty(i.id);
+  // Persist immediately (use set with null if clearing)
+  try{
+    const update={updatedAt:i.updatedAt};
+    if(newManual===null){
+      // Firebase doesn't accept undefined; write null explicitly to clear
+      update.manualFrequent=null;
+    }else{
+      update.manualFrequent=newManual;
+    }
+    await db.collection(FB_COL).doc(i.id).update(update);
+  }catch(e){console.warn('toggle failed:',e)}
+  // Re-render badge
+  populateModal(i);
+  showToast(msg);
+}
+
+
 
 // ═══ CORS-free thumbnail finder (uses img.onload, works in APK WebView) ═══
 function testImageUrl(url,timeout){
@@ -3421,6 +3633,24 @@ async function processResult(item){
     document.getElementById('result-confirm-btn').style.display='';
     document.getElementById('result-slot-override').style.display='';cancelSlotOverride();
   }
+  // Frequent part detection (async, non-blocking): pop banner if reaches threshold
+  const freqBanner=document.getElementById('frequent-banner');
+  if(freqBanner){freqBanner.style.display='none';freqBanner.innerHTML=''}
+  if(!match){
+    // Only suggest for NEW items (not already-matched existing)
+    checkFrequentAndSuggest(pendingPart).then(r=>{
+      if(!r||!freqBanner)return;
+      if(r.isFrequent){
+        pendingPart.rebrickableSets=r.rebrickableSets;
+        pendingPart.isFrequent=true;
+        freqBanner.innerHTML='⭐ <b>常用零件</b>（Rebrickable: '+r.rebrickableSets+' 盒組使用）<br>'+
+          '<span style="font-size:11px;color:var(--muted)">建議放到抽屜方便取用 · 點「✏️ 變更收納位置」手動指派</span>';
+        freqBanner.style.display='';
+      }else if(r.rebrickableSets!==null){
+        pendingPart.rebrickableSets=r.rebrickableSets;
+      }
+    }).catch(()=>{});
+  }
   showScreen('s-result');
 }
 
@@ -3646,7 +3876,7 @@ function applySlotOverrideManual(){
 async function confirmPart(){
   if(!pendingPart)return;
   const now=Date.now();
-  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,seriesTag:pendingPart.seriesTag||'',characterTag:pendingPart.characterTag||'',brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],lens_summary:pendingPart.lens_summary||'',quantity:1,updatedAt:now};
+  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,seriesTag:pendingPart.seriesTag||'',characterTag:pendingPart.characterTag||'',brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],lens_summary:pendingPart.lens_summary||'',rebrickableSets:(typeof pendingPart.rebrickableSets==='number'?pendingPart.rebrickableSets:null),isFrequent:pendingPart.isFrequent||false,quantity:1,updatedAt:now};
   if(pendingPart.isUpdate&&pendingPart.matchedId){
     item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);
     item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;
