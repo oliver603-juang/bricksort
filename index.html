@@ -2980,34 +2980,20 @@ function findMergeSlot(newVt,catGroup,sameCategory){
       const vol=getSlotVol(slot);
       const count=getSlotItemCount(slot);
       if(count===0)continue; // 空格不算融合
+      // ★ 常用零件獨佔: 半格含常用 → 禁止融合
+      if(allItems.some(i=>i.slot===slot&&isItemFrequent(i)))continue;
       if(vol+newVt>SLOT_ML)continue; // 放不下
-      // 檢查動態上限
-      const maxVol=Math.max(getSlotMaxVol(slot),newVt);
-      const maxItems=maxVol<5?8:maxVol<20?6:4;
-      if(count>=maxItems)continue;
-      // 分類檢查
-      if(sameCategory){
-        const slotCat=allItems.find(i=>i.slot===slot);
-        if(!slotCat)continue;
-        const sCatGroup=getCatGroup(slotCat.featureTags||[],normalizeCategory(slotCat.bricklinkCategory||''));
-        if(sCatGroup!==catGroup)continue;
-      }
-      return slot;
-    }
-  }
-  return null;
-}
 
 // 找同分類抽屜中空的 b 格
 function findEmptyHalf(catGroup){
   const maxDrawer=parseInt((slotConfig.nextSmallSlot||'450a').replace(/[a-z]/g,''));
+  const hasFreq=slot=>allItems.some(i=>i.slot===slot&&isItemFrequent(i));
+  // Phase 1: 同分類抽屜中空的 b 格 (跳過含常用的抽屜)
   for(let d=1;d<maxDrawer;d++){
     const slotA=String(d).padStart(3,'0')+'a';
     const slotB=String(d).padStart(3,'0')+'b';
-    const countA=getSlotItemCount(slotA);
-    const countB=getSlotItemCount(slotB);
-    if(countA>0&&countB===0){
-      // a 有東西但 b 空的 → 檢查分類
+    if(hasFreq(slotA)||hasFreq(slotB))continue; // ★ 常用獨佔
+    if(getSlotItemCount(slotA)>0&&getSlotItemCount(slotB)===0){
       const aItem=allItems.find(i=>i.slot===slotA);
       if(aItem){
         const aCat=getCatGroup(aItem.featureTags||[],normalizeCategory(aItem.bricklinkCategory||''));
@@ -3015,29 +3001,36 @@ function findEmptyHalf(catGroup){
       }
     }
   }
-  // 沒找到同分類的 → 任何空 b 格
+  // Phase 2: 任何空 b 格 (仍避開常用)
   for(let d=1;d<maxDrawer;d++){
+    const slotA=String(d).padStart(3,'0')+'a';
     const slotB=String(d).padStart(3,'0')+'b';
-    if(getSlotItemCount(slotB)===0){
-      const slotA=String(d).padStart(3,'0')+'a';
-      if(getSlotItemCount(slotA)>0)return slotB;
-    }
+    if(hasFreq(slotA)||hasFreq(slotB))continue; // ★ 常用獨佔
+    if(getSlotItemCount(slotB)===0&&getSlotItemCount(slotA)>0)return slotB;
   }
   return null;
 }
 
 // 分配新的空抽屜（從 nextSmallSlot 遞增）
 function allocateNewSmallSlot(){
-  const next=slotConfig.nextSmallSlot||'434a';
-  const num=parseInt(next.replace(/[a-z]/g,''));
+  let num=parseInt((slotConfig.nextSmallSlot||'001a').replace(/[a-z]/g,''));
   const maxDrawers=slotConfig.totalSmallDrawers||450;
-  if(num>maxDrawers)return null; // 全滿
-  const label=String(num).padStart(3,'0');
-  // 推進 pointer 並標記需要同步
-  slotConfig.nextSmallSlot=String(num+1).padStart(3,'0')+'a';
-  ensureCap(num+1);
-  markDirty('__config__');
-  return label;
+  // 掃描指標位置開始，跳過任何已被佔用的抽屜（含 a/b/整格）
+  while(num<=maxDrawers){
+    const label=String(num).padStart(3,'0');
+    const occupied=allItems.some(i=>{
+      const s=i.slot||'';
+      return s===label||s===label+'a'||s===label+'b';
+    });
+    if(!occupied){
+      slotConfig.nextSmallSlot=String(num+1).padStart(3,'0')+'a';
+      ensureCap(num+1);
+      markDirty('__config__');
+      return label;
+    }
+    num++;
+  }
+  return null; // 全滿
 }
 
 // ═══════════════════════════════════════════════════
