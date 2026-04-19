@@ -733,7 +733,7 @@ if('caches' in window){caches.keys().then(names=>{names.forEach(n=>caches.delete
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
-const APP_VERSION = '2026.04.17v';
+const APP_VERSION = '2026.04.17w';
 const FB_CONFIG = { apiKey:'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10', projectId:'storesmart-7ae65' };
 const FB_COL = 'lego_parts';
 const FB_CONFIG_DOC = '_slot_config';
@@ -2609,11 +2609,37 @@ function assignFrequent(item){
   const actualPickupQty = Math.min(qty, pickupMaxByCap);
   const remainQty = qty - actualPickupQty;
   
-  // === 主庫存 (剩餘) 放袋 ===
+  // === 主庫存 (剩餘) 放袋，計算是否需要溢出 ===
   let mainBag = '';
+  let overflowBags = '';
+  let overflowQtyCalc = 0;
   if(remainQty > 0){
-    const mainVol = v1 * remainQty;
-    mainBag = findBagForOverflow(mainVol, catGroup, charTag, seriesTag);
+    const bagCap = BAG_ML_DEFAULT;
+    const piecesPerBag = v1 > 0 ? Math.max(1, Math.floor(bagCap / v1)) : remainQty;
+    // 第一個袋 (主位)
+    mainBag = findBagForOverflow(Math.min(bagCap, v1 * remainQty), catGroup, charTag, seriesTag);
+    // 若一袋裝不下 → 計算需要幾個溢出袋
+    if(remainQty > piecesPerBag){
+      const totalBagsNeeded = Math.ceil(remainQty / piecesPerBag);
+      const overflowBagsNeeded = totalBagsNeeded - 1;
+      overflowQtyCalc = remainQty - piecesPerBag;
+      const ovBagList = [];
+      for(let b = 0; b < overflowBagsNeeded; b++){
+        const piecesLeft = remainQty - piecesPerBag - b * piecesPerBag;
+        const volNeed = Math.min(bagCap, piecesLeft * v1);
+        const ovBag = findBagForOverflow(volNeed, catGroup, charTag, seriesTag);
+        if(ovBag && ovBag !== mainBag && ovBagList.indexOf(ovBag) === -1){
+          ovBagList.push(ovBag);
+        } else {
+          // 重複或同個袋 → 強制開新袋
+          const newBag = slotConfig.nextBagSlot || 'B01';
+          slotConfig.nextBagSlot = advanceBag(newBag);
+          markDirty('__config__');
+          ovBagList.push(newBag);
+        }
+      }
+      overflowBags = ovBagList.join(',');
+    }
   } else {
     // 全部放快取 (不應該發生，因為 totalVol > LARGE_ML 時才走到這)
     // 但可能情境 A 找不到空位而降級到這，此時 pickup 就夠了
@@ -2635,8 +2661,8 @@ function assignFrequent(item){
     pickupSlot: pickupSlot,
     pickupType: pickupType,
     pickupQty: actualPickupQty,
-    overflowSlot: '',
-    overflowQty: 0
+    overflowSlot: overflowBags,
+    overflowQty: overflowQtyCalc
   };
 }
 
@@ -2745,9 +2771,20 @@ async function reassignAllFrequent(){
     i.overflowQty = 0;
   });
   
-  // Reset slot config pointers so allocation starts fresh
+  // Reset slot config pointers so allocation starts fresh (從 001a / B01 開始)
   const origNextSmall = slotConfig.nextSmallSlot;
   const origNextBag = slotConfig.nextBagSlot;
+  slotConfig.nextSmallSlot = '001a';
+  slotConfig.nextBagSlot = 'B01';
+  
+  // 清空舊的 series/character bag 記錄 (讓 bag 從 B01 重新分配)
+  slotConfig.seriesBags = {};
+  // 清空每個 character 的 bagSlots (保留 enabled/bagType)
+  Object.keys(slotConfig.characters || {}).forEach(function(c){
+    if(slotConfig.characters[c]){
+      slotConfig.characters[c].bagSlots = [];
+    }
+  });
   
   // === Phase 1: 常用零件按 rank 分派 ===
   const freq = allToReassign.filter(i => isItemFrequent(i))
