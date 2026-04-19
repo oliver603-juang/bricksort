@@ -1457,9 +1457,19 @@ function getBagSuperGroup(bagSlot){
   }
   return null; // no super-group items in this bag
 }
-function findBagForOverflow(vol,catGroup,characterTag,seriesTag){
+
+function findBagForOverflow(vol,catGroup,characterTag,seriesTag,item){
   const cap=BAG_ML_DEFAULT;const lastBag=slotConfig.nextBagSlot||'B01';const lastNum=parseInt((lastBag.match(/\d+/)||['1'])[0]);
+  // Phase 0c: 🆕 分類專用袋優先 (無 char/series 才會觸發)
+  if(item){
+    const catBagKey=getCategoryBagKey(item);
+    if(catBagKey){
+      const catBag=findOrAllocateCategoryBag(catBagKey,vol);
+      if(catBag)return catBag;
+    }
+  }
   // Phase 0a: seriesTag routing
+// Phase 0a: seriesTag routing
   if(seriesTag){
     const existing=findSeriesBag(seriesTag,vol);
     if(existing)return existing;
@@ -1482,10 +1492,13 @@ function findBagForOverflow(vol,catGroup,characterTag,seriesTag){
     }
   }
   const superGroup=catGroup?BAG_SUPER_GROUPS[catGroup]:null;
+  
+  
   // Phase 1: find bag with same super-group (for minifig parts)
   if(superGroup){
     for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
       if(isBagSeriesTagged(label))continue;
+      if(isBagCategoryTagged(label))continue;
       if(getBagSuperGroup(label)===superGroup&&getBagVol(label)+vol<=cap)return label;
     }
   }
@@ -1493,6 +1506,7 @@ function findBagForOverflow(vol,catGroup,characterTag,seriesTag){
   if(catGroup){
     for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
       if(isBagSeriesTagged(label))continue;
+      if(isBagCategoryTagged(label))continue;
       const bagSG=getBagSuperGroup(label);
       if(bagSG)continue;
       if(isBagCharacterTagged(label))continue;
@@ -1504,6 +1518,7 @@ function findBagForOverflow(vol,catGroup,characterTag,seriesTag){
   // Phase 3: find any bag with space (skip all reserved bags)
   for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
     if(isBagSeriesTagged(label))continue;
+    if(isBagCategoryTagged(label))continue;
     if(getBagSuperGroup(label))continue;
     if(isBagCharacterTagged(label))continue;
     if(getBagVol(label)+vol<=cap)return label;
@@ -2397,17 +2412,21 @@ function assignToBag(vt,catGroup,characterTag,seriesTag){
     }
   }
   const superGroup=catGroup?BAG_SUPER_GROUPS[catGroup]:null;
-  // Phase 1: find bag with same super-group (but skip series/character bags)
+  
+  
+  // Phase 1: find bag with same super-group (but skip reserved bags)
   if(superGroup){
     for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
       if(isBagSeriesTagged(label))continue;
+      if(isBagCategoryTagged(label))continue;
       if(getBagSuperGroup(label)===superGroup&&getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'};
     }
   }
-  // Phase 2: find bag with same catGroup (skip series/character/super-group bags)
+  // Phase 2: find bag with same catGroup (skip all reserved bags)
   if(catGroup){
     for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
       if(isBagSeriesTagged(label))continue;
+      if(isBagCategoryTagged(label))continue;
       const bagSG=getBagSuperGroup(label);if(bagSG)continue;
       if(isBagCharacterTagged(label))continue;
       const items=allItems.filter(i=>i.slot===label&&i.slotType==='bag');
@@ -2417,10 +2436,12 @@ function assignToBag(vt,catGroup,characterTag,seriesTag){
   // Phase 3: any bag with space (skip all reserved bags)
   for(let n=1;n<=lastNum;n++){const label='B'+String(n).padStart(2,'0');
     if(isBagSeriesTagged(label))continue;
+    if(isBagCategoryTagged(label))continue;
     if(getBagSuperGroup(label))continue;
     if(isBagCharacterTagged(label))continue;
     if(getBagVol(label)+vt<=cap)return{slot:label,slotType:'bag'};
   }
+  
   // Phase 4: new bag
   slotConfig.nextBagSlot=advanceBag(lastBag);markDirty('__config__');
   return{slot:slotConfig.nextBagSlot,slotType:'bag'};
@@ -2432,6 +2453,53 @@ function isBagCharacterTagged(bagSlot){
     if((c.bagSlots||[]).includes(bagSlot))return true;
   }
   return (slotConfig.sharedCharacterBags||[]).includes(bagSlot);
+}
+
+// ═══ Category Bag routing (neckwear / headwear / bodywear) ═══
+// 根據 bricklinkCategory 分流到 3 個專用袋
+// 條件: 無 characterTag 且無 seriesTag (character > series > category)
+function getCategoryBagKey(item){
+  if(!item)return null;
+  if(item.characterTag||item.seriesTag)return null;
+  var blCat=(item.bricklinkCategory||'').toLowerCase().trim();
+  var name=(item.name||'').toLowerCase();
+  // Neckwear (含分類怪的 Utensil 類 neckwear basket)
+  if(blCat==='minifigure, neckwear'||blCat==='minifig, neck wear'||blCat==='minifigure, neck'||
+     (name.indexOf('neckwear')>-1&&blCat.indexOf('minifig')>-1))return 'neckwear';
+  // Headwear / Hair / Headgear / Head
+  if(blCat==='minifigure, hair'||blCat==='minifigure, headwear'||blCat==='minifigure, headgear'||
+     blCat==='minifigure, headwear accessory'||blCat==='minifig, headwear'||
+     blCat==='minifigure, head'||blCat==='minifig head'||blCat==='minifig, head')return 'headwear';
+  // Bodywear (限定 minifigure 類, 排除 Animal/Creature Body Part)
+  if(blCat==='minifigure, body part'||blCat==='minifigure, body wear'||
+     blCat==='minifigure, armor'||blCat==='minifig, body part')return 'bodywear';
+  return null;
+}
+
+function findOrAllocateCategoryBag(catKey,newVt){
+  if(!catKey)return null;
+  var cap=BAG_ML_DEFAULT;
+  if(!slotConfig.categoryBags)slotConfig.categoryBags={};
+  var bagList=slotConfig.categoryBags[catKey]||[];
+  // 依序嘗試現有袋
+  for(var i=0;i<bagList.length;i++){
+    if(getBagVol(bagList[i])+newVt<=cap)return bagList[i];
+  }
+  // 所有袋都滿 → 開新袋
+  var newBag=slotConfig.nextBagSlot||'B01';
+  slotConfig.nextBagSlot=advanceBag(newBag);
+  bagList.push(newBag);
+  slotConfig.categoryBags[catKey]=bagList;
+  markDirty('__config__');
+  return newBag;
+}
+
+function isBagCategoryTagged(bagSlot){
+  var cb=slotConfig.categoryBags||{};
+  for(var k in cb){
+    if((cb[k]||[]).indexOf(bagSlot)>=0)return true;
+  }
+  return false;
 }
 
 // ═══ 智慧分流：小抽屜優先，滿了才進袋 ═══
@@ -2624,8 +2692,8 @@ function assignFrequent(item){
     const bagCap = BAG_ML_DEFAULT;
     const piecesPerBag = v1 > 0 ? Math.max(1, Math.floor(bagCap / v1)) : remainQty;
     // 第一個袋 (主位)
-    mainBag = findBagForOverflow(Math.min(bagCap, v1 * remainQty), catGroup, charTag, seriesTag);
-    // 若一袋裝不下 → 計算需要幾個溢出袋
+    mainBag = findBagForOverflow(Math.min(bagCap, v1 * remainQty), catGroup, charTag, seriesTag, item);
+	// 若一袋裝不下 → 計算需要幾個溢出袋
     if(remainQty > piecesPerBag){
       const totalBagsNeeded = Math.ceil(remainQty / piecesPerBag);
       const overflowBagsNeeded = totalBagsNeeded - 1;
@@ -2636,7 +2704,7 @@ function assignFrequent(item){
       for(let b = 0; b < overflowBagsNeeded; b++){
         const piecesLeft = remainQty - piecesPerBag - b * piecesPerBag;
         const volNeed = Math.min(bagCap, piecesLeft * v1);
-        let ovBag = findBagForOverflow(volNeed, catGroup, charTag, seriesTag);
+		let ovBag = findBagForOverflow(volNeed, catGroup, charTag, seriesTag, item);
         // 檢查是否重複 (findBagForOverflow 可能回傳 mainBag 或剛加的 ovBag)
         if(!ovBag || usedBags.indexOf(ovBag) >= 0){
           // 強制開新袋，跳過已用的
@@ -2704,10 +2772,15 @@ function assignRegular(item){
   }
   // 0b. 有明確系列標籤但無角色 → 進系列袋
   if(seriesTag){return assignToBag(vt,catGroup,null,seriesTag)}
+  // 0c. 🆕 分類專用袋 (neckwear/headwear/bodywear, 無角色無系列)
+  const catBagKey=getCategoryBagKey(item);
+  if(catBagKey){
+    const catBag=findOrAllocateCategoryBag(catBagKey,vt);
+    if(catBag)return{slot:catBag,slotType:'bag'};
+  }
   // 1. 人偶 → 收納袋 (人偶實體太複雜)
   if(isMinifigure(item)){return assignToBag(vt,catGroup,charTag,seriesTag)}
-  // 1b. 人偶身體部件 → 強制收納袋
-  if(BAG_SUPER_GROUPS[catGroup]&&vol>=MINIFIG_BAG_VOL1){return assignToBag(vt,catGroup,charTag,seriesTag)}
+  
   // 1c. 總體積超過大抽屜 → 收納袋 (非常用大體積)
   if(vt>LARGE_ML){return assignToBag(vt,catGroup,charTag,seriesTag)}
   // 1d. 塞不下半格但能塞整格 → 獨佔整格 (新 v17z)
@@ -4875,7 +4948,7 @@ function autoOverflowCheck(item){
 
   if(ovBagsNeeded===1&&existingOvBags.length===0){
     // Single bag: find existing bag with capacity, or allocate new
-    const bagSlot=findBagForOverflow(ovVol,itemCg2,itemTag,itemSeries);
+	const bagSlot=findBagForOverflow(ovVol,itemCg2,itemTag,itemSeries,item);
     item.overflowSlot=bagSlot;
     item.overflowQty=overQty;
     return{bagSlot,overQty,fitsQty};
@@ -4893,8 +4966,8 @@ function autoOverflowCheck(item){
       return{bagSlot:existingOvBags.join(','),overQty,fitsQty};
     }
     // Existing bag full → allocate new
-    const newBag=findBagForOverflow(ovVol,itemCg2,itemTag,itemSeries);
-    existingOvBags.push(newBag);
+    const newBag=findBagForOverflow(ovVol,itemCg2,itemTag,itemSeries,item);
+	existingOvBags.push(newBag);
     item.overflowSlot=existingOvBags.join(',');
     item.overflowQty=overQty;
     return{bagSlot:existingOvBags.join(','),overQty,fitsQty};
