@@ -1633,10 +1633,9 @@ function isMinifigure(item){
   if(/^[a-z]{2,4}\d{3,5}$/i.test(did)) return true;
   return false;
 }
-function fitsSmallSlot(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0){const vol=item.estimateVolumeMl||0;return vol<=SLOT_ML}const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=SLOT_H&&d[1]<=SLOT_W}
-// v17z: 整格尺寸檢查 (半格×2 = 寬 48 x 長 68×2=136 x 高 38)
-function fitsFullDrawer(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0){const vol=item.estimateVolumeMl||0;return vol<=DRAWER_ML}const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=SLOT_H&&d[1]<=SLOT_L&&d[2]<=SLOT_L}
-// 大抽屜尺寸檢查 (寬 108 x 長 136 x 高 53)
+function fitsSmallSlot(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0){const vol=item.estimateVolumeMl||0;return vol<=SLOT_ML}const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=SLOT_H&&d[1]<=SLOT_W&&d[2]<=SLOT_L}
+// v18a: 整格實體尺寸 48×136×38 (半格 a+b 拼起來，寬不變、長翻倍、高不變)
+function fitsFullDrawer(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0){const vol=item.estimateVolumeMl||0;return vol<=DRAWER_ML}const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=SLOT_H&&d[1]<=SLOT_W&&d[2]<=SLOT_L*2}
 function fitsLargeSlot(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0){const vol=item.estimateVolumeMl||0;return vol<=LARGE_ML}const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=53&&d[1]<=108&&d[2]<=136}
 
 // ═══ SERIES TAG DETECTION ═══
