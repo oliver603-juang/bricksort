@@ -2791,15 +2791,7 @@ function assignRegular(item){
   if(vt>LARGE_ML){return assignToBag(vt,catGroup,charTag,seriesTag)}
   // 1d. 塞不下半格但能塞整格 → 獨佔整格 (新 v17z)
   if(!fitsSmallSlot(item)){
-    if(fitsFullDrawer(item) && vt<=DRAWER_ML){
-      const newSlot=allocateNewSmallSlot();
-      if(newSlot)return{slot:newSlot,slotType:'small'};
-    }
-    // 塞不下整格 → 試大抽屜 (若尺寸和體積都適合)
-    if(fitsLargeSlot(item) && vt<=LARGE_ML){
-      // 不自動佔用大抽屜，因為大抽屜稀缺 → 進袋
-      // (使用者可以手動移到大抽屜)
-    }
+    // [v17aa] 超過半格尺寸 → 直接進裋
     return assignToBag(vt,catGroup,charTag,seriesTag);
   }
   // 1e. 總體積超過整格但塞得下半格 (不太可能) → 進袋
