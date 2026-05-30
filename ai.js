@@ -67,7 +67,7 @@ async function fetchSingleItemPopularity(designId){
 // Check if item should be flagged frequent + optionally fetch popularity
 // Returns: { isFrequent, rebrickableSets, threshold } — never throws.
 async function checkFrequentAndSuggest(item){
-  const threshold=slotConfig.rebrickableFrequentThreshold||0;
+  const threshold=(slotConfig.rebrickableFrequentThreshold!=null)?slotConfig.rebrickableFrequentThreshold:200;
   // Skip if already has popularity data
   if(typeof item.rebrickableSets==='number'){
     return {
