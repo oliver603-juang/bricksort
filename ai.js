@@ -31,6 +31,46 @@ async function callGeminiAPI(prompt,base64Image=null,_retryIdx=0,systemInstructi
   }catch(e){clearTimeout(timeout);if(e.name==='AbortError')throw new Error('Gemini API 逾時（30秒），請重試');throw e}
 }
 
+
+// 清洗 Base64 標頭，符合 Gemini inlineData 規範
+function cleanBase64ForGemini(d){if(!d)return null;const p=d.split(',');return p.length===2?p[1]:d;}
+
+// 粗篩：從全庫篩出「有本地實拍圖 + 屬性相近」的 Top-N 候選
+function coarseFilterWithImage(target,maxN){
+  maxN=maxN||5;
+  const tCat=(target.bricklinkCategory||'').toLowerCase();
+  const tTags=new Set((target.featureTags||[]).map(t=>t.toLowerCase()));
+  const tVol=target.estimateVolumeMl||0;
+  const tMini=tCat.includes('minifig');
+  return allItems.filter(i=>i.id!==target.id && i.imageData && i.imageData.startsWith('data:') && i.imageData.length>500)
+    .map(i=>{
+      let s=0; const iCat=(i.bricklinkCategory||'').toLowerCase();
+      if(iCat===tCat&&tCat)s+=50; else if(tMini&&iCat.includes('minifig'))s+=20;
+      (i.featureTags||[]).forEach(t=>{if(tTags.has(t.toLowerCase()))s+=15;});
+      const iVol=i.estimateVolumeMl||0;
+      if(tVol>0&&iVol>0)s+=Math.min(tVol,iVol)/Math.max(tVol,iVol)*20;
+      return {item:i,score:s};
+    }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,maxN).map(x=>x.item);
+}
+
+// 多圖選美 Gemini 呼叫（複用 GEMINI_MODELS + 模型切換 + 逾時）
+async function callGeminiMultiImage(parts,systemInstruction,_retryIdx=0){
+  const apiKey=(cfg.apiKey||'').trim();
+  if(!apiKey)throw new Error('未設定 Gemini API Key');
+  const model=GEMINI_MODELS[_retryIdx]||GEMINI_MODELS[0];
+  const url='https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+apiKey;
+  const body={contents:[{role:'user',parts}],generationConfig:{temperature:0.1,responseMimeType:'application/json'},...(systemInstruction?{system_instruction:{parts:[{text:systemInstruction}]}}:{})};
+  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),30000);
+  try{
+    const resp=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
+    clearTimeout(timeout);
+    if((resp.status===503||resp.status===404)&&_retryIdx+1<GEMINI_MODELS.length)return callGeminiMultiImage(parts,systemInstruction,_retryIdx+1);
+    if(!resp.ok)throw new Error('Gemini '+resp.status);
+    const data=await resp.json();
+    return data.candidates[0].content.parts[0].text;
+  }catch(e){clearTimeout(timeout);if(e.name==='AbortError')throw new Error('多圖辨識逾時');throw e;}
+}
+
 async function rebrickableLookup(inputId){
   const key=cfg.rbKey||DEFAULT_RB_KEY;if(!key)return null;
   try{const isElem=/^\d{6,}$/.test(inputId);
@@ -580,6 +620,51 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
     document.getElementById('result-qty-save').disabled=false;
     showScreen('s-result');return;
   }
+  // ═══ [C方案] 本地圖庫多圖選美（BK + dbMatch 皆失敗的特例軌）═══
+  const cImgCands=coarseFilterWithImage(partInfo,5);
+  if(cImgCands.length>0 && currentImageData && (cfg.apiKey||'').trim()){
+    setProcessingMsg('🔍 本地圖庫比對中…');
+    const sysInst='你是嚴格的樂高零件與人偶鑑定專家。比對【實拍圖】與【候選圖】。\n【最高指導原則】\n1.寧缺勿濫：若實拍圖與所有候選圖有任何肉眼可見差異(印刷/雙色成型/卡扣位置/顏色)，必須判定無匹配。誤判比找不到更嚴重。\n2.人偶特化：軀幹查正反面印刷、領口與手臂手掌顏色；腿部查雙色成型與印刷；頭部查表情、眉毛、雙面、配件。\n3.評分：形狀+所有印刷100%吻合給90-100；形狀吻合但受光線影響細節有10%不確定給80-89；任一特徵不符直接<80。\n輸出純JSON：{"matchedId":"候選id或null","confidenceScore":0-100數字,"reason":"繁中20字內"}';
+    const parts=[{text:'請分析以下【實拍圖】：'},{inlineData:{mimeType:'image/jpeg',data:cleanBase64ForGemini(currentImageData)}},{text:'\n請與以下候選比對，找出唯一正確匹配：'}];
+    cImgCands.forEach((c,i)=>{
+      parts.push({text:'\n候選'+(i+1)+' ID:'+c.id+' 名稱:'+(c.nameCN||c.name)+' 分類:'+(c.bricklinkCategory||'')});
+      parts.push({inlineData:{mimeType:'image/jpeg',data:cleanBase64ForGemini(c.imageData)}});
+    });
+    try{
+      const raw=await callGeminiMultiImage(parts,sysInst);
+      const r=safeParseJSON(raw);
+      if(r&&r.confidenceScore>=90&&r.matchedId){
+        const m=allItems.find(i=>i.id===r.matchedId);
+        if(m){
+          if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+          pendingPart={design_id:m.designId,name:m.name,name_cn:m.nameCN||'',designId:m.designId,slot:m.slot,slotType:m.slotType||'small',thumbnailUrl:m.thumbnailUrl||'',estimateVolumeMl:m.estimateVolumeMl||0,featureTags:m.featureTags||[],bricklinkCategory:m.bricklinkCategory||'',description:m.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:m.id};
+          document.getElementById('result-name').textContent=m.nameCN||m.name||'';
+          document.getElementById('result-designid').innerHTML='<span style="font-size:10px;padding:2px 6px;background:rgba(76,175,80,0.15);border:1px solid var(--green);color:var(--green);border-radius:4px">📷 圖像比對 '+r.confidenceScore+'%</span>';
+          document.getElementById('result-desc').textContent=r.reason||m.description||'';
+          document.getElementById('result-tags').innerHTML=(m.featureTags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
+          document.getElementById('result-volume').textContent='佔位體積 ≈ '+(m.estimateVolumeMl||0)+'ml';
+          if(m.pickupSlot){document.getElementById('result-slot').textContent=m.pickupSlot;document.getElementById('result-slot-type').textContent='✋ 快取點 → 主位 '+m.slot;}
+          else{document.getElementById('result-slot').textContent=m.slot;document.getElementById('result-slot-type').textContent=m.slotType==='large'?'大抽屜':m.slotType==='bag'?'收納袋':'小抽屜分格';}
+          renderMiniMap(m.slot);
+          showScreen('s-result');return;
+        }
+      } else if(r&&r.confidenceScore>=80&&r.matchedId){
+        const m=allItems.find(i=>i.id===r.matchedId);
+        if(m && confirm('圖像比對找到相似零件（信心'+r.confidenceScore+'%）：\n\n'+(m.nameCN||m.name)+' @ '+m.slot+'\n\n'+(r.reason||'')+'\n\n確定是同一個零件嗎？')){
+          if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+          pendingPart={design_id:m.designId,name:m.name,name_cn:m.nameCN||'',designId:m.designId,slot:m.slot,slotType:m.slotType||'small',thumbnailUrl:m.thumbnailUrl||'',estimateVolumeMl:m.estimateVolumeMl||0,featureTags:m.featureTags||[],bricklinkCategory:m.bricklinkCategory||'',description:m.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:m.id};
+          document.getElementById('result-name').textContent=m.nameCN||m.name||'';
+          document.getElementById('result-designid').innerHTML='<span style="font-size:10px;padding:2px 6px;background:rgba(255,152,0,0.15);border:1px solid var(--orange);color:var(--orange);border-radius:4px">📷 人工確認 '+r.confidenceScore+'%</span>';
+          document.getElementById('result-slot').textContent=m.pickupSlot||m.slot;
+          document.getElementById('result-slot-type').textContent=m.slotType==='large'?'大抽屜':m.slotType==='bag'?'收納袋':'小抽屜分格';
+          renderMiniMap(m.slot);
+          showScreen('s-result');return;
+        }
+      }
+      // <80 或人工否決 → 放行至新建檔
+    }catch(e){console.error('[C方案] 多圖選美錯誤:',e);/* 不卡死，放行新建 */}
+  }
+  // ═══ [C方案結束，以下為原本的「未建檔」邏輯] ═══
   if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
   showTab('main');
   showToast('⚠ 零件「'+(partInfo.name_cn||partInfo.name||geminiId||'未知')+'」未建檔\n請使用 🖼 建檔（Lens 截圖）','error',4000);
