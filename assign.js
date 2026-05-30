@@ -210,6 +210,9 @@ function populateModal(i){
       if(isSpill){
         html+='<button onclick="event.stopPropagation();removeOverflowBag(\''+loc.slot+'\')" style="background:transparent;border:none;color:var(--red);font-size:16px;line-height:1;cursor:pointer;padding:0 4px" title="移除此位置">×</button>';
       }
+      if(loc.role==='pickup'){
+        html+='<button onclick="event.stopPropagation();editPickupSlot(\''+loc.slot+'\')" style="background:transparent;border:none;color:var(--accent);font-size:13px;line-height:1;cursor:pointer;padding:0 4px" title="修改取用點位置">✏️</button>';
+      }
       html+='</div>';
     });
     html+='</div>';
@@ -261,6 +264,36 @@ function removeOverflowBag(bag){
   populateModal(i);
   showToast('已從溢出中移除 '+bag);
 }
+function editPickupSlot(currentSlot){
+  if(!currentItem)return;
+  const i=currentItem;
+  const val=prompt('修改取用點位置\n\n目前：'+currentSlot+'\n\n請輸入新位置（例：125a 半格、125 整格、L05 大抽屜）：',currentSlot);
+  if(val===null)return; // 使用者取消
+  const slot=val.trim();
+  if(!slot){showToast('位置不可空白','error');return}
+  // 驗證格式並判斷 pickupType
+  let pickupType='small';
+  if(/^L\d+$/i.test(slot)){
+    pickupType='large';
+    const n=parseInt(slot.replace(/[^\d]/g,''));
+    if(n<1||n>LARGE_COUNT){showToast('大抽屜編號超出範圍 (L01-L'+String(LARGE_COUNT).padStart(2,'0')+')','error');return}
+  }else if(/^\d+[ab]?$/.test(slot)){
+    pickupType='small';
+    const n=parseInt(slot.replace(/[a-z]/gi,''));
+    if(n<1||n>450){showToast('小抽屜編號超出範圍 (1-450)','error');return}
+  }else{
+    showToast('格式錯誤（例：125a、125、L05）','error');return;
+  }
+  // 取用點不能放收納袋（取用點的用途就是方便拿取的抽屜）
+  if(/^B\d+$/i.test(slot)){showToast('取用點不能設為收納袋，請用小抽屜或大抽屜','error');return}
+  i.pickupSlot=slot.replace(/[A-Z]/g,c=>c.toLowerCase());
+  i.pickupType=pickupType;
+  i.updatedAt=Date.now();
+  markDirty(i.id);
+  populateModal(i);
+  showToast('✏️ 取用點已改為 '+i.pickupSlot);
+}
+
 function closeModal(){
   document.getElementById('overlay').classList.remove('open');
   const el=document.getElementById('editor-move-list');if(el)el.innerHTML='';
