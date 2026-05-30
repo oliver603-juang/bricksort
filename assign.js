@@ -849,18 +849,17 @@ function getCategoryBagKey(item){
   if(!item)return null;
   if(item.characterTag||item.seriesTag)return null;
   var blCat=(item.bricklinkCategory||'').toLowerCase().trim();
-  var name=(item.name||'').toLowerCase();
-  // Neckwear (含分類怪的 Utensil 類 neckwear basket)
-  if(blCat==='minifigure, neckwear'||blCat==='minifig, neck wear'||blCat==='minifigure, neck'||
-     (name.indexOf('neckwear')>-1&&blCat.indexOf('minifig')>-1))return 'neckwear';
-  // Headwear / Hair / Headgear / Head
-  if(blCat==='minifigure, hair'||blCat==='minifigure, headwear'||blCat==='minifigure, headgear'||
-     blCat==='minifigure, headwear accessory'||blCat==='minifig, headwear'||
-     blCat==='minifigure, head'||blCat==='minifig head'||blCat==='minifig, head')return 'headwear';
-  // Bodywear (限定 minifigure 類, 排除 Animal/Creature Body Part)
-  if(blCat==='minifigure, body part'||blCat==='minifigure, body wear'||
-     blCat==='minifigure, armor'||blCat==='minifig, body part')return 'bodywear';
-  return null;
+  // 守門：必須是「人偶」配件才套用關鍵字分流，
+  // 否則 body/leg/wing 等關鍵字會誤抓動物零件(Animal Body Part)、機械腿等非人偶零件
+  if(blCat.indexOf('minifig')<0)return null;
+  // 關鍵字分流(toLowerCase + includes，容錯各種命名變體：縮寫/單複數/大小寫)
+  // 順序由明確到一般，符合一個就回傳
+  if(blCat.includes('weapon')||blCat.includes('shield'))return 'weapon';   // 武器與戰鬥(劍/刀/斧/弓/盾)
+  if(blCat.includes('utensil'))return 'utensil';                            // 生活器具(鍋/杯/工具/船槳)
+  if(blCat.includes('head')||blCat.includes('hair')||blCat.includes('helmet'))return 'headwear'; // 頭部(頭/髮/帽/盔)
+  if(blCat.includes('body')||blCat.includes('torso')||blCat.includes('leg')||blCat.includes('wing')||blCat.includes('armor'))return 'bodywear'; // 軀幹四肢(身/軀幹/腿/翅膀/盔甲)
+  if(blCat.includes('neck'))return 'neckwear';                              // 頸部(披風/圍巾/項圈)
+  return null;  // 雜項(Part/Parts 等)交給通用袋邏輯處理，不強制分類
 }
 
 function findOrAllocateCategoryBag(catKey,newVt){
