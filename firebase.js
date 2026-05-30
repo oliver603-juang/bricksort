@@ -28,7 +28,6 @@ async function loadData(){
   document.getElementById('loading').style.display='none';
   dataReady=true;
   renderStats();applySort();renderSyncStatus();renderLockStatus();
-  const btToggle=document.getElementById('bt-shutter-toggle');if(btToggle)btToggle.checked=btShutterEnabled;renderBtPosStatus();
 }
 
 // Legacy fields that should never be written to Firebase (from old versions)
