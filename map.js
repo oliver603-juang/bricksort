@@ -1,7 +1,49 @@
 // BrickSort — 抽屜地圖
-// renderSide, renderDrawerMap, renderSmallZone 等
+// searchDrawer（含巢狀 renderSide）, renderDrawerMap, renderSlotNav 等
 // 全域作用域：使用傳統 <script src> 載入，禁止 ES Module
-// 依賴 js/config.js 中定義的全域常數與狀態變數
+
+function searchDrawer(d){
+  const pad=String(d).padStart(3,'0'), plain=String(d);
+  const matchSlot=s=>s===pad||s===plain||s===pad+'a'||s===pad+'b'||s===plain+'a'||s===plain+'b';
+  const results=allItems.filter(i=>matchSlot(i.slot||''));
+
+  // Group by side: a, b, or full drawer
+  const sides={a:[],b:[],full:[]};
+  results.forEach(i=>{
+    const s=i.slot||'';
+    if(s.endsWith('a'))sides.a.push(i);
+    else if(s.endsWith('b'))sides.b.push(i);
+    else sides.full.push(i);
+  });
+  // [v20am] Include pickup items in drawer detail
+  allItems.forEach(i=>{
+    const ps=i.pickupSlot||'';
+    if(!matchSlot(ps))return;
+    const w={designId:i.designId,name:'\u270B '+i.designId+' '+(i.nameCN||i.name||''),nameCN:i.nameCN,estimateVolumeMl:i.estimateVolumeMl,quantity:i.pickupQty||0,thumbnailUrl:i.thumbnailUrl,imageData:i.imageData,_isPickup:true,id:i.id,slot:i.slot,slotType:i.slotType||'small',overflowSlot:'',overflowQty:0};
+    if(ps.endsWith('a'))sides.a.push(w);
+    else if(ps.endsWith('b'))sides.b.push(w);
+    else sides.full.push(w);
+    results.push(w);
+  });
+
+  const totalVol=results.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);
+  const drawerCap=DRAWER_ML; // 248ml for full drawer
+  const slotCap=SLOT_ML; // 124ml per side
+
+  // Navigation: prev/next drawer (1-450)
+  const prev=d>1?String(d-1):null;
+  const next=d<450?String(d+1):null;
+  let html=renderSlotNav({prev:prev,next:next,label:'抽屜 '+d});
+
+  html+='<div style="margin-bottom:16px">';
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="slot-badge slot-small" style="font-size:16px;padding:6px 14px">抽屜 '+d+'</span>';
+  html+='<span style="font-family:var(--mono);font-size:13px;color:var(--muted)">'+results.length+' 種零件 · '+Math.round(totalVol)+'ml / '+Math.round(drawerCap)+'ml</span></div>';
+
+  // Full drawer capacity bar
+  const drawerPct=Math.min(100,Math.round(totalVol/drawerCap*100));
+  const drawerColor=drawerPct>90?'var(--red)':drawerPct>70?'var(--orange)':'var(--green)';
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><div style="flex:1;height:6px;background:var(--surface);border-radius:3px;overflow:hidden"><div style="width:'+drawerPct+'%;height:100%;background:'+drawerColor+';border-radius:3px"></div></div><span style="font-family:var(--mono);font-size:11px;color:var(--muted)">'+drawerPct+'%</span></div>';
+  html+='</div>';
 
   function renderSide(label,items,cap){
     const vol=items.reduce((s,i)=>s+(i.estimateVolumeMl||0)*(i.quantity||1),0);

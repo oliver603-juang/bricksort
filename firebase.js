@@ -1,8 +1,10 @@
 // BrickSort — 資料層
 // Firebase 讀寫：loadData, fbSaveItem, saveAllToFirebase 等
 // 全域作用域：使用傳統 <script src> 載入，禁止 ES Module
-// 依賴 js/config.js 中定義的全域常數與狀態變數
 
+// ═══════════════════════════════════════════════════
+// FIREBASE DATA LAYER
+// ═══════════════════════════════════════════════════
 async function loadData(){
   dataReady=false;
   document.getElementById('loading').style.display='';

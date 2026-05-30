@@ -1,7 +1,6 @@
 // BrickSort — 其餘功能
-// showAssignReport, 盤點, 套組核對, bsAuto 等
+// showAssignReport, 盤點, 套組核對, showToast, init() 呼叫
 // 全域作用域：使用傳統 <script src> 載入，禁止 ES Module
-// 依賴 js/config.js 中定義的全域常數與狀態變數
 
 function showAssignReport(){
   // Apply results to memory immediately (no Firebase needed)

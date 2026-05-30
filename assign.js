@@ -1,7 +1,6 @@
 // BrickSort — 格位分派
 // 零件格位分派演算法：fitsSmallSlot, gatewayAssign 等
 // 全域作用域：使用傳統 <script src> 載入，禁止 ES Module
-// 依賴 js/config.js 中定義的全域常數與狀態變數
 
 function fitsSmallSlot(item){const w=(item.dimW||0)*10,l=(item.dimL||0)*10,h=(item.dimH||0)*10;if(w<=0||l<=0||h<=0){const vol=item.estimateVolumeMl||0;return vol<=SLOT_ML}const d=[w,l,h].sort((a,b)=>a-b);return d[0]<=SLOT_H&&d[1]<=SLOT_W&&d[2]<=SLOT_L}
 // v18a: 整格實體尺寸 48×136×38 (半格 a+b 拼起來，寬不變、長翻倍、高不變)
