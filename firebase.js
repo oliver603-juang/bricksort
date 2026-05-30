@@ -129,7 +129,7 @@ async function saveAllToFirebase(){
     st.textContent='上傳中 '+written+'/'+total+(errors?' ('+errors+'失敗)':'')+'…';
     if(i+100<toSave.length) await new Promise(r=>setTimeout(r,1000));
   }
-  if(needCfg){try{await db.collection(FB_COL).doc(FB_CONFIG_DOC).set({nextSmallSlot:slotConfig.nextSmallSlot,nextBagSlot:slotConfig.nextBagSlot,totalSmallDrawers:slotConfig.totalSmallDrawers,bagCapacity:slotConfig.bagCapacity||BAG_ML_DEFAULT,lastUpdatedAt:Date.now()},{merge:true});written++}catch(e){errors++}}
+  if(needCfg){try{await db.collection(FB_COL).doc(FB_CONFIG_DOC).set({nextSmallSlot:slotConfig.nextSmallSlot,nextBagSlot:slotConfig.nextBagSlot,totalSmallDrawers:slotConfig.totalSmallDrawers,bagCapacity:slotConfig.bagCapacity||BAG_ML_DEFAULT,rebrickableFrequentThreshold:(slotConfig.rebrickableFrequentThreshold!=null?slotConfig.rebrickableFrequentThreshold:200),lastUpdatedAt:Date.now()},{merge:true});written++}catch(e){errors++}}
   dirty.clear();
   st.textContent='✅ 已上傳 '+written+'筆'+(errors?' ('+errors+'失敗)':'');
   document.getElementById('sync-badge').style.display='none';
