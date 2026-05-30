@@ -227,7 +227,6 @@ tr:hover{background:var(--accent-bg)}
     <button class="btn" style="flex: 1 1 0%; padding: 14px; font-size: 14px; font-weight: 700; background: var(--accent-dim); border-color: var(--accent); color: var(--accent);   " onclick="document.getElementById('camera-take').click()">📷 拍照</button>
     <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="openGallery('lens')">🖼 建檔</button>
     <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="toggleInstructionMenu()">📋 說明書</button>
-    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="runVisualOnlyMatch()">🧠 視覺比對</button>
   </div>
   
   <div id="instruction-menu" style="display:none;margin-bottom:6px">
@@ -1029,6 +1028,8 @@ function saveSettings(){
   cfg.rbKey=(document.getElementById('inp-rbkey').value||'').trim()||DEFAULT_RB_KEY;
   cfg.pxPerMm=parseFloat(document.getElementById('inp-pxmm').value)||cfg.pxPerMm||0;
   localStorage.setItem('bricksort_cfg',JSON.stringify(cfg));
+  const _fbs2=document.getElementById('fb-status');
+  if(_fbs2&&cfg.apiKey)_fbs2.textContent='🔑 API Key 已設定，重新載入後生效';
   showToast('設定已儲存');
   showTab('main');
 }
@@ -1226,12 +1227,17 @@ async function loadData(){
       else allItems.push({id:d.id,...d.data()});
     });
     document.getElementById('status-text').textContent='✅ '+allItems.length+'筆';
+    const _fbs=document.getElementById('fb-status');if(_fbs)_fbs.textContent='✅ Firebase 已連線（'+allItems.length+' 筆）';
     // Clean runtime flags that may have leaked to Firebase
     allItems.forEach(item=>{Object.keys(item).filter(k=>k.startsWith('_')&&k!=='_id').forEach(k=>delete item[k])});
     // Also strip legacy fields (defensive - in case Firebase still has them from old versions)
     allItems.forEach(item=>{LEGACY_FIELDS.forEach(f=>delete item[f])});
     repairSlotConfig();
-  }catch(e){document.getElementById('status-text').textContent='❌ '+e.message;allItems=[]}
+  }catch(e){
+    document.getElementById('status-text').textContent='❌ '+e.message;
+    const _fbs=document.getElementById('fb-status');if(_fbs)_fbs.textContent='❌ Firebase 連線失敗：'+e.message;
+    allItems=[];
+  }
   document.getElementById('loading').style.display='none';
   dataReady=true;
   renderStats();applySort();renderSyncStatus();renderLockStatus();
@@ -7000,21 +7006,881 @@ function isLensCropThumb(dims) {
          Math.abs(dims.h - LENS_CROP_H) <= DIM_TOLERANCE;
 }
 
+async function auditNonOfficialThumbs() {
+  const noId = (typeof allItems !== 'undefined' ? allItems : []).filter(i => !i.designId);
+  const result = { valid: [], missing: [], wrongSize: [] };
+  for (const i of noId) {
+    const entry = {
+      internalId: i.id,
+      name: (i.nameCN || i.name || '(未命名)').substring(0, 30),
+      slot: i.slot || '(未配置)',
+      createdAt: i.createdAt ? new Date(i.createdAt).toISOString().substring(0,10) : null
+    };
+    if (!i.imageData || i.imageData.length < 100) { result.missing.push(entry); continue; }
+    const dims = await getImageDims(i.imageData);
+    if (!dims.ok) { result.missing.push(Object.assign({}, entry, {reason: 'load error'})); continue; }
+    entry.width = dims.w; entry.height = dims.h;
+    if (isLensCropThumb(dims)) result.valid.push(entry);
+    else result.wrongSize.push(Object.assign({}, entry, {expected: LENS_CROP_W+'x'+LENS_CROP_H}));
+  }
+  return result;
+}
 
-<!-- ============================================================
-     以下 878 行實驗性/冗餘程式碼已於清理作業中移除 (2026-05-30)
-     移除內容：
-       - auditNonOfficialThumbs()  (原 L7003)
-       - matchNonOfficialV2()      (原 L7023)
-       - autoAuditOnLoad()         (原 L7058)
-       - _v20beClassify()          (原 L7071)
-       - _v20beShowDialog()        (原 L7092)
-       - _v20beApply/ChoiceThenProcess/bfFallbackMatch (原 L7148~)
-       - matchVisualOnly / runVisualOnlyMatch          (原 L7275~)
-       - _v20bgShowDialog / _v20bhLookupThumb          (原 L7333~)
-       - v20biAddBtn IIFE                              (原 L7855)
-     以上為未整合進主流程的實驗性視覺比對模組殘留。
-================================================================ -->
+async function matchNonOfficialV2(queryBase64) {
+  const qDims = await getImageDims(queryBase64);
+  if (!isLensCropThumb(qDims)) {
+    return { error: 'QUERY_NOT_LENS_CROP', actualDims: qDims,
+             message: '查詢圖不是智慧鏡頭裁切格式（' + qDims.w + 'x' + qDims.h + '），無法比對。請用智慧鏡頭流程重新拍攝。' };
+  }
+  const all = allItems.filter(i => !i.designId && i.imageData && i.imageData.length > 100);
+  const valid = [], invalid = [];
+  for (const c of all) {
+    const dims = await getImageDims(c.imageData);
+    if (isLensCropThumb(dims)) valid.push(c);
+    else invalid.push({ internalId: c.id, name: (c.nameCN||c.name||'').substring(0,20), slot: c.slot, actualDims: dims.w+'x'+dims.h });
+  }
+  if (valid.length === 0) {
+    return { error: 'NO_VALID_CANDIDATES', allCandidatesCount: all.length, invalidCandidates: invalid,
+             message: '沒有任何合格的非原廠縮圖（需要 '+LENS_CROP_W+'x'+LENS_CROP_H+' 智慧鏡頭格式）。請重新建檔所有非原廠零件。' };
+  }
+  const candInfo = valid.map((c, idx) => ({ index: idx, name: (c.nameCN || c.name || '未命名').substring(0, 30), slot: c.slot || '未配置' }));
+  const SYS = '你是樂高非原廠零件視覺辨識專家。嚴格比對，寧可回報無匹配也不猜測。人偶識別依序：頭部印花→軀幹印花→配件→髮飾。回應強制 JSON，不得有前後綴或 markdown。';
+  const prompt = '任務：縮圖比對\n第 1 張=查詢圖，第 2 張起=資料庫非原廠零件（共 ' + valid.length + ' 張）\n\n候選：\n' + JSON.stringify(candInfo, null, 2) + '\n\n回傳 JSON:\n{"bestMatch":{"index":0,"name":"","slot":"","confidence":78,"reason":"20字內"},"allScores":[{"index":0,"confidence":5}],"decision":"match"}\n門檻：>=70 match, 40-70 uncertain, <40 no_match (index=-1)';
+  try {
+    const images = [queryBase64].concat(valid.map(c => c.imageData));
+    const resp = await callGeminiMultiImage(prompt, images, SYS);
+    const cleaned = resp.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const r = JSON.parse(cleaned);
+    if (r.bestMatch && r.bestMatch.index >= 0 && r.bestMatch.index < valid.length) {
+      r.bestMatch._internalId = valid[r.bestMatch.index].id;
+    }
+    r.meta = { validCandidatesUsed: valid.length, invalidCandidatesSkipped: invalid.length, skipped: invalid };
+    return r;
+  } catch (e) {
+    return { error: 'AI_CALL_FAILED', message: e.message };
+  }
+}
+
+async function autoAuditOnLoad() {
+  if (typeof allItems === 'undefined' || !allItems.length) { setTimeout(autoAuditOnLoad, 2000); return; }
+  try {
+    const r = await auditNonOfficialThumbs();
+    const needsFix = r.missing.length + r.wrongSize.length;
+    if (needsFix > 0 && typeof showToast === 'function') {
+      showToast('⚠️ ' + needsFix + ' 個非原廠零件需重新建檔（無智慧鏡頭縮圖）', 'error');
+      console.warn('[v20bd] thumbnail audit:', {missing: r.missing, wrongSize: r.wrongSize});
+    }
+  } catch (e) { console.warn('[v20bd] audit error:', e); }
+}
+setTimeout(autoAuditOnLoad, 3000);
+
+function _v20beClassify(item) {
+  const nameEN = (item.name || '').toLowerCase();
+  const nameCN = (item.name_cn || item.nameCN || '').toLowerCase();
+  const allText = nameEN + ' ' + nameCN;
+  const designId = (item.design_id || item.designId || '').trim();
+  const customKW = ['jsltcustoms','custom','handmade','print','客製','客制','自制','非官方','副廠','brickowl','第三方','副厂'];
+  for (const kw of customKW) {
+    if (allText.indexOf(kw) >= 0) return { guess: 'custom', reason: '名稱包含 "' + kw + '"', confidence: 'high' };
+  }
+  if (designId && /^\d{3,7}([a-z]{1,3}\d*)?$/i.test(designId)) {
+    return { guess: 'official', reason: 'Design ID "' + designId + '" 符合樂高格式', confidence: 'high' };
+  }
+  const series = ['minecraft','ninjago','bionicle','star wars','technic','duplo','friends'];
+  for (const s of series) {
+    if (allText.indexOf(s) >= 0) return { guess: 'official', reason: '系列為 "' + s + '"', confidence: 'medium' };
+  }
+  if (/minifigure|人偶|公仔/i.test(allText) && !designId) {
+    return { guess: 'custom', reason: '人偶但無 Design ID', confidence: 'medium' };
+  }
+  return { guess: 'custom', reason: '預設（無明確信號）', confidence: 'low' };
+}
+function _v20beShowDialog(item) {
+  return new Promise(function(resolve) {
+    const cls = _v20beClassify(item);
+    const thumbRaw = window.currentImageData || '';
+    const thumbSrc = thumbRaw.indexOf('data:') === 0 ? thumbRaw : (thumbRaw ? 'data:image/jpeg;base64,' + thumbRaw : '');
+    const escHtml = function(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+    const nameEN = escHtml(String(item.name || '(未命名)').substring(0, 50));
+    const nameCN = escHtml(String(item.name_cn || item.nameCN || '(未命名)').substring(0, 50));
+    const designId = escHtml(item.design_id || item.designId || '(無)');
+    const officialSel = cls.guess === 'official' ? 'checked' : '';
+    const customSel = cls.guess === 'custom' ? 'checked' : '';
+    const badgeCol = cls.confidence === 'high' ? '#4caf50' : (cls.confidence === 'medium' ? '#ff9800' : '#9e9e9e');
+    const offBorder = cls.guess === 'official' ? 'var(--accent,#ffa726)' : 'var(--border,#444)';
+    const cusBorder = cls.guess === 'custom' ? 'var(--accent,#ffa726)' : 'var(--border,#444)';
+    const offBg = cls.guess === 'official' ? 'rgba(255,167,38,0.08)' : 'transparent';
+    const cusBg = cls.guess === 'custom' ? 'rgba(255,167,38,0.08)' : 'transparent';
+    const ov = document.createElement('div');
+    ov.id = 'official-choice-dialog';
+    ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML = [
+      '<div style="background:var(--card,#222);border-radius:14px;padding:18px;max-width:440px;width:100%;color:var(--text,#eee);border:1px solid var(--border,#444);max-height:92vh;overflow-y:auto">',
+      '<h3 style="margin:0 0 12px 0;font-size:18px">📦 建檔分類確認</h3>',
+      '<div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start">',
+      (thumbSrc ? '<img src="' + thumbSrc + '" style="width:90px;height:auto;border-radius:8px;border:1px solid var(--border,#555);flex-shrink:0">' : ''),
+      '<div style="flex:1;font-size:12px;line-height:1.6">',
+      '<div><strong>EN:</strong> ' + nameEN + '</div>',
+      '<div><strong>CN:</strong> ' + nameCN + '</div>',
+      '<div style="font-family:var(--mono,monospace);color:var(--muted,#888);margin-top:4px"><strong>Design ID:</strong> ' + designId + '</div>',
+      '</div></div>',
+      '<div style="background:var(--surface,#2a2a2a);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;border-left:3px solid ' + badgeCol + '">',
+      '<div style="color:' + badgeCol + ';font-weight:600;margin-bottom:4px">🤖 系統建議：' + (cls.guess === 'official' ? '原廠樂高' : '非原廠/客製') + '（信心 ' + cls.confidence + '）</div>',
+      '<div style="color:var(--muted,#aaa)">原因：' + escHtml(cls.reason) + '</div></div>',
+      '<div style="margin-bottom:14px">',
+      '<label style="display:flex;align-items:center;gap:8px;padding:12px;border-radius:8px;border:1px solid ' + offBorder + ';margin-bottom:8px;cursor:pointer;background:' + offBg + '">',
+      '<input type="radio" name="oc-choice" value="official" ' + officialSel + ' style="width:18px;height:18px">',
+      '<div><div style="font-weight:600">🧱 原廠樂高</div><div style="font-size:11px;color:var(--muted,#aaa)">保留 Design ID，走 BK API 辨識</div></div>',
+      '</label>',
+      '<label style="display:flex;align-items:center;gap:8px;padding:12px;border-radius:8px;border:1px solid ' + cusBorder + ';cursor:pointer;background:' + cusBg + '">',
+      '<input type="radio" name="oc-choice" value="custom" ' + customSel + ' style="width:18px;height:18px">',
+      '<div><div style="font-weight:600">🎨 非原廠 / 客製零件</div><div style="font-size:11px;color:var(--muted,#aaa)">清除 Design ID，走視覺比對</div></div>',
+      '</label></div>',
+      '<div style="display:flex;gap:8px">',
+      '<button id="oc-cancel" style="flex:1;padding:10px;background:none;border:1px solid var(--border,#555);color:var(--text,#ccc);border-radius:8px;font-size:14px;cursor:pointer">取消</button>',
+      '<button id="oc-confirm" style="flex:2;padding:10px;background:var(--accent,#ffa726);border:none;color:#000;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">確認建檔</button>',
+      '</div></div>'
+    ].join('');
+    document.body.appendChild(ov);
+    ov.querySelector('#oc-cancel').onclick = function() { ov.remove(); resolve({ cancelled: true }); };
+    ov.querySelector('#oc-confirm').onclick = function() {
+      const sel = ov.querySelector('input[name="oc-choice"]:checked');
+      const choice = sel ? sel.value : cls.guess;
+      ov.remove();
+      resolve({ choice: choice, suggestion: cls });
+    };
+  });
+}
+async function _v20beApply(item, choice) {
+  if (choice === 'custom') {
+    item.design_id = '';
+    item.designId = '';
+    item.altIds = [];
+    item.alt_ids = [];
+    item.brickognizeName = '';
+    item.brickognize_name = '';
+    item._isCustom = true;
+    if (typeof showToast === 'function') showToast('🎨 已設為非原廠零件', 'info');
+  } else {
+    item._userConfirmedOfficial = true;
+    if (typeof showToast === 'function') showToast('🧱 已設為原廠樂高', 'info');
+  }
+  return item;
+}
+// _v20beChoiceThenProcess: 實驗縮圖確認對話框已移除，直接放行給 processResult
+async function _v20beChoiceThenProcess(item) {
+  return true;
+}
+
+// [v20bf] Visual match fallback: hook cameraRecognize to try matchNonOfficialV2 when no match found
+(function() {
+  if (typeof cameraRecognize !== 'function') { console.warn('[v20bf] cameraRecognize not found'); return; }
+  const _v20bf_origCR = cameraRecognize;
+  async function _v20bfFallbackMatch(base64, imgSrc) {
+    await new Promise(r => setTimeout(r, 100));
+    const pp = window.pendingPart;
+    if (pp && pp.matchedId) return;
+    if (typeof matchNonOfficialV2 !== 'function') return;
+    let queryImg = window.currentImageData || '';
+    if (!queryImg && base64) {
+      queryImg = base64.indexOf('data:') === 0 ? base64 : 'data:image/jpeg;base64,' + base64;
+    }
+    if (!queryImg) return;
+    const banner = document.getElementById('match-banner');
+    if (banner) {
+      banner.style.display = 'block';
+      banner.innerHTML = '<div style="font-size:13px;color:var(--accent,#ffa726)">🔍 搜尋非原廠資料庫中...</div>';
+    }
+    try {
+      const result = await matchNonOfficialV2(queryImg);
+      if (result.error) {
+        if (banner) {
+          banner.style.display = 'block';
+          banner.innerHTML = '<div style="font-size:12px;color:var(--muted,#888)">⚠️ ' + (result.message || result.error) + '</div>';
+        }
+        return;
+      }
+      const best = result.bestMatch;
+      if (!best || best.index < 0 || result.decision === 'no_match') {
+        if (banner) {
+          banner.style.display = 'block';
+          banner.innerHTML = '<div style="font-size:12px;color:var(--muted,#888)">📭 非原廠資料庫中也找不到匹配</div>';
+        }
+        return;
+      }
+      const matchedItem = allItems.find(i => i.id === best._internalId);
+      if (!matchedItem) return;
+      const confColor = result.decision === 'match' ? 'var(--green,#4caf50)' : 'var(--accent,#ffa726)';
+      const confLabel = result.decision === 'match' ? '✅ 視覺匹配' : '❓ 疑似匹配';
+      const slotInfo = matchedItem.slot ? (matchedItem.slot + ' (' + (matchedItem.slotType || '') + ')') : '未配置';
+      const pickupInfo = matchedItem.pickupSlot ? (' · 快取 ' + matchedItem.pickupSlot) : '';
+      if (banner) {
+        banner.style.display = 'block';
+        banner.innerHTML = [
+          '<div style="font-size:13px;font-weight:700;color:' + confColor + '">🧠 ' + confLabel + '（信心 ' + best.confidence + '%）</div>',
+          '<div style="font-size:12px;color:var(--muted,#aaa);margin-top:4px">「' + (matchedItem.nameCN || matchedItem.name || '').substring(0, 40) + '」</div>',
+          '<div style="font-size:13px;color:var(--accent,#ffa726);margin-top:4px">📍 ' + slotInfo + pickupInfo + '</div>',
+          (best.reason ? '<div style="font-size:11px;color:var(--muted,#888);margin-top:4px;font-style:italic">' + String(best.reason).substring(0, 60) + '</div>' : ''),
+          '<div style="margin-top:8px;display:flex;gap:6px">',
+          '  <button onclick="_v20bfAcceptMatch(\'' + matchedItem.id + '\')" style="flex:1;padding:8px;background:var(--accent,#ffa726);color:#000;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">✓ 採用此匹配</button>',
+          '  <button onclick="_v20bfRejectMatch()" style="flex:1;padding:8px;background:none;color:var(--muted,#ccc);border:1px solid var(--border,#555);border-radius:6px;font-size:12px;cursor:pointer">✕ 不是這個</button>',
+          '</div>'
+        ].join('');
+      }
+      window._v20bfPendingMatch = { item: matchedItem, bestMatch: best, result };
+    } catch (e) {
+      console.error('[v20bf] fallback error:', e);
+      if (banner) {
+        banner.innerHTML = '<div style="font-size:12px;color:#e74c3c">視覺比對失敗：' + e.message + '</div>';
+      }
+    }
+  }
+  window._v20bfAcceptMatch = function(internalId) {
+    const item = allItems.find(i => i.id === internalId);
+    if (!item) return;
+    window.pendingPart = Object.assign({}, window.pendingPart || {}, {
+      design_id: item.designId || '',
+      designId: item.designId || '',
+      name: item.name || '',
+      name_cn: item.nameCN || '',
+      nameCN: item.nameCN || '',
+      slot: item.slot,
+      slotType: item.slotType,
+      thumbnailUrl: item.thumbnailUrl || item.imageData,
+      matchedId: item.id,
+      _v20bfVisualMatch: true
+    });
+    const setText = function(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; };
+    setText('result-name', item.nameCN || item.name || '');
+    setText('result-designid', item.designId || '(非原廠)');
+    setText('result-slot-display', item.slot ? (item.slot + ' · ' + (item.slotType || '')) : '未配置');
+    if (typeof showToast === 'function') showToast('✅ 已採用視覺匹配', 'info');
+    const banner = document.getElementById('match-banner');
+    if (banner) {
+      banner.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--green,#4caf50)">✅ 已採用：' + (item.nameCN || item.name || '').substring(0, 30) + '</div>';
+    }
+  };
+  window._v20bfRejectMatch = function() {
+    window._v20bfPendingMatch = null;
+    const banner = document.getElementById('match-banner');
+    if (banner) {
+      banner.innerHTML = '<div style="font-size:12px;color:var(--muted,#888)">已拒絕視覺匹配，繼續建新零件流程</div>';
+    }
+  };
+  window.cameraRecognize = async function(base64, imgSrc) {
+    window._v20bfPendingMatch = null;
+    const result = await _v20bf_origCR(base64, imgSrc);
+    /* [v20bg] auto-trigger disabled, use 🧠 視覺比對 button manually */
+    return result;
+  };
+  console.log('[v20bf] cameraRecognize wrapper installed');
+})();
+// [v20bg] Pure visual match mode (ignores dimension check, any image OK)
+async function matchVisualOnly(queryBase64) {
+  const all = (typeof allItems !== 'undefined' ? allItems : []).filter(i => i.imageData && i.imageData.length > 100);
+  if (all.length === 0) {
+    return { error: 'NO_CANDIDATES', message: '資料庫中沒有任何帶縮圖的零件' };
+  }
+  const MAX = 30;
+  let candidates = all;
+  if (all.length > MAX) {
+    const nonOff = all.filter(i => !i.designId);
+    const off = all.filter(i => i.designId);
+    candidates = nonOff.concat(off).slice(0, MAX);
+  }
+  const info = candidates.map((c, idx) => ({
+    index: idx,
+    name: (c.nameCN || c.name || '').substring(0, 30),
+    slot: c.slot || '未配置',
+    designId: c.designId || '(非原廠)'
+  }));
+  const SYS = '你是樂高零件視覺辨識專家。嚴格比對，寧可回報無匹配也不猜測。回應強制 JSON，不得有前後綴文字或 markdown 標記。';
+  const prompt = '任務：縮圖比對\n第 1 張=查詢圖，第 2 張起=資料庫候選零件（共 ' + candidates.length + ' 張）\n\n候選：\n' + JSON.stringify(info, null, 2) + '\n\n回傳 JSON:\n{"bestMatch":{"index":0,"name":"","slot":"","confidence":78,"reason":"20字內"},"allScores":[{"index":0,"confidence":5}],"decision":"match"}\n門檻：>=70 match, 40-70 uncertain, <40 no_match (index=-1)';
+  try {
+    const images = [queryBase64].concat(candidates.map(c => c.imageData));
+    const resp = await callGeminiMultiImage(prompt, images, SYS);
+    const cleaned = resp.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const r = JSON.parse(cleaned);
+    if (r.bestMatch && r.bestMatch.index >= 0 && r.bestMatch.index < candidates.length) {
+      r.bestMatch._internalId = candidates[r.bestMatch.index].id;
+    }
+    r.meta = { totalCandidates: all.length, usedCandidates: candidates.length };
+    return r;
+  } catch (e) {
+    return { error: 'AI_ERROR', message: e.message };
+  }
+}
+
+async function runVisualOnlyMatch() {
+  let queryImg = window.currentImageData || '';
+  if (!queryImg) {
+    if (typeof showToast === 'function') showToast('⚠️ 沒有查詢圖。請先拍照或分享截圖', 'error');
+    return;
+  }
+  if (queryImg.indexOf('data:') !== 0) queryImg = 'data:image/jpeg;base64,' + queryImg;
+  if (typeof showToast === 'function') showToast('🔍 純視覺比對中（~10 秒）...', 'info');
+  const result = await matchVisualOnly(queryImg);
+  if (result.error) {
+    if (typeof showToast === 'function') showToast('❌ ' + (result.message || result.error), 'error');
+    return;
+  }
+  const best = result.bestMatch;
+  if (!best || best.index < 0 || result.decision === 'no_match') {
+    if (typeof showToast === 'function') showToast('📭 找不到任何匹配', 'info');
+    return;
+  }
+  const item = allItems.find(i => i.id === best._internalId);
+  if (!item) return;
+  _v20bgShowDialog(item, best, result);
+}
+
+function _v20bgShowDialog(item, best, fullResult) {
+  const existing = document.getElementById('v20bg-match-dialog');
+  if (existing) existing.remove();
+  const confColor = fullResult.decision === 'match' ? '#4caf50' : (fullResult.decision === 'uncertain' ? '#ff9800' : '#9e9e9e');
+  const confLabel = fullResult.decision === 'match' ? '✅ 強烈匹配' : (fullResult.decision === 'uncertain' ? '❓ 疑似匹配' : '📭 無匹配');
+  const slotDisplay = item.slot ? (item.slot + ' (' + (item.slotType || '') + ')') : '未配置';
+  const pickupDisplay = item.pickupSlot ? (' · 快取 ' + item.pickupSlot) : '';
+  const escHtml = function(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); };
+  const ov = document.createElement('div');
+  ov.id = 'v20bg-match-dialog';
+  ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px';
+  const thumbSrc = item.imageData || item.thumbnailUrl || '';
+  ov.innerHTML = [
+    '<div style="background:var(--card,#222);border-radius:14px;padding:18px;max-width:440px;width:100%;color:var(--text,#eee);border:1px solid var(--border,#444);max-height:92vh;overflow-y:auto">',
+    '<h3 style="margin:0 0 12px 0;font-size:18px;color:' + confColor + '">🧠 ' + confLabel + '（信心 ' + best.confidence + '%）</h3>',
+    '<div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start">',
+    (thumbSrc ? '<img src="' + thumbSrc + '" style="width:100px;height:auto;border-radius:8px;border:1px solid var(--border,#555);flex-shrink:0">' : ''),
+    '<div style="flex:1;font-size:13px;line-height:1.6">',
+    '<div style="font-weight:700;font-size:14px">' + escHtml((item.nameCN || item.name || '').substring(0, 40)) + '</div>',
+    '<div style="color:var(--muted,#aaa);font-family:var(--mono,monospace);font-size:11px;margin-top:2px">ID: ' + escHtml(item.designId || '(非原廠)') + '</div>',
+    '<div style="color:var(--accent,#ffa726);margin-top:8px;font-weight:600">📍 ' + escHtml(slotDisplay + pickupDisplay) + '</div>',
+    '</div></div>',
+    (best.reason ? '<div style="background:var(--surface,#2a2a2a);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--muted,#aaa);font-style:italic">💬 ' + escHtml(String(best.reason).substring(0, 80)) + '</div>' : ''),
+    '<div style="font-size:11px;color:var(--muted,#888);margin-bottom:10px">比對範圍：' + fullResult.meta.usedCandidates + '/' + fullResult.meta.totalCandidates + ' 張縮圖</div>',
+    '<div style="display:flex;gap:8px">',
+    '<button onclick="document.getElementById(\'v20bg-match-dialog\').remove()" style="flex:1;padding:10px;background:none;border:1px solid var(--border,#555);color:var(--text,#ccc);border-radius:8px;font-size:14px;cursor:pointer">關閉</button>',
+    '<button onclick="_v20bgAcceptMatch(\'' + item.id + '\')" style="flex:2;padding:10px;background:var(--accent,#ffa726);border:none;color:#000;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">✓ 就是這個</button>',
+    '</div></div>'
+  ].join('');
+  document.body.appendChild(ov);
+}
+
+window._v20bgAcceptMatch = function(internalId) {
+  const item = allItems.find(i => i.id === internalId);
+  if (!item) return;
+  const dlg = document.getElementById('v20bg-match-dialog');
+  if (dlg) dlg.remove();
+  if (typeof showToast === 'function') showToast('📍 已定位：' + (item.nameCN || item.name || '').substring(0,20) + ' → ' + item.slot, 'info');
+  if (typeof searchDrawer === 'function') {
+    const m = (item.slot || '').match(/^0*(\d+)/);
+    if (m) setTimeout(function() { searchDrawer(parseInt(m[1])); }, 800);
+  }
+};
+
+// [v20bh] Upgraded registration dialog with BrickLink thumbnail comparison + visual match file picker
+async function _v20bhLookupThumb(designId) {
+  if (!designId) return null;
+  // Try rebrickableLookup first (more reliable for minifigs)
+  try {
+    if (typeof rebrickableLookup === 'function') {
+      const rb = await rebrickableLookup(designId);
+      if (rb && rb.imgUrl) return { url: rb.imgUrl, source: 'Rebrickable' };
+    }
+  } catch(e) {}
+  // Fallback to BrickLink color-86 URL
+  const base = String(designId).replace(/[a-e]\d*$/i, '');
+  return { url: 'https://img.bricklink.com/ItemImage/PN/86/' + base + '.png', source: 'BrickLink' };
+}
+
+// Override _v20beShowDialog to include BK thumbnail when OCR got ID
+const _v20bh_origShowDialog = _v20beShowDialog;
+window._v20beShowDialog = function(item) {
+  const designId = item.design_id || item.designId || '';
+  if (!designId) {
+    // No OCR'd ID, use original dialog (no BK thumbnail possible)
+    return _v20bh_origShowDialog(item);
+  }
+  
+  // Has OCR'd ID → upgrade dialog with BK thumbnail side-by-side
+  return new Promise(async function(resolve) {
+    const cls = _v20beClassify(item);
+    const thumbRaw = window.currentImageData || '';
+    const thumbSrc = thumbRaw.indexOf('data:') === 0 ? thumbRaw : (thumbRaw ? 'data:image/jpeg;base64,' + thumbRaw : '');
+    const escHtml = function(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+    const nameEN = escHtml(String(item.name || '(未命名)').substring(0, 50));
+    const nameCN = escHtml(String(item.name_cn || item.nameCN || '(未命名)').substring(0, 50));
+    const designIdDisp = escHtml(designId);
+    
+    // Fetch BK/Rebrickable thumbnail asynchronously
+    const refThumb = await _v20bhLookupThumb(designId);
+    const refThumbSrc = refThumb ? refThumb.url : '';
+    const refSource = refThumb ? refThumb.source : '';
+    
+    const ov = document.createElement('div');
+    ov.id = 'official-choice-dialog';
+    ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px';
+    
+    ov.innerHTML = [
+      '<div style="background:var(--card,#222);border-radius:14px;padding:18px;max-width:500px;width:100%;color:var(--text,#eee);border:1px solid var(--border,#444);max-height:92vh;overflow-y:auto">',
+      '<h3 style="margin:0 0 8px 0;font-size:18px">📦 建檔分類確認</h3>',
+      '<div style="color:var(--muted,#aaa);font-size:12px;margin-bottom:12px">OCR 找到 Design ID: <strong style="color:var(--accent,#ffa726);font-family:var(--mono,monospace)">' + designIdDisp + '</strong></div>',
+      // Side-by-side comparison
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">',
+      '  <div style="text-align:center;background:var(--surface,#2a2a2a);padding:8px;border-radius:8px">',
+      '    <div style="font-size:11px;color:var(--muted,#888);margin-bottom:4px">📷 你的圖</div>',
+      (thumbSrc ? '    <img src="' + thumbSrc + '" style="width:100%;max-width:140px;height:auto;border-radius:6px;background:#000">' : '<div style="padding:40px;color:#555">無</div>'),
+      '  </div>',
+      '  <div style="text-align:center;background:var(--surface,#2a2a2a);padding:8px;border-radius:8px">',
+      '    <div style="font-size:11px;color:var(--muted,#888);margin-bottom:4px">🌐 ' + refSource + ' 官方圖</div>',
+      (refThumbSrc ? '    <img src="' + refThumbSrc + '" referrerpolicy="no-referrer" style="width:100%;max-width:140px;height:auto;border-radius:6px;background:#fff" onerror="this.parentNode.innerHTML=\'<div style=padding:40px;color:#555>載入失敗<br>' + designIdDisp + '</div>\'">' : '<div style="padding:40px;color:#555">無資料</div>'),
+      '  </div>',
+      '</div>',
+      // Item info
+      '<div style="font-size:12px;line-height:1.5;margin-bottom:12px">',
+      '  <div><strong>EN:</strong> ' + nameEN + '</div>',
+      '  <div><strong>CN:</strong> ' + nameCN + '</div>',
+      '</div>',
+      // Action choices (3 options now)
+      '<div style="margin-bottom:14px">',
+      '  <label style="display:flex;align-items:center;gap:8px;padding:10px;border-radius:8px;border:1px solid var(--accent,#ffa726);margin-bottom:6px;cursor:pointer;background:rgba(255,167,38,0.08)">',
+      '    <input type="radio" name="oc-choice" value="official" checked style="width:18px;height:18px">',
+      '    <div><div style="font-weight:600">✅ 同一個零件 → 用此 ID 建檔</div><div style="font-size:11px;color:var(--muted,#aaa)">保留 ID + BrickLink 標籤</div></div>',
+      '  </label>',
+      '  <label style="display:flex;align-items:center;gap:8px;padding:10px;border-radius:8px;border:1px solid var(--border,#444);margin-bottom:6px;cursor:pointer">',
+      '    <input type="radio" name="oc-choice" value="custom" style="width:18px;height:18px">',
+      '    <div><div style="font-weight:600">❌ 不是同一個 → 清空 ID</div><div style="font-size:11px;color:var(--muted,#aaa)">縮圖+其他資訊建檔，走視覺比對</div></div>',
+      '  </label>',
+      '  <label style="display:flex;align-items:center;gap:8px;padding:10px;border-radius:8px;border:1px solid var(--border,#444);cursor:pointer">',
+      '    <input type="radio" name="oc-choice" value="cancel" style="width:18px;height:18px">',
+      '    <div><div style="font-weight:600">⚠️ 不確定 → 取消</div><div style="font-size:11px;color:var(--muted,#aaa)">請用智慧鏡頭重新建檔</div></div>',
+      '  </label>',
+      '</div>',
+      '<div style="display:flex;gap:8px">',
+      '  <button id="oc-cancel" style="flex:1;padding:10px;background:none;border:1px solid var(--border,#555);color:var(--text,#ccc);border-radius:8px;font-size:14px;cursor:pointer">取消</button>',
+      '  <button id="oc-confirm" style="flex:2;padding:10px;background:var(--accent,#ffa726);border:none;color:#000;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">確認建檔</button>',
+      '</div>',
+      '</div>'
+    ].join('');
+    
+    document.body.appendChild(ov);
+    ov.querySelector('#oc-cancel').onclick = function() { ov.remove(); resolve({ cancelled: true }); };
+    ov.querySelector('#oc-confirm').onclick = function() {
+      const sel = ov.querySelector('input[name="oc-choice"]:checked');
+      const choice = sel ? sel.value : 'official';
+      ov.remove();
+      if (choice === 'cancel') {
+        if (typeof showToast === 'function') showToast('⚠️ 請用智慧鏡頭分享建檔', 'info');
+        resolve({ cancelled: true });
+      } else {
+        resolve({ choice: choice, suggestion: cls });
+      }
+    };
+  });
+};
+
+// [v20bh] Hot-fix the 視覺比對 button: support file picker when no currentImageData
+(function() {
+  if (!document.getElementById('v20bg-visual-pick')) {
+    const fi = document.createElement('input');
+    fi.type = 'file';
+    fi.id = 'v20bg-visual-pick';
+    fi.accept = 'image/*';
+    fi.style.display = 'none';
+    fi.addEventListener('change', async function(ev) {
+      const file = ev.target.files[0];
+      if (!file) return;
+      ev.target.value = '';
+      if (typeof showToast === 'function') showToast('📤 讀取圖片中...', 'info');
+      const reader = new FileReader();
+      reader.onload = async function(e) {
+        const dataUrl = e.target.result;
+        if (typeof showToast === 'function') showToast('🔍 純視覺比對中（~10 秒）...', 'info');
+        try {
+          const result = await matchVisualOnly(dataUrl);
+          if (result.error) {
+            if (typeof showToast === 'function') showToast('❌ ' + (result.message || result.error), 'error');
+            return;
+          }
+          const best = result.bestMatch;
+          if (!best || best.index < 0 || result.decision === 'no_match') {
+            if (typeof showToast === 'function') showToast('📭 找不到任何匹配', 'info');
+            return;
+          }
+          const item = allItems.find(i => i.id === best._internalId);
+          if (!item) return;
+          _v20bgShowDialog(item, best, result);
+        } catch (err) {
+          if (typeof showToast === 'function') showToast('❌ 錯誤：' + err.message, 'error');
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    document.body.appendChild(fi);
+  }
+})();
+
+window.runVisualOnlyMatch = function() {
+  if (window.currentImageData) {
+    (async function() {
+      let queryImg = window.currentImageData;
+      if (queryImg.indexOf('data:') !== 0) queryImg = 'data:image/jpeg;base64,' + queryImg;
+      if (typeof showToast === 'function') showToast('🔍 用上次的查詢圖比對中...', 'info');
+      const result = await matchVisualOnly(queryImg);
+      if (result.error) {
+        if (typeof showToast === 'function') showToast('❌ ' + (result.message || result.error), 'error');
+        return;
+      }
+      const best = result.bestMatch;
+      if (!best || best.index < 0 || result.decision === 'no_match') {
+        if (typeof showToast === 'function') showToast('📭 找不到任何匹配', 'info');
+        return;
+      }
+      const item = allItems.find(i => i.id === best._internalId);
+      if (!item) return;
+      _v20bgShowDialog(item, best, result);
+    })();
+  } else {
+    document.getElementById('v20bg-visual-pick').click();
+  }
+};
+
+
+
+
+
+
+
+
+// ════════════════════════════════════════════════════════════════
+// v2026.04.20bi — 自動辨識模式（Auto Detect Still → Shutter）
+// ════════════════════════════════════════════════════════════════
+// 使用方式：
+//   1. 手機/筆電架著相機對準 5mm 方格白紙
+//   2. 點主畫面「🎯 自動辨識」按鈕
+//   3. 把樂高零件放在中央方框內保持靜止
+//   4. 0.8 秒勿動 → 自動拍照 → Brickognize 辨識 → 顯示位置 + TTS 播報
+//   5. 顯示 5 秒後自動回到偵測模式（連拍多個零件）
+// ════════════════════════════════════════════════════════════════
+window.bsAuto = {
+  // ─── 可調參數 ────────────────────────────────────
+  STABLE_MS: 800,
+  COOLDOWN_MS: 5000,
+  ROI_RATIO: 0.60,
+  SAD_THRESHOLD: 12,
+  ANALYZE_W: 80,
+  ANALYZE_H: 60,
+  ANALYZE_FPS: 15,
+  CAPTURE_W: 1280,
+
+  // ─── State ──────────────────────────────────────
+  state: 'idle',
+  videoEl: null, canvasAnalyze: null, canvasCapture: null,
+  ctxAnalyze: null, ctxCapture: null,
+  stream: null, prevPixels: null,
+  stableStartTime: 0, rafId: null, lastAnalyzeTime: 0,
+
+  open() {
+    if (document.getElementById('bs-auto-overlay')) return;
+    this._buildUI();
+    this._startCamera();
+  },
+
+  close() {
+    this._stopCamera();
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    const ov = document.getElementById('bs-auto-overlay');
+    if (ov) ov.remove();
+    this.state = 'idle';
+    this.prevPixels = null;
+    try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch(e){}
+  },
+
+  _buildUI() {
+    const ov = document.createElement('div');
+    ov.id = 'bs-auto-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#000;font-family:-apple-system,sans-serif;color:#fff;';
+    ov.innerHTML = [
+      '<video id="bs-auto-video" autoplay playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"></video>',
+      '<div id="bs-auto-roi" style="position:absolute;border:3px solid #22c55e;border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,0.45);pointer-events:none;transition:border-color 0.3s;"></div>',
+      '<div style="position:absolute;top:0;left:0;right:0;padding:14px 16px;background:linear-gradient(180deg,rgba(0,0,0,0.8),transparent);display:flex;align-items:center;gap:12px;z-index:1;">',
+        '<div id="bs-auto-status" style="font-size:14px;flex:1;font-weight:600;">啟動中…</div>',
+        '<button id="bs-auto-close" style="background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:50%;width:36px;height:36px;font-size:20px;cursor:pointer;">×</button>',
+      '</div>',
+      '<div id="bs-auto-slot-top" style="position:absolute;top:54px;left:8px;right:8px;display:none;justify-content:center;align-items:center;z-index:2;pointer-events:none;"><div id="bs-auto-slot-text" style="font-size:84px;font-weight:900;color:#22c55e;text-shadow:0 3px 10px rgba(0,0,0,0.95),0 0 24px rgba(0,0,0,0.6);letter-spacing:1px;line-height:1;text-align:center;background:rgba(0,0,0,0.35);padding:8px 18px;border-radius:14px;backdrop-filter:blur(4px);"></div></div>',
+      '<div style="position:absolute;bottom:0;left:0;right:0;padding:14px 16px 20px;background:linear-gradient(0deg,rgba(0,0,0,0.85),transparent);z-index:1;">',
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">',
+          '<div style="font-size:11px;color:#aaa;width:50px;">穩定度</div>',
+          '<div style="flex:1;height:8px;background:rgba(255,255,255,0.15);border-radius:4px;overflow:hidden;">',
+            '<div id="bs-auto-bar" style="height:100%;background:#22c55e;width:0%;transition:width 0.1s linear;"></div>',
+          '</div>',
+          '<div id="bs-auto-pct" style="font-size:11px;color:#aaa;width:36px;text-align:right;">0%</div>',
+        '</div>',
+        '<div id="bs-auto-result" style="min-height:auto;padding:14px;background:rgba(0,0,0,0.7);border-radius:12px;font-size:14px;line-height:1.4;display:none;backdrop-filter:blur(6px);max-width:100%;box-sizing:border-box;"></div>',
+      '</div>',
+      '<canvas id="bs-auto-c-analyze" width="80" height="60" style="display:none;"></canvas>',
+      '<canvas id="bs-auto-c-capture" style="display:none;"></canvas>'
+    ].join('');
+    document.body.appendChild(ov);
+
+    this.videoEl = document.getElementById('bs-auto-video');
+    this.canvasAnalyze = document.getElementById('bs-auto-c-analyze');
+    this.canvasCapture = document.getElementById('bs-auto-c-capture');
+    this.ctxAnalyze = this.canvasAnalyze.getContext('2d', {willReadFrequently: true});
+    this.ctxCapture = this.canvasCapture.getContext('2d');
+
+    document.getElementById('bs-auto-close').onclick = () => this.close();
+    this.videoEl.addEventListener('loadedmetadata', () => this._positionROI());
+    window.addEventListener('resize', () => this._positionROI());
+  },
+
+  _positionROI() {
+    const v = this.videoEl;
+    if (!v) return;
+    const r = v.getBoundingClientRect();
+    const w = r.width * this.ROI_RATIO;
+    const h = r.height * this.ROI_RATIO;
+    const roi = document.getElementById('bs-auto-roi');
+    if (!roi) return;
+    roi.style.left = ((r.width - w) / 2) + 'px';
+    roi.style.top = ((r.height - h) / 2) + 'px';
+    roi.style.width = w + 'px';
+    roi.style.height = h + 'px';
+  },
+
+  async _startCamera() {
+    try {
+      this._setStatus('啟動相機中…');
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: {facingMode: {ideal: 'environment'}, width: {ideal: 1280}, height: {ideal: 960}},
+        audio: false
+      });
+      this.videoEl.srcObject = this.stream;
+      await new Promise(r => {
+        if (this.videoEl.readyState >= 2) r();
+        else this.videoEl.onloadeddata = r;
+      });
+      this._positionROI();
+      this.state = 'scanning';
+      this._setStatus('🎯 對準零件並保持靜止');
+      this._tickAnalyze();
+    } catch (e) {
+      this._setStatus('❌ 相機啟動失敗：' + e.message);
+    }
+  },
+
+  _stopCamera() {
+    if (this.stream) {
+      this.stream.getTracks().forEach(t => t.stop());
+      this.stream = null;
+    }
+  },
+
+  _setStatus(t) { const el = document.getElementById('bs-auto-status'); if (el) el.textContent = t; },
+
+  _setBar(pct, color) {
+    const b = document.getElementById('bs-auto-bar');
+    const p = document.getElementById('bs-auto-pct');
+    const roi = document.getElementById('bs-auto-roi');
+    if (b) { b.style.width = Math.max(0, Math.min(100, pct)) + '%'; if (color) b.style.background = color; }
+    if (p) p.textContent = Math.round(pct) + '%';
+    if (roi && color) roi.style.borderColor = color;
+  },
+
+  _showResult(html) { const r = document.getElementById('bs-auto-result'); if (r) { r.innerHTML = html; r.style.display = 'block'; } },
+  _hideResult() { const r = document.getElementById('bs-auto-result'); if (r) r.style.display = 'none'; var st = document.getElementById('bs-auto-slot-top'); if (st) st.style.display = 'none'; },
+
+  _tickAnalyze() {
+    this.rafId = requestAnimationFrame(() => this._tickAnalyze());
+    const now = performance.now();
+    if (now - this.lastAnalyzeTime < 1000 / this.ANALYZE_FPS) return;
+    this.lastAnalyzeTime = now;
+    if (this.state !== 'scanning') return;
+    const v = this.videoEl;
+    if (!v || !v.videoWidth) return;
+
+    const vw = v.videoWidth, vh = v.videoHeight;
+    const sw = vw * this.ROI_RATIO, sh = vh * this.ROI_RATIO;
+    const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
+    this.ctxAnalyze.drawImage(v, sx, sy, sw, sh, 0, 0, this.ANALYZE_W, this.ANALYZE_H);
+    const imgData = this.ctxAnalyze.getImageData(0, 0, this.ANALYZE_W, this.ANALYZE_H);
+    const px = imgData.data;
+    const n = this.ANALYZE_W * this.ANALYZE_H;
+    const gray = new Uint8Array(n);
+    for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+      gray[j] = (px[i] * 77 + px[i+1] * 150 + px[i+2] * 29) >> 8;
+    }
+    if (!this.prevPixels) { this.prevPixels = gray; return; }
+
+    let sad = 0;
+    for (let i = 0; i < n; i++) sad += Math.abs(gray[i] - this.prevPixels[i]);
+    const avgDiff = sad / n;
+    this.prevPixels = gray;
+
+    if (avgDiff > this.SAD_THRESHOLD) {
+      this.stableStartTime = 0;
+      this._setBar(0, '#ef4444');
+      this._setStatus('🏃 偵測到動作…');
+    } else {
+      if (this.stableStartTime === 0) this.stableStartTime = now;
+      const elapsed = now - this.stableStartTime;
+      const pct = Math.min(100, (elapsed / this.STABLE_MS) * 100);
+      this._setBar(pct, '#22c55e');
+      this._setStatus('⏳ 穩定中 ' + (elapsed/1000).toFixed(1) + 's / ' + (this.STABLE_MS/1000).toFixed(1) + 's');
+      if (elapsed >= this.STABLE_MS) this._capture();
+    }
+  },
+
+  async _capture() {
+    if (this.state !== 'scanning') return;
+    this.state = 'capturing';
+    this._setStatus('📸 拍照中…');
+    this._setBar(100, '#3b82f6');
+
+    const v = this.videoEl;
+    const cw = Math.min(this.CAPTURE_W, v.videoWidth);
+    const ch = Math.round(cw * v.videoHeight / v.videoWidth);
+    this.canvasCapture.width = cw;
+    this.canvasCapture.height = ch;
+    this.ctxCapture.drawImage(v, 0, 0, cw, ch);
+    const dataUrl = this.canvasCapture.toDataURL('image/jpeg', 0.85);
+
+    this._setStatus('🔍 辨識中…');
+    try {
+      const result = await this._identify(dataUrl);
+      this._setStatus('✅ 完成');
+      this._showResult(this._formatResult(result));
+      this._speak(result.voiceText);
+    } catch (e) {
+      this._setStatus('⚠️ 辨識失敗：' + e.message);
+      this._showResult('<div style="color:#fca5a5;">⚠️ ' + e.message + '</div>');
+    }
+
+    this.state = 'cooldown';
+    this._setBar(0, '#6b7280');
+    setTimeout(() => {
+      this._hideResult();
+      this.prevPixels = null;
+      this.stableStartTime = 0;
+      this.state = 'scanning';
+      this._setStatus('🎯 對準下一個零件');
+    }, this.COOLDOWN_MS);
+  },
+
+  async _identify(dataUrl) {
+    const b64 = dataUrl.split(',')[1] || dataUrl;
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], {type: 'image/jpeg'});
+
+    const form = new FormData();
+    form.append('query_image', blob, 'q.jpg');
+
+    const resp = await fetch('https://api.brickognize.com/predict/', {method: 'POST', body: form});
+    if (!resp.ok) throw new Error('Brickognize HTTP ' + resp.status);
+    const data = await resp.json();
+    const predictions = data.items || [];
+    if (predictions.length === 0) {
+      return {type: 'no_match', displayText: '📭 找不到匹配', voiceText: '找不到此物品'};
+    }
+    const top = predictions[0];
+    const designId = top.id;
+    const score = top.score || 0;
+    const item = (typeof allItems !== 'undefined' ? allItems : []).find(i =>
+      i.designId === designId || (i.altIds || []).includes(designId)
+    );
+    if (!item) {
+      return {
+        type: 'unknown',
+        designId: designId, score: score, bkName: top.name,
+        displayText: '🆕 未建檔零件\nID: ' + designId + '\n' + (top.name || ''),
+        voiceText: '識別到新零件 ' + designId + '，尚未建檔'
+      };
+    }
+    return {
+      type: 'match',
+      item: item, designId: designId, score: score,
+      displayText: '📍 ' + item.slot + (item.pickupSlot ? ' · 快取 ' + item.pickupSlot : '') + '\n' + (item.nameCN || item.name || '') + '\nID: ' + designId + ' · ' + Math.round(score*100) + '%',
+      voiceText: (item.nameCN || item.name || '此零件') + ' 在 ' + this._slotToVoice(item.slot, item.slotType) + (item.pickupSlot ? '，快取在 ' + this._slotToVoice(item.pickupSlot, '') : '')
+    };
+  },
+
+  _slotToVoice(slot, slotType) {
+    if (!slot) return '沒有收納位置';
+    let m = slot.match(/^([BL])(\d+)$/);
+    if (m) {
+      const zone = m[1] === 'B' ? 'B' : 'L';
+      const num = parseInt(m[2]);
+      const typ = slotType === 'large' ? '大袋' : '袋';
+      return zone + ' 區 ' + num + ' 號' + typ;
+    }
+    m = slot.match(/^(\d+)([a-z])$/);
+    if (m) return parseInt(m[1]) + ' 號抽屜 ' + m[2].toUpperCase() + ' 格';
+    m = slot.match(/^(\d+)$/);
+    if (m) return parseInt(m[1]) + ' 號抽屜';
+    return slot;
+  },
+
+  _formatResult(r) {
+    if (r.type === 'match') {
+      var st = document.getElementById('bs-auto-slot-top');
+      var stText = document.getElementById('bs-auto-slot-text');
+      if (st && stText) { stText.textContent = '📍 ' + r.item.slot; st.style.display = 'flex'; }
+      return [
+        '<div style="font-size:22px;font-weight:700;margin-bottom:6px;color:#fff;word-break:break-all;">' + (r.item.nameCN || r.item.name || '') + '</div>',
+        r.item.pickupSlot ? '<div style="font-size:18px;font-weight:700;color:#fcd34d;margin-bottom:4px;">⚡ 快取 ' + r.item.pickupSlot + '</div>' : '',
+        '<div style="font-size:14px;color:#9ca3af;">ID: ' + r.designId + ' · 信心 ' + Math.round(r.score*100) + '%</div>'
+      ].join('');
+    }
+    if (r.type === 'unknown') {
+      return [
+        '<div style="font-size:18px;color:#fbbf24;margin-bottom:6px;">🆕 未建檔零件</div>',
+        '<div style="font-size:14px;">ID: ' + r.designId + '</div>',
+        r.bkName ? '<div style="font-size:13px;color:#9ca3af;">' + r.bkName + '</div>' : ''
+      ].join('');
+    }
+    return '<div style="font-size:18px;color:#9ca3af;">📭 找不到匹配</div>';
+  },
+
+  _speak(text) {
+    try {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-TW';
+      u.rate = 1.1;
+      window.speechSynthesis.speak(u);
+    } catch(e) {}
+  }
+};
+
+// ─── 在主畫面加「🎯 自動辨識」按鈕 ───────────────────
+(function v20biAddBtn() {
+  function tryInsert() {
+    if (document.getElementById('bs-auto-launch')) return true;
+    const captureBtn = Array.from(document.querySelectorAll('button')).find(b =>
+      (b.textContent || '').trim() === '📷 拍照' && b.offsetParent !== null
+    );
+    if (!captureBtn) return false;
+    const container = captureBtn.parentElement;
+    const btn = document.createElement('button');
+    btn.id = 'bs-auto-launch';
+    btn.textContent = '🎯 自動辨識';
+    btn.style.cssText = 'background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;border:none;padding:12px 16px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(34,197,94,0.3);grid-column:1/-1;margin-top:8px;';
+    btn.onclick = function(){ window.bsAuto.open(); };
+    container.appendChild(btn);
+    return true;
+  }
+  if (!tryInsert()) {
+    // Retry until DOM ready (max 20 attempts × 300ms = 6s)
+    let tries = 0;
+    const iv = setInterval(function(){
+      tries++;
+      if (tryInsert() || tries > 20) clearInterval(iv);
+    }, 300);
+  }
+})();
 
 </script>
 
