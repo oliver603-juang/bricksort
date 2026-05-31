@@ -565,6 +565,14 @@ async function cameraRecognize(base64,imgSrc){
       showScreen('s-result');return;
     }
     // Brickognize matched but NOT in DB → auto-register with Gemini enrichment
+    // [把關] BK 高信心但庫存無此件 → 先請使用者確認，避免「認錯零件靜默建錯檔」
+    if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+    const _bkConfirm=window.confirm('Brickognize 辨識為「'+(bkResult.name||'')+'」('+bkId+'，信心 '+bkResult.score+'%)。\n\n庫存中尚無此件。確認這是正確的樂高零件並直接建檔？\n\n（若辨識錯誤或這不是樂高零件，請按「取消」，將轉為自訂/非原廠建檔）');
+    if(!_bkConfirm){
+      window._forceCustomBuild=true;
+      try{await cameraRecognize(base64,imgSrc)}catch(e){showTab('main');showToast('建檔失敗：'+e.message,'error')}
+      return;
+    }
     setProcessingMsg('🤖 補充零件資訊…');
     try{
       // Use BK result directly (skip rebrickableLookup which is slow with 404+retry)
