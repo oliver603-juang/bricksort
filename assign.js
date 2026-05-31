@@ -1273,6 +1273,9 @@ function assignRegular(item){
   if(vt<=MERGE_LIMIT&&vol<=MERGE_VOL1_MAX){
     const mergeSlot=findMergeSlot(vt,catGroup,true);
     if(mergeSlot)return{slot:mergeSlot,slotType:'small'};
+    // [同類聚集] 同類擠同格失敗 → 找「同類件獨佔 a 格、b 格空著」的抽屜作伴（僅同類，無任意 fallback）
+    const sameCatHalf=findSameCatHalf(catGroup);
+    if(sameCatHalf)return{slot:sameCatHalf,slotType:'small'};
     const anySlot=findMergeSlot(vt,catGroup,false);
     if(anySlot)return{slot:anySlot,slotType:'small'};
     const newSlot=allocateNewSmallSlot();
@@ -1540,6 +1543,25 @@ function findMergeSlot(newVt,catGroup,sameCategory){
 }
 
 // 找同分類抽屜中空的 b 格
+function findSameCatHalf(catGroup){
+  // 只找「a 格有同類件、b 格空著」的抽屜，無任意 fallback（與 findEmptyHalf 的 Phase 1 相同，但不含 Phase 2）
+  const maxDrawer=parseInt((slotConfig.nextSmallSlot||'450a').replace(/[a-z]/g,''));
+  const hasFreq=slot=>allItems.some(i=>i.slot===slot&&isItemFrequent(i));
+  for(let d=1;d<maxDrawer;d++){
+    const slotA=String(d).padStart(3,'0')+'a';
+    const slotB=String(d).padStart(3,'0')+'b';
+    if(hasFreq(slotA)||hasFreq(slotB))continue;
+    if(getSlotItemCount(slotA)>0&&getSlotItemCount(slotB)===0){
+      const aItem=allItems.find(i=>i.slot===slotA);
+      if(aItem){
+        const aCat=getCatGroup(aItem.featureTags||[],normalizeCategory(aItem.bricklinkCategory||''));
+        if(aCat===catGroup)return slotB;
+      }
+    }
+  }
+  return null;
+}
+
 function findEmptyHalf(catGroup){
   const maxDrawer=parseInt((slotConfig.nextSmallSlot||'450a').replace(/[a-z]/g,''));
   const hasFreq=slot=>allItems.some(i=>i.slot===slot&&isItemFrequent(i));
