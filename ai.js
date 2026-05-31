@@ -38,6 +38,22 @@ function cleanBase64ForGemini(d){if(!d)return null;const p=d.split(',');return p
 // 粗篩：從全庫篩出「有本地實拍圖 + 屬性相近」的 Top-N 候選
 function coarseFilterWithImage(target,maxN){
   maxN=maxN||5;
+  // 【特例軌】自訂/非原廠件：無視 catGroup（AI 標籤會漂移），只跟庫存自訂件比，用體積誤差 ≤30% 撈候選
+  if(target.isCustom){
+    const tVol=target.estimateVolumeMl||0;
+    return allItems.filter(i=>i.id!==target.id && i.isCustom===true && i.imageData && i.imageData.startsWith('data:') && i.imageData.length>500)
+      .map(i=>{
+        const iVol=i.estimateVolumeMl||0;
+        // 體積相似度：差異 30% 內納入，越接近分越高
+        if(tVol>0&&iVol>0){
+          const diff=Math.abs(tVol-iVol)/Math.max(tVol,iVol);
+          if(diff>0.3)return {item:i,score:0};
+          return {item:i,score:100-diff*100};
+        }
+        return {item:i,score:50}; // 無體積資料 → 仍納入（讓圖對圖決生死）
+      }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,maxN).map(x=>x.item);
+  }
+  // 【標準軌】樂高原廠件：嚴格依賴 catGroup（避免上萬件圖對圖運算爆炸）
   const tCat=(target.bricklinkCategory||'').toLowerCase();
   const tTags=new Set((target.featureTags||[]).map(t=>t.toLowerCase()));
   const tVol=target.estimateVolumeMl||0;
@@ -649,7 +665,7 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
       console.log('[自訂件建檔] AI 測量最終結果:',measureResult);
       // ═══ [防重複] 用測量後的真實標籤/體積，圖對圖比對既有自訂件，避免重複建檔 ═══
       const _measVol=(parseFloat(measureResult.dim_mm_w)*parseFloat(measureResult.dim_mm_l)*parseFloat(measureResult.dim_mm_h)/1000)||0;
-      const dupTarget={bricklinkCategory:measureResult.bricklink_category||'',featureTags:measureResult.feature_tags||[],estimateVolumeMl:_measVol,id:'__newcustom__'};
+      const dupTarget={bricklinkCategory:measureResult.bricklink_category||'',featureTags:measureResult.feature_tags||[],estimateVolumeMl:_measVol,id:'__newcustom__',isCustom:true};
       const dupCands=coarseFilterWithImage(dupTarget,5);
       if(dupCands.length>0 && currentImageData && (cfg.apiKey||'').trim()){
         setProcessingMsg('🔍 比對既有零件，避免重複…');
