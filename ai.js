@@ -664,7 +664,44 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
       // <80 或人工否決 → 放行至新建檔
     }catch(e){console.error('[C方案] 多圖選美錯誤:',e);/* 不卡死，放行新建 */}
   }
-  // ═══ [C方案結束，以下為原本的「未建檔」邏輯] ═══
+  // ═══ [C方案結束] ═══
+  // ═══ [非原廠件建檔] BK + C方案皆無匹配 → 人工確認 → 5mm 方格測量建檔 ═══
+  const isCustomPartConfirmed=window.confirm('Brickognize 與本地圖庫皆查無匹配。\n\n請問是否確認此為「非原廠/自訂零件」，並直接透過背景 5mm 方格紙進行測量與建檔？');
+  if(isCustomPartConfirmed){
+    console.log('[自訂件建檔] 啟動 5mm 方格紙測量與特徵標籤分配');
+    const availableTags=(typeof LEGO_TAGS!=='undefined')?LEGO_TAGS:'Cylinder, Cone, Dish, Tile Round, Brick Round, Bar, Container, Spring, Hose, Slope';
+    const measureSystemInstruction='你是一個具備機器視覺與空間測量能力的「精密零件分析專家」。\n你的任務是分析照片中的未知零件（可能是非樂高物品），嚴格依據背景比例尺推算其實體尺寸，並賦予最接近的幾何外觀標籤。\n\n【絕對比例尺規則：5mm 方格】\n照片背景是標準方格紙。請嚴格執行以下測量步驟：\n1. 每一個正方形小格子的邊長精確等於 5mm。\n2. 請在畫面上數出該物件的最長邊（長度）與次長邊（寬度）分別跨越了「幾個方格」。\n3. 將跨越的方格數乘以 5，得出真實尺寸（例如：跨越 4 格 = 20mm）。\n4. 高度（厚度）若無法直接看見方格，請依據視角與物體比例進行合理推算。\n\n【強制標籤分類規則】\n即使該物品不是樂高，你也必須從以下提供的 [合法形狀標籤清單] 中，挑選 1 到 3 個最符合該物品「幾何外觀」的標籤。絕對禁止自創標籤，這攸關後續的實體抽屜分區。\n[合法形狀標籤清單]：'+availableTags+'\n\n【JSON 輸出規範】\n必須回傳乾淨的 JSON，包含以下欄位：\ncalculation_reasoning: "請先寫下你的數格子過程。例如：長度佔 4 格=20mm，寬度佔 4 格=20mm，厚度推估約 3mm。"\ndim_mm_l: 數字 (長度, mm)\ndim_mm_w: 數字 (寬度, mm)\ndim_mm_h: 數字 (高度/厚度, mm)\nfeature_tags: ["標籤1","標籤2"] (必須來自合法清單)\nbricklink_category: "" (請固定回傳空字串)\ndescription: "簡短的物品外觀描述"';
+    const promptParts=[{text:'請分析這張【放在 5mm 方格紙上的實拍圖】，並嚴格依照系統指示輸出 JSON：'},{inlineData:{mimeType:'image/jpeg',data:cleanBase64ForGemini(currentImageData)}}];
+    try{
+      setProcessingMsg('📐 AI 方格測量中…');
+      const rawJsonString=await callGeminiMultiImage(promptParts,measureSystemInstruction);
+      const measureResult=safeParseJSON(rawJsonString);
+      if(!measureResult)throw new Error('AI 回傳格式無法解析');
+      console.log('[自訂件建檔] AI 測量推理過程:',measureResult.calculation_reasoning);
+      console.log('[自訂件建檔] AI 測量最終結果:',measureResult);
+      const customItem={
+        name:'自訂/非原廠件 - '+(measureResult.description||''),
+        name_cn:'自訂件 - '+(measureResult.description||''),
+        bricklink_category:measureResult.bricklink_category||'',
+        dim_mm_l:measureResult.dim_mm_l,
+        dim_mm_w:measureResult.dim_mm_w,
+        dim_mm_h:measureResult.dim_mm_h,
+        feature_tags:measureResult.feature_tags||[],
+        description:measureResult.description||'',
+        imageData:currentImageData,
+        isCustom:true
+      };
+      await processResult(customItem);
+      return;
+    }catch(error){
+      console.error('[自訂件建檔] 測量或建檔過程發生錯誤:',error);
+      if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+      showTab('main');
+      showToast('AI 測量失敗，請重試或手動建檔\n'+error.message,'error',4000);
+      return;
+    }
+  }
+  console.log('[自訂件建檔] 使用者取消，放行至一般未建檔提示。');
   if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
   showTab('main');
   showToast('⚠ 零件「'+(partInfo.name_cn||partInfo.name||geminiId||'未知')+'」未建檔\n請使用 🖼 建檔（Lens 截圖）','error',4000);
@@ -1579,7 +1616,7 @@ function applySlotOverrideManual(){
 async function confirmPart(){
   if(!pendingPart)return;
   const now=Date.now();
-  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,seriesTag:pendingPart.seriesTag||'',characterTag:pendingPart.characterTag||'',brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],lens_summary:pendingPart.lens_summary||'',rebrickableSets:(typeof pendingPart.rebrickableSets==='number'?pendingPart.rebrickableSets:null),isFrequent:pendingPart.isFrequent||false,pickupSlot:pendingPart.pickupSlot||'',pickupType:pendingPart.pickupType||'',pickupQty:pendingPart.pickupQty||0,overflowSlot:pendingPart.overflowSlot||'',overflowQty:pendingPart.overflowQty||0,quantity:1,updatedAt:now};
+  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,seriesTag:pendingPart.seriesTag||'',characterTag:pendingPart.characterTag||'',brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],lens_summary:pendingPart.lens_summary||'',rebrickableSets:(typeof pendingPart.rebrickableSets==='number'?pendingPart.rebrickableSets:null),isFrequent:pendingPart.isFrequent||false,pickupSlot:pendingPart.pickupSlot||'',pickupType:pendingPart.pickupType||'',pickupQty:pendingPart.pickupQty||0,overflowSlot:pendingPart.overflowSlot||'',overflowQty:pendingPart.overflowQty||0,isCustom:pendingPart.isCustom||false,quantity:1,updatedAt:now};
   if(pendingPart.isUpdate&&pendingPart.matchedId){
     item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);
     item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;
