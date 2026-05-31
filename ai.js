@@ -607,7 +607,7 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
   if(!dbMatch&&geminiId){const num=getNumericBase(geminiId);if(num)dbMatch=allItems.find(i=>getNumericBase(i.designId)===num)}
   // Mold variant check via Rebrickable
   if(!dbMatch&&geminiId){dbMatch=await findByMoldVariant(geminiId)}
-  if(!dbMatch){const en=(partInfo.name||'');if(en.length>=5){const nl=en.toLowerCase();dbMatch=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(nl)||nl.includes(n))})}}
+  if(!dbMatch&&geminiId){const en=(partInfo.name||'');if(en.length>=5){const nl=en.toLowerCase();dbMatch=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(nl)||nl.includes(n))})}}
   } // end if(!_skipDbMatch)
   if(dbMatch){
     if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
