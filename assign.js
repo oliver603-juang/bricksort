@@ -854,8 +854,7 @@ function getCategoryBagKey(item){
   if(blCat.indexOf('minifig')<0)return null;
   // 關鍵字分流(toLowerCase + includes，容錯各種命名變體：縮寫/單複數/大小寫)
   // 順序由明確到一般，符合一個就回傳
-  if(blCat.includes('weapon')||blCat.includes('shield'))return 'weapon';   // 武器與戰鬥(劍/刀/斧/弓/盾)
-  if(blCat.includes('utensil'))return 'utensil';                            // 生活器具(鍋/杯/工具/船槳)
+  // [調整] weapon/utensil 不再強制進袋 → 改走小抽屜（體積小、方便立即取用；單個放不進時由後段邏輯自動回退進袋）
   if(blCat.includes('head')||blCat.includes('hair')||blCat.includes('helmet'))return 'headwear'; // 頭部(頭/髮/帽/盔)
   if(blCat.includes('body')||blCat.includes('torso')||blCat.includes('leg')||blCat.includes('wing')||blCat.includes('armor'))return 'bodywear'; // 軀幹四肢(身/軀幹/腿/翅膀/盔甲)
   if(blCat.includes('neck'))return 'neckwear';                              // 頸部(披風/圍巾/項圈)
