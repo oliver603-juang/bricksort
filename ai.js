@@ -54,7 +54,7 @@ function coarseFilterWithImage(target,maxN){
 }
 
 // 多圖選美 Gemini 呼叫（複用 GEMINI_MODELS + 模型切換 + 逾時）
-async function callGeminiMultiImage(parts,systemInstruction,_retryIdx=0){
+async function callGeminiParts(parts,systemInstruction,_retryIdx=0){
   const apiKey=(cfg.apiKey||'').trim();
   if(!apiKey)throw new Error('未設定 Gemini API Key');
   const model=GEMINI_MODELS[_retryIdx]||GEMINI_MODELS[0];
@@ -64,7 +64,7 @@ async function callGeminiMultiImage(parts,systemInstruction,_retryIdx=0){
   try{
     const resp=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
     clearTimeout(timeout);
-    if((resp.status===503||resp.status===404)&&_retryIdx+1<GEMINI_MODELS.length)return callGeminiMultiImage(parts,systemInstruction,_retryIdx+1);
+    if((resp.status===503||resp.status===404)&&_retryIdx+1<GEMINI_MODELS.length)return callGeminiParts(parts,systemInstruction,_retryIdx+1);
     if(!resp.ok)throw new Error('Gemini '+resp.status);
     const data=await resp.json();
     return data.candidates[0].content.parts[0].text;
@@ -631,7 +631,7 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
       parts.push({inlineData:{mimeType:'image/jpeg',data:cleanBase64ForGemini(c.imageData)}});
     });
     try{
-      const raw=await callGeminiMultiImage(parts,sysInst);
+      const raw=await callGeminiParts(parts,sysInst);
       const r=safeParseJSON(raw);
       if(r&&r.confidenceScore>=90&&r.matchedId){
         const m=allItems.find(i=>i.id===r.matchedId);
@@ -674,7 +674,7 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
     const promptParts=[{text:'請分析這張【放在 5mm 方格紙上的實拍圖】，並嚴格依照系統指示輸出 JSON：'},{inlineData:{mimeType:'image/jpeg',data:cleanBase64ForGemini(currentImageData)}}];
     try{
       setProcessingMsg('📐 AI 方格測量中…');
-      const rawJsonString=await callGeminiMultiImage(promptParts,measureSystemInstruction);
+      const rawJsonString=await callGeminiParts(promptParts,measureSystemInstruction);
       const measureResult=safeParseJSON(rawJsonString);
       if(!measureResult)throw new Error('AI 回傳格式無法解析');
       console.log('[自訂件建檔] AI 測量推理過程:',measureResult.calculation_reasoning);
