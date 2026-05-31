@@ -640,7 +640,7 @@ function showToast(msg,type,duration){const t=document.getElementById('toast');t
 // ═══════════════════════════════════════════════════
 // START
 // ═══════════════════════════════════════════════════
-init();
+// init() 由 index.html 內聯腳本於所有檔案載入後呼叫，此處不再重複呼叫（避免 ReferenceError 與重複初始化）
 
 // [v20as] Multi-image Gemini call for cross-verification
 async function callGeminiMultiImage(prompt,base64Images,systemInstruction,_retryIdx=0,_429attempt=0){
