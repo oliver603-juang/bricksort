@@ -570,12 +570,16 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
   // Brickognize failed → Gemini fallback (part only, no instruction)
   setProcessingMsg('🤖 AI 辨識零件…');
   const existingList=await buildExistingList();
-  const partPrompt='辨識圖中的樂高物品（可能是單一零件或已組裝的套件成品）。回應純JSON：{"design_id":"Design ID或套件編號","name":"英文名","name_cn":"繁體中文名","matched_existing_id":"同外型物品id或null。已有:'+existingList+'"}';
+  const partPrompt='你是嚴格且專業的樂高零件鑑定專家。\n\n【非原廠與異物排除規則】(最高優先級)\n請嚴格檢視圖片，若該物品具備以下任一特徵，請判定為「非標準樂高零件」：\n1. 屬於一般生活用品或電子零件（如電池、硬幣、文具、瓶蓋）。\n2. 無明確樂高特徵（無標準卡扣/凸點、材質異常如軟矽膠、半透明橡膠、明顯為副廠或客製化物品）。\n若你判斷這「極可能不是」樂高原廠零件，或對其樂高編號信心極低，務必將 design_id 與 matched_existing_id 一律回傳 JSON 的 null（不加引號）。寧可不配對，也絕不允許硬湊外型相似的樂高編號（例如將矽膠吸盤誤認為科技銷）。\n\n【標準辨識任務】\n若確認是樂高零件或套件，辨識其 Design ID 與名稱。回應純JSON：{"design_id":"Design ID或套件編號，若非樂高或無法確定請回傳 null（不加引號）","name":"英文名","name_cn":"繁體中文名","matched_existing_id":"同外型物品id，若無匹配或非樂高請回傳 null（不加引號）。已有:'+existingList+'"}';
   const partResp=await callGeminiAPI(partPrompt,base64,0,GEMINI_LEGO_SYSTEM);
   const partInfo=safeParseJSON(partResp);
   const geminiId=(partInfo.design_id||partInfo.designId||'').toString();
   const geminiMatchedId=partInfo.matched_existing_id||'';
   let dbMatch=null;
+  // [強制自訂建檔] 使用者在交叉驗證按了「都不是」→ 跳過所有 dbMatch 配對，直接走非原廠建檔
+  const _skipDbMatch=window._forceCustomBuild===true;
+  if(_skipDbMatch){window._forceCustomBuild=false}
+  if(!_skipDbMatch){
   if(geminiMatchedId&&geminiMatchedId!=='null'){dbMatch=allItems.find(i=>i.id===geminiMatchedId)}
   if(!dbMatch&&geminiId){dbMatch=allItems.find(i=>(i.designId||'').toLowerCase()===geminiId.toLowerCase())}
   if(!dbMatch&&geminiId){const base=getBaseDesignId(geminiId);if(base)dbMatch=allItems.find(i=>getBaseDesignId(i.designId)===base)}
@@ -583,6 +587,7 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
   // Mold variant check via Rebrickable
   if(!dbMatch&&geminiId){dbMatch=await findByMoldVariant(geminiId)}
   if(!dbMatch){const en=(partInfo.name||'');if(en.length>=5){const nl=en.toLowerCase();dbMatch=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(nl)||nl.includes(n))})}}
+  } // end if(!_skipDbMatch)
   if(dbMatch){
     if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
     const thumb=dbMatch.thumbnailUrl||(dbMatch.designId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+getBaseDesignId(dbMatch.designId)+'.png':'');
