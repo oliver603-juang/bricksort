@@ -212,6 +212,7 @@ tr:hover{background:var(--accent-bg)}
     <button class="btn" style="flex: 1 1 0%; padding: 14px; font-size: 14px; font-weight: 700; background: var(--accent-dim); border-color: var(--accent); color: var(--accent);   " onclick="document.getElementById('camera-take').click()">📷 拍照</button>
     <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="toggleInstructionMenu()">📋 說明書</button>
     <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="runVisualOnlyMatch()">🧠 視覺比對</button>
+    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="openContinuousScan()">📷 連續識別</button>
   </div>
   
   <div id="instruction-menu" style="display:none;margin-bottom:6px">
@@ -1013,6 +1014,338 @@ function setProcessingMsg(msg){document.getElementById('processing-msg').textCon
 
 // ── 啟動應用程式 ──
 init();
+
+// ═══ 連續識別（靜止偵測自動辨識，移植自 bsAuto v2026.04.20bi + 圖對圖 fallback）═══
+// v2026.04.20bi — 自動辨識模式（Auto Detect Still → Shutter）
+// ════════════════════════════════════════════════════════════════
+// 使用方式：
+//   1. 手機/筆電架著相機對準 5mm 方格白紙
+//   2. 點主畫面「📷 連續識別」按鈕
+//   3. 把樂高零件放在中央方框內保持靜止
+//   4. 0.8 秒勿動 → 自動拍照 → Brickognize 辨識 → 顯示位置 + TTS 播報
+//   5. 顯示 5 秒後自動回到偵測模式（連拍多個零件）
+// ════════════════════════════════════════════════════════════════
+window.bsAuto = {
+  // ─── 可調參數 ────────────────────────────────────
+  STABLE_MS: 800,
+  COOLDOWN_MS: 5000,
+  ROI_RATIO: 0.60,
+  SAD_THRESHOLD: 12,
+  ANALYZE_W: 80,
+  ANALYZE_H: 60,
+  ANALYZE_FPS: 15,
+  CAPTURE_W: 1280,
+
+  // ─── State ──────────────────────────────────────
+  state: 'idle',
+  videoEl: null, canvasAnalyze: null, canvasCapture: null,
+  ctxAnalyze: null, ctxCapture: null,
+  stream: null, prevPixels: null,
+  stableStartTime: 0, rafId: null, lastAnalyzeTime: 0,
+
+  open() {
+    if (document.getElementById('bs-auto-overlay')) return;
+    this._buildUI();
+    this._startCamera();
+  },
+
+  close() {
+    this._stopCamera();
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    const ov = document.getElementById('bs-auto-overlay');
+    if (ov) ov.remove();
+    this.state = 'idle';
+    this.prevPixels = null;
+    try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch(e){}
+  },
+
+  _buildUI() {
+    const ov = document.createElement('div');
+    ov.id = 'bs-auto-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#000;font-family:-apple-system,sans-serif;color:#fff;';
+    ov.innerHTML = [
+      '<video id="bs-auto-video" autoplay playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"></video>',
+      '<div id="bs-auto-roi" style="position:absolute;border:3px solid #22c55e;border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,0.45);pointer-events:none;transition:border-color 0.3s;"></div>',
+      '<div style="position:absolute;top:0;left:0;right:0;padding:14px 16px;background:linear-gradient(180deg,rgba(0,0,0,0.8),transparent);display:flex;align-items:center;gap:12px;z-index:1;">',
+        '<div id="bs-auto-status" style="font-size:14px;flex:1;font-weight:600;">啟動中…</div>',
+        '<button id="bs-auto-close" style="background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:50%;width:36px;height:36px;font-size:20px;cursor:pointer;">×</button>',
+      '</div>',
+      '<div id="bs-auto-slot-top" style="position:absolute;top:60px;left:0;right:0;display:none;justify-content:center;align-items:center;z-index:1;pointer-events:none;"><div id="bs-auto-slot-text" style="font-size:120px;font-weight:900;color:#22c55e;text-shadow:0 4px 12px rgba(0,0,0,0.9);letter-spacing:4px;"></div></div>',
+      '<div style="position:absolute;bottom:0;left:0;right:0;padding:14px 16px 20px;background:linear-gradient(0deg,rgba(0,0,0,0.85),transparent);z-index:1;">',
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">',
+          '<div style="font-size:11px;color:#aaa;width:50px;">穩定度</div>',
+          '<div style="flex:1;height:8px;background:rgba(255,255,255,0.15);border-radius:4px;overflow:hidden;">',
+            '<div id="bs-auto-bar" style="height:100%;background:#22c55e;width:0%;transition:width 0.1s linear;"></div>',
+          '</div>',
+          '<div id="bs-auto-pct" style="font-size:11px;color:#aaa;width:36px;text-align:right;">0%</div>',
+        '</div>',
+        '<div id="bs-auto-result" style="min-height:200px;padding:18px;background:rgba(255,255,255,0.12);border-radius:14px;font-size:14px;line-height:1.4;display:none;"></div>',
+      '</div>',
+      '<canvas id="bs-auto-c-analyze" width="80" height="60" style="display:none;"></canvas>',
+      '<canvas id="bs-auto-c-capture" style="display:none;"></canvas>'
+    ].join('');
+    document.body.appendChild(ov);
+
+    this.videoEl = document.getElementById('bs-auto-video');
+    this.canvasAnalyze = document.getElementById('bs-auto-c-analyze');
+    this.canvasCapture = document.getElementById('bs-auto-c-capture');
+    this.ctxAnalyze = this.canvasAnalyze.getContext('2d', {willReadFrequently: true});
+    this.ctxCapture = this.canvasCapture.getContext('2d');
+
+    document.getElementById('bs-auto-close').onclick = () => this.close();
+    this.videoEl.addEventListener('loadedmetadata', () => this._positionROI());
+    window.addEventListener('resize', () => this._positionROI());
+  },
+
+  _positionROI() {
+    const v = this.videoEl;
+    if (!v) return;
+    const r = v.getBoundingClientRect();
+    const w = r.width * this.ROI_RATIO;
+    const h = r.height * this.ROI_RATIO;
+    const roi = document.getElementById('bs-auto-roi');
+    if (!roi) return;
+    roi.style.left = ((r.width - w) / 2) + 'px';
+    roi.style.top = ((r.height - h) / 2) + 'px';
+    roi.style.width = w + 'px';
+    roi.style.height = h + 'px';
+  },
+
+  async _startCamera() {
+    try {
+      this._setStatus('啟動相機中…');
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: {facingMode: {ideal: 'environment'}, width: {ideal: 1280}, height: {ideal: 960}},
+        audio: false
+      });
+      this.videoEl.srcObject = this.stream;
+      await new Promise(r => {
+        if (this.videoEl.readyState >= 2) r();
+        else this.videoEl.onloadeddata = r;
+      });
+      this._positionROI();
+      this.state = 'scanning';
+      this._setStatus('🎯 對準零件並保持靜止');
+      this._tickAnalyze();
+    } catch (e) {
+      this._setStatus('❌ 相機啟動失敗：' + e.message);
+    }
+  },
+
+  _stopCamera() {
+    if (this.stream) {
+      this.stream.getTracks().forEach(t => t.stop());
+      this.stream = null;
+    }
+  },
+
+  _setStatus(t) { const el = document.getElementById('bs-auto-status'); if (el) el.textContent = t; },
+
+  _setBar(pct, color) {
+    const b = document.getElementById('bs-auto-bar');
+    const p = document.getElementById('bs-auto-pct');
+    const roi = document.getElementById('bs-auto-roi');
+    if (b) { b.style.width = Math.max(0, Math.min(100, pct)) + '%'; if (color) b.style.background = color; }
+    if (p) p.textContent = Math.round(pct) + '%';
+    if (roi && color) roi.style.borderColor = color;
+  },
+
+  _showResult(html) { const r = document.getElementById('bs-auto-result'); if (r) { r.innerHTML = html; r.style.display = 'block'; } },
+  _hideResult() { const r = document.getElementById('bs-auto-result'); if (r) r.style.display = 'none'; var st = document.getElementById('bs-auto-slot-top'); if (st) st.style.display = 'none'; },
+
+  _tickAnalyze() {
+    this.rafId = requestAnimationFrame(() => this._tickAnalyze());
+    const now = performance.now();
+    if (now - this.lastAnalyzeTime < 1000 / this.ANALYZE_FPS) return;
+    this.lastAnalyzeTime = now;
+    if (this.state !== 'scanning') return;
+    const v = this.videoEl;
+    if (!v || !v.videoWidth) return;
+
+    const vw = v.videoWidth, vh = v.videoHeight;
+    const sw = vw * this.ROI_RATIO, sh = vh * this.ROI_RATIO;
+    const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
+    this.ctxAnalyze.drawImage(v, sx, sy, sw, sh, 0, 0, this.ANALYZE_W, this.ANALYZE_H);
+    const imgData = this.ctxAnalyze.getImageData(0, 0, this.ANALYZE_W, this.ANALYZE_H);
+    const px = imgData.data;
+    const n = this.ANALYZE_W * this.ANALYZE_H;
+    const gray = new Uint8Array(n);
+    for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+      gray[j] = (px[i] * 77 + px[i+1] * 150 + px[i+2] * 29) >> 8;
+    }
+    if (!this.prevPixels) { this.prevPixels = gray; return; }
+
+    let sad = 0;
+    for (let i = 0; i < n; i++) sad += Math.abs(gray[i] - this.prevPixels[i]);
+    const avgDiff = sad / n;
+    this.prevPixels = gray;
+
+    if (avgDiff > this.SAD_THRESHOLD) {
+      this.stableStartTime = 0;
+      this._setBar(0, '#ef4444');
+      this._setStatus('🏃 偵測到動作…');
+    } else {
+      if (this.stableStartTime === 0) this.stableStartTime = now;
+      const elapsed = now - this.stableStartTime;
+      const pct = Math.min(100, (elapsed / this.STABLE_MS) * 100);
+      this._setBar(pct, '#22c55e');
+      this._setStatus('⏳ 穩定中 ' + (elapsed/1000).toFixed(1) + 's / ' + (this.STABLE_MS/1000).toFixed(1) + 's');
+      if (elapsed >= this.STABLE_MS) this._capture();
+    }
+  },
+
+  async _capture() {
+    if (this.state !== 'scanning') return;
+    this.state = 'capturing';
+    this._setStatus('📸 拍照中…');
+    this._setBar(100, '#3b82f6');
+
+    const v = this.videoEl;
+    const cw = Math.min(this.CAPTURE_W, v.videoWidth);
+    const ch = Math.round(cw * v.videoHeight / v.videoWidth);
+    this.canvasCapture.width = cw;
+    this.canvasCapture.height = ch;
+    this.ctxCapture.drawImage(v, 0, 0, cw, ch);
+    const dataUrl = this.canvasCapture.toDataURL('image/jpeg', 0.85);
+
+    this._setStatus('🔍 辨識中…');
+    try {
+      const result = await this._identify(dataUrl);
+      this._setStatus('✅ 完成');
+      this._showResult(this._formatResult(result));
+      this._speak(result.voiceText);
+    } catch (e) {
+      this._setStatus('⚠️ 辨識失敗：' + e.message);
+      this._showResult('<div style="color:#fca5a5;">⚠️ ' + e.message + '</div>');
+    }
+
+    this.state = 'cooldown';
+    this._setBar(0, '#6b7280');
+    setTimeout(() => {
+      this._hideResult();
+      this.prevPixels = null;
+      this.stableStartTime = 0;
+      this.state = 'scanning';
+      this._setStatus('🎯 對準下一個零件');
+    }, this.COOLDOWN_MS);
+  },
+
+  async _identify(dataUrl) {
+    const b64 = dataUrl.split(',')[1] || dataUrl;
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], {type: 'image/jpeg'});
+
+    const form = new FormData();
+    form.append('query_image', blob, 'q.jpg');
+
+    const resp = await fetch('https://api.brickognize.com/predict/', {method: 'POST', body: form});
+    if (!resp.ok) throw new Error('Brickognize HTTP ' + resp.status);
+    const data = await resp.json();
+    const predictions = data.items || [];
+    if (predictions.length === 0) {
+      // [方案2] BK 完全認不出（多為非原廠件）→ 圖對圖比對既有件
+      const vr = await this._visualFallback(dataUrl);
+      if (vr) return vr;
+      return {type: 'no_match', displayText: '📭 找不到匹配', voiceText: '找不到此物品'};
+    }
+    const top = predictions[0];
+    const designId = top.id;
+    const score = top.score || 0;
+    const item = (typeof allItems !== 'undefined' ? allItems : []).find(i =>
+      i.designId === designId || (i.altIds || []).includes(designId)
+    );
+    if (!item) {
+      // [方案2] BK 認得是樂高但庫存無此件 → 嘗試圖對圖比對既有件（含非原廠）
+      const vr = await this._visualFallback(dataUrl);
+      if (vr) return vr;
+      return {
+        type: 'unknown',
+        designId: designId, score: score, bkName: top.name,
+        displayText: '🆕 未建檔零件\nID: ' + designId + '\n' + (top.name || ''),
+        voiceText: '識別到新零件 ' + designId + '，尚未建檔'
+      };
+    }
+    return {
+      type: 'match',
+      item: item, designId: designId, score: score,
+      displayText: '📍 ' + item.slot + (item.pickupSlot ? ' · 快取 ' + item.pickupSlot : '') + '\n' + (item.nameCN || item.name || '') + '\nID: ' + designId + ' · ' + Math.round(score*100) + '%',
+      voiceText: (item.nameCN || item.name || '此零件') + ' 在 ' + this._slotToVoice(item.slot, item.slotType) + (item.pickupSlot ? '，快取在 ' + this._slotToVoice(item.pickupSlot, '') : '')
+    };
+  },
+
+  // [方案2] 圖對圖 fallback：用 matchVisualOnly 查既有件（含已建檔非原廠件）
+  async _visualFallback(dataUrl) {
+    try {
+      if (typeof matchVisualOnly !== 'function') return null;
+      this._setStatus('🔍 圖對圖比對中（~10秒）…');
+      const r = await matchVisualOnly(dataUrl);
+      if (!r || r.error) return null;
+      const best = r.bestMatch;
+      if (!best || best.index < 0 || r.decision === 'no_match') return null;
+      const item = (typeof allItems !== 'undefined' ? allItems : []).find(i => i.id === best._internalId);
+      if (!item) return null;
+      const conf = best.confidence || 0;
+      return {
+        type: 'match',
+        item: item, designId: item.designId || '(非原廠)', score: conf/100,
+        displayText: '📍 ' + item.slot + (item.pickupSlot ? ' · 快取 ' + item.pickupSlot : '') + '\n' + (item.nameCN || item.name || '') + '\n圖像比對 ' + conf + '%',
+        voiceText: (item.nameCN || item.name || '此零件') + ' 在 ' + this._slotToVoice(item.slot, item.slotType) + (item.pickupSlot ? '，快取在 ' + this._slotToVoice(item.pickupSlot, '') : '')
+      };
+    } catch(e) { return null; }
+  },
+
+  _slotToVoice(slot, slotType) {
+    if (!slot) return '沒有收納位置';
+    let m = slot.match(/^([BL])(\d+)$/);
+    if (m) {
+      const zone = m[1] === 'B' ? 'B' : 'L';
+      const num = parseInt(m[2]);
+      const typ = slotType === 'large' ? '大袋' : '袋';
+      return zone + ' 區 ' + num + ' 號' + typ;
+    }
+    m = slot.match(/^(\d+)([a-z])$/);
+    if (m) return parseInt(m[1]) + ' 號抽屜 ' + m[2].toUpperCase() + ' 格';
+    m = slot.match(/^(\d+)$/);
+    if (m) return parseInt(m[1]) + ' 號抽屜';
+    return slot;
+  },
+
+  _formatResult(r) {
+    if (r.type === 'match') {
+      var st = document.getElementById('bs-auto-slot-top');
+      var stText = document.getElementById('bs-auto-slot-text');
+      if (st && stText) { stText.textContent = '📍 ' + r.item.slot; st.style.display = 'flex'; }
+      return [
+        '<div style="font-size:32px;font-weight:700;margin-bottom:8px;color:#fff;">' + (r.item.nameCN || r.item.name || '') + '</div>',
+        r.item.pickupSlot ? '<div style="font-size:24px;font-weight:700;color:#fcd34d;margin-bottom:6px;">⚡ 快取 ' + r.item.pickupSlot + '</div>' : '',
+        '<div style="font-size:14px;color:#9ca3af;">ID: ' + r.designId + ' · 信心 ' + Math.round(r.score*100) + '%</div>'
+      ].join('');
+    }
+    if (r.type === 'unknown') {
+      return [
+        '<div style="font-size:18px;color:#fbbf24;margin-bottom:6px;">🆕 未建檔零件</div>',
+        '<div style="font-size:14px;">ID: ' + r.designId + '</div>',
+        r.bkName ? '<div style="font-size:13px;color:#9ca3af;">' + r.bkName + '</div>' : ''
+      ].join('');
+    }
+    return '<div style="font-size:18px;color:#9ca3af;">📭 找不到匹配</div>';
+  },
+
+  _speak(text) {
+    try {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-TW';
+      u.rate = 1.1;
+      window.speechSynthesis.speak(u);
+    } catch(e) {}
+  }
+};
+function openContinuousScan(){ if(window.bsAuto&&typeof window.bsAuto.open==='function') window.bsAuto.open(); }
+
 </script>
 
 </body>
