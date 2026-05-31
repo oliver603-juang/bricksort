@@ -549,15 +549,6 @@ async function cameraRecognize(base64,imgSrc){
       showScreen('s-result');return;
     }
     // Brickognize matched but NOT in DB → auto-register with Gemini enrichment
-    // [把關] BK 高信心但庫存無此件 → 先請使用者確認，避免「認錯零件靜默建錯檔」
-    if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
-    const _bkConfirm=window.confirm('Brickognize 辨識為「'+(bkResult.name||'')+'」('+bkId+'，信心 '+bkResult.score+'%)。\n\n庫存中尚無此件。確認這是正確的樂高零件並直接建檔？\n\n（若辨識錯誤或這不是樂高零件，請按「取消」，將轉為自訂/非原廠建檔）');
-    if(!_bkConfirm){
-      // 使用者否決 BK 辨識 → 轉非原廠建檔流程（跳過 BK+partPrompt 重跑）
-      window._forceCustomBuild=true;
-      try{await cameraRecognize(base64,imgSrc)}catch(e){showTab('main');showToast('建檔失敗：'+e.message,'error')}
-      return;
-    }
     setProcessingMsg('🤖 補充零件資訊…');
     try{
       // Use BK result directly (skip rebrickableLookup which is slow with 404+retry)
@@ -639,52 +630,10 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
     document.getElementById('result-qty-save').disabled=false;
     showScreen('s-result');return;
   }
-  // ═══ [C方案] 本地圖庫多圖選美（BK + dbMatch 皆失敗的特例軌）═══
-  const cImgCands=coarseFilterWithImage(partInfo,5);
-  if(cImgCands.length>0 && currentImageData && (cfg.apiKey||'').trim()){
-    setProcessingMsg('🔍 本地圖庫比對中…');
-    const sysInst='你是嚴格的樂高零件與人偶鑑定專家。比對【實拍圖】與【候選圖】。\n【最高指導原則】\n1.寧缺勿濫：若實拍圖與所有候選圖有任何肉眼可見差異(印刷/雙色成型/卡扣位置/顏色)，必須判定無匹配。誤判比找不到更嚴重。\n2.人偶特化：軀幹查正反面印刷、領口與手臂手掌顏色；腿部查雙色成型與印刷；頭部查表情、眉毛、雙面、配件。\n3.評分：形狀+所有印刷100%吻合給90-100；形狀吻合但受光線影響細節有10%不確定給80-89；任一特徵不符直接<80。\n輸出純JSON：{"matchedId":"候選id或null","confidenceScore":0-100數字,"reason":"繁中20字內"}';
-    const parts=[{text:'請分析以下【實拍圖】：'},{inlineData:{mimeType:'image/jpeg',data:cleanBase64ForGemini(currentImageData)}},{text:'\n請與以下候選比對，找出唯一正確匹配：'}];
-    cImgCands.forEach((c,i)=>{
-      parts.push({text:'\n候選'+(i+1)+' ID:'+c.id+' 名稱:'+(c.nameCN||c.name)+' 分類:'+(c.bricklinkCategory||'')});
-      parts.push({inlineData:{mimeType:'image/jpeg',data:cleanBase64ForGemini(c.imageData)}});
-    });
-    try{
-      const raw=await callGeminiParts(parts,sysInst);
-      const r=safeParseJSON(raw);
-      if(r&&r.confidenceScore>=90&&r.matchedId){
-        const m=allItems.find(i=>i.id===r.matchedId);
-        if(m){
-          if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
-          pendingPart={design_id:m.designId,name:m.name,name_cn:m.nameCN||'',designId:m.designId,slot:m.slot,slotType:m.slotType||'small',thumbnailUrl:m.thumbnailUrl||'',estimateVolumeMl:m.estimateVolumeMl||0,featureTags:m.featureTags||[],bricklinkCategory:m.bricklinkCategory||'',description:m.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:m.id};
-          document.getElementById('result-name').textContent=m.nameCN||m.name||'';
-          document.getElementById('result-designid').innerHTML='<span style="font-size:10px;padding:2px 6px;background:rgba(76,175,80,0.15);border:1px solid var(--green);color:var(--green);border-radius:4px">📷 圖像比對 '+r.confidenceScore+'%</span>';
-          document.getElementById('result-desc').textContent=r.reason||m.description||'';
-          document.getElementById('result-tags').innerHTML=(m.featureTags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
-          document.getElementById('result-volume').textContent='佔位體積 ≈ '+(m.estimateVolumeMl||0)+'ml';
-          if(m.pickupSlot){document.getElementById('result-slot').textContent=m.pickupSlot;document.getElementById('result-slot-type').textContent='✋ 快取點 → 主位 '+m.slot;}
-          else{document.getElementById('result-slot').textContent=m.slot;document.getElementById('result-slot-type').textContent=m.slotType==='large'?'大抽屜':m.slotType==='bag'?'收納袋':'小抽屜分格';}
-          renderMiniMap(m.slot);
-          showScreen('s-result');return;
-        }
-      } else if(r&&r.confidenceScore>=80&&r.matchedId){
-        const m=allItems.find(i=>i.id===r.matchedId);
-        if(m && confirm('圖像比對找到相似零件（信心'+r.confidenceScore+'%）：\n\n'+(m.nameCN||m.name)+' @ '+m.slot+'\n\n'+(r.reason||'')+'\n\n確定是同一個零件嗎？')){
-          if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
-          pendingPart={design_id:m.designId,name:m.name,name_cn:m.nameCN||'',designId:m.designId,slot:m.slot,slotType:m.slotType||'small',thumbnailUrl:m.thumbnailUrl||'',estimateVolumeMl:m.estimateVolumeMl||0,featureTags:m.featureTags||[],bricklinkCategory:m.bricklinkCategory||'',description:m.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:m.id};
-          document.getElementById('result-name').textContent=m.nameCN||m.name||'';
-          document.getElementById('result-designid').innerHTML='<span style="font-size:10px;padding:2px 6px;background:rgba(255,152,0,0.15);border:1px solid var(--orange);color:var(--orange);border-radius:4px">📷 人工確認 '+r.confidenceScore+'%</span>';
-          document.getElementById('result-slot').textContent=m.pickupSlot||m.slot;
-          document.getElementById('result-slot-type').textContent=m.slotType==='large'?'大抽屜':m.slotType==='bag'?'收納袋':'小抽屜分格';
-          renderMiniMap(m.slot);
-          showScreen('s-result');return;
-        }
-      }
-      // <80 或人工否決 → 放行至新建檔
-    }catch(e){console.error('[C方案] 多圖選美錯誤:',e);/* 不卡死，放行新建 */}
-  }
-  // ═══ [C方案結束] ═══
-  // ═══ [非原廠件建檔] BK + C方案皆無匹配 → 人工確認 → 5mm 方格測量建檔 ═══
+  // ═══ [C方案已移至非原廠建檔測量後執行] ═══
+  // 原本此處用空的 partInfo 做粗篩，必然篩不到候選（partInfo 無 featureTags/體積）。
+  // 防重複比對已改在「方格測量取得真實標籤後」執行，見下方非原廠建檔區塊。
+  // ═══ [非原廠件建檔] BK + dbMatch 皆無匹配 → 人工確認 → 5mm 方格測量 → 防重複 → 建檔 ═══
   const isCustomPartConfirmed=window.confirm('Brickognize 與本地圖庫皆查無匹配。\n\n請問是否確認此為「非原廠/自訂零件」，並直接透過背景 5mm 方格紙進行測量與建檔？');
   if(isCustomPartConfirmed){
     console.log('[自訂件建檔] 啟動 5mm 方格紙測量與特徵標籤分配');
@@ -698,6 +647,41 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
       if(!measureResult)throw new Error('AI 回傳格式無法解析');
       console.log('[自訂件建檔] AI 測量推理過程:',measureResult.calculation_reasoning);
       console.log('[自訂件建檔] AI 測量最終結果:',measureResult);
+      // ═══ [防重複] 用測量後的真實標籤/體積，圖對圖比對既有自訂件，避免重複建檔 ═══
+      const _measVol=(parseFloat(measureResult.dim_mm_w)*parseFloat(measureResult.dim_mm_l)*parseFloat(measureResult.dim_mm_h)/1000)||0;
+      const dupTarget={bricklinkCategory:measureResult.bricklink_category||'',featureTags:measureResult.feature_tags||[],estimateVolumeMl:_measVol,id:'__newcustom__'};
+      const dupCands=coarseFilterWithImage(dupTarget,5);
+      if(dupCands.length>0 && currentImageData && (cfg.apiKey||'').trim()){
+        setProcessingMsg('🔍 比對既有零件，避免重複…');
+        const dupSys='你是嚴格的零件鑑定專家。比對【實拍圖】與【候選圖】，判斷是否為「同一種實體物品」。\n寧缺勿濫：外觀、顏色、印刷、比例需高度一致才算同一種。\n輸出純JSON：{"matchedId":"候選id或null","confidenceScore":0-100,"reason":"繁中20字內"}';
+        const dupParts=[{text:'請分析以下【實拍圖】：'},{inlineData:{mimeType:'image/jpeg',data:cleanBase64ForGemini(currentImageData)}},{text:'\n請與以下候選比對，找出是否為同一種物品：'}];
+        dupCands.forEach((c,i)=>{
+          dupParts.push({text:'\n候選'+(i+1)+' ID:'+c.id+' 名稱:'+(c.nameCN||c.name)});
+          dupParts.push({inlineData:{mimeType:'image/jpeg',data:cleanBase64ForGemini(c.imageData)}});
+        });
+        try{
+          const dupRaw=await callGeminiParts(dupParts,dupSys);
+          const dr=safeParseJSON(dupRaw);
+          if(dr&&dr.confidenceScore>=85&&dr.matchedId){
+            const m=allItems.find(i=>i.id===dr.matchedId);
+            if(m){
+              if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
+              console.log('[自訂件建檔] 圖對圖命中既有件 '+m.id+' @ '+m.slot+'（信心'+dr.confidenceScore+'）→ 不重複建檔');
+              pendingPart={design_id:m.designId||'',name:m.name,name_cn:m.nameCN||'',designId:m.designId||'',slot:m.slot,slotType:m.slotType||'small',thumbnailUrl:m.thumbnailUrl||'',estimateVolumeMl:m.estimateVolumeMl||0,featureTags:m.featureTags||[],bricklinkCategory:m.bricklinkCategory||'',description:m.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:m.id,isCustom:true};
+              document.getElementById('result-name').textContent=m.nameCN||m.name||'';
+              document.getElementById('result-designid').innerHTML='<span style="font-size:10px;padding:2px 6px;background:rgba(76,175,80,0.15);border:1px solid var(--green);color:var(--green);border-radius:4px">📷 圖像比對 '+dr.confidenceScore+'% · 已建檔</span>';
+              document.getElementById('result-desc').textContent=dr.reason||m.description||'';
+              document.getElementById('result-tags').innerHTML=(m.featureTags||[]).map(t=>'<span class="tag">'+t+'</span>').join('');
+              document.getElementById('result-volume').textContent='佔位體積 ≈ '+(m.estimateVolumeMl||0)+'ml';
+              document.getElementById('result-slot').textContent=m.slot;
+              document.getElementById('result-slot-type').textContent=m.slotType==='large'?'大抽屜':m.slotType==='bag'?'收納袋':'小抽屜分格';
+              renderMiniMap(m.slot);
+              showScreen('s-result');return;
+            }
+          }
+          console.log('[自訂件建檔] 圖對圖無高信心匹配，視為新件建檔');
+        }catch(e){console.error('[自訂件建檔] 防重複比對錯誤:',e);/* 不卡死，放行新建 */}
+      }
       const customItem={
         name:'自訂/非原廠件 - '+(measureResult.description||''),
         name_cn:'自訂件 - '+(measureResult.description||''),
