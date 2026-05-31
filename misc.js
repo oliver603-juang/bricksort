@@ -763,11 +763,25 @@ function crossVerifySelect(designId,itemId){
 
 function crossVerifyNew(){
   const banner=document.getElementById("match-banner");
-  banner.style.maxHeight="";banner.style.overflowY="";
-  banner.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--accent)">\u2795 \u5EFA\u7ACB\u65B0\u96F6\u4EF6</div>';
-  document.getElementById("result-confirm-card").style.display="block";
-  document.getElementById("result-dims-required").style.display="block";
-  document.getElementById("result-qty-row").style.display="none";
+  if(banner){banner.style.maxHeight="";banner.style.overflowY="";banner.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--accent)">\u2795 \u5EFA\u7ACB\u65B0\u96F6\u4EF6</div>';}
+  const confirmCard=document.getElementById("result-confirm-card");
+  if(confirmCard){
+    confirmCard.style.display="block";
+    const dimsReq=document.getElementById("result-dims-required");if(dimsReq)dimsReq.style.display="block";
+    const qtyRow=document.getElementById("result-qty-row");if(qtyRow)qtyRow.style.display="none";
+  }else{
+    console.warn("[\u9632\u5446\u651C\u622A] \u627E\u4E0D\u5230 result-confirm-card\uFF0CDOM \u7D50\u69CB\u5DF2\u8B8A\u66F4\uFF0C\u555F\u52D5\u964D\u7D1A\u8655\u7406\u3002");
+    const cv=window._cvData;
+    if(cv&&cv.base64&&typeof cameraRecognize==="function"){
+      // \u76F4\u63A5\u91CD\u8DD1\u8FA8\u8B58\u6D41\u7A0B\uFF0C\u4F46\u6B64\u6642 dbMatch \u5DF2\u88AB\u4F7F\u7528\u8005\u5426\u6C7A\uFF0C\u6539\u8D70\u975E\u539F\u5EE0\u5EFA\u6A94
+      // \u6A19\u8A18\u8DF3\u904E dbMatch\uFF0C\u8B93\u6D41\u7A0B\u843D\u5230 C\u65B9\u6848/\u975E\u539F\u5EE0
+      window._forceCustomBuild=true;
+      cameraRecognize(cv.base64,cv.imgSrc).catch(e=>{showToast("\u5EFA\u6A94\u5931\u6557\uFF1A"+e.message,"error")});
+    }else{
+      showToast("\u67E5\u7121\u5339\u914D\uFF0C\u8ACB\u6539\u7528 \uD83D\uDDBC \u5EFA\u6A94","error",3500);
+      showTab("main");
+    }
+  }
 }
 
 // [v20at] Share route selection dialog
