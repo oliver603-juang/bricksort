@@ -292,6 +292,68 @@ function loadCachedScan(){
   return false;
 }
 
+// 🛒 新購入套件後的角色統整（增量，不必重掃全部套件）
+// 把這盒的人偶配件併入預估池，並更新「角色規模預估」+「是否自動開專屬袋」。
+// 預估規模 = 你擁有的套件中「含此人偶」的盒數 × 該人偶零件種類數
+//   → 跨套件越常出現的角色（如 Lloyd 出現在十幾盒）規模越大，越該開專屬袋。
+//   這比用「已建檔件數(dbPartCount)」準，因為大量零件常在外把玩、沒進收納。
+async function integrateSetCharacters(setNum){
+  const rbKey=(cfg.rbKey||DEFAULT_RB_KEY);
+  if(!rbKey){showToast('未設定 Rebrickable Key，略過角色統整','error');return}
+  if(!window._scannedMinifigs||typeof window._scannedMinifigs!=='object')loadCachedScan();
+  if(!window._scannedMinifigs)window._scannedMinifigs={};
+  if(!slotConfig.characters)slotConfig.characters={};
+  // 1) 這盒有哪些人偶
+  let setMfs=[];
+  try{
+    const r=await fetch(`https://rebrickable.com/api/v3/lego/sets/${setNum}/minifigs/?key=${rbKey}`);
+    const data=await r.json();setMfs=(data.results||[]);
+  }catch(e){showToast('讀取人偶清單失敗','error');return}
+  if(!setMfs.length){showToast(`套件 ${setNum} 無人偶資料`);return}
+  const summaries=[];
+  // 2) 逐一併入；尚無零件組成的人偶才打 API 抓
+  for(const m of setMfs){
+    const mfNum=m.set_num;
+    let mf=window._scannedMinifigs[mfNum];
+    if(!mf){mf={minifigNum:mfNum,name:m.set_name,imgUrl:m.set_img_url||'',setIds:[],partNums:[],dbPartCount:0};window._scannedMinifigs[mfNum]=mf}
+    if(!mf.setIds.includes(setNum))mf.setIds.push(setNum);
+    if(!mf.partNums||!mf.partNums.length){
+      try{
+        const pr=await fetch(`https://rebrickable.com/api/v3/lego/minifigs/${mfNum}/parts/?key=${rbKey}&page_size=100`);
+        const pd=await pr.json();
+        mf.partNums=(pd.results||[]).map(p=>(p.part||{}).part_num||'').filter(Boolean);
+      }catch(e){}
+      await new Promise(r=>setTimeout(r,150)); // rate limit
+    }
+    // 已建檔數（參考用）
+    const lcSet=new Set((mf.partNums||[]).map(p=>p.toLowerCase()));
+    mf.dbPartCount=allItems.filter(it=>lcSet.has((it.designId||'').toLowerCase())||(it.altIds||[]).some(a=>lcSet.has((a||'').toLowerCase()))).length;
+    // 預估規模（set-based）
+    const predictedScale=(mf.setIds.length||1)*((mf.partNums||[]).length||0);
+    mf.predictedScale=predictedScale;
+    const prev=slotConfig.characters[mfNum]||{};
+    // 跨過門檻自動升級成專屬袋；但絕不把使用者已設的 dedicated 降級
+    const bagType=(prev.bagType==='dedicated'||predictedScale>=5)?'dedicated':'shared';
+    slotConfig.characters[mfNum]={
+      enabled:prev.enabled!==undefined?prev.enabled:true,
+      name:mf.name,minifigNum:mfNum,imgUrl:mf.imgUrl,
+      partNums:mf.partNums,predictedScale:predictedScale,bagType:bagType
+    };
+    summaries.push({name:mf.name,scale:predictedScale,bag:bagType});
+  }
+  // 3) 快取 + 寫回 Firebase 設定
+  try{localStorage.setItem('bricksort_scanned_minifigs',JSON.stringify(window._scannedMinifigs))}catch(e){}
+  try{markDirty('__config__');await db.collection(FB_COL).doc(FB_CONFIG_DOC).set({characters:slotConfig.characters||{}},{merge:true})}catch(e){}
+  // 4) 回報預估結果
+  summaries.sort((a,b)=>b.scale-a.scale);
+  const ded=summaries.filter(s=>s.bag==='dedicated');
+  let msg=`🛒 ${setNum}：統整 ${summaries.length} 個角色`;
+  if(ded.length)msg+=`\n專屬袋(預估≥5)：`+ded.slice(0,6).map(s=>`${s.name}×${s.scale}`).join('、');
+  else msg+=`\n（都 <5，先走共用/類型收納）`;
+  showToast(msg,'',6000);
+  if(typeof renderCharactersPage==='function'){try{renderCharactersPage()}catch(e){}}
+}
+
 function renderCharactersList(){
   const el=document.getElementById('char-list-container');
   if(!el)return;
