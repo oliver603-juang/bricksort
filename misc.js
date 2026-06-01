@@ -174,15 +174,20 @@ function renderCharactersPage(){
       <button class="btn" style="width:100%;font-size:12px" onclick="clearAllCharacterTags()">🗑 清除所有標籤</button>
     </div>
     <div id="char-list-container"></div>`;
-  // [修復] 掃描明細快取遺失但已有啟用角色 → 從 slotConfig.characters 重建，避免清單空白、不必重掃
-  if(scannedCount===0 && savedCount>0){
-    const rebuilt={};
-    Object.values(savedChars).forEach(c=>{
-      const num=c.minifigNum||c.id;
-      if(!num)return;
-      rebuilt[num]={minifigNum:num,name:c.name||num,imgUrl:c.imgUrl||'',setIds:c.setIds||[],partNums:c.partNums||[],dbPartCount:(c.partNums?c.partNums.length:0)};
-    });
-    window._scannedMinifigs=rebuilt;
+  // [修復v2] 掃描明細為空時：先從 localStorage 救回完整掃描結果（含零件組成），
+  //          只有 localStorage 也沒有時，才退而從 slotConfig.characters 重建（空殼，僅供顯示勾選）
+  if(scannedCount===0){
+    let restored=false;
+    try{ restored=loadCachedScan(); }catch(e){}
+    if(!restored && savedCount>0){
+      const rebuilt={};
+      Object.values(savedChars).forEach(c=>{
+        const num=c.minifigNum||c.id;
+        if(!num)return;
+        rebuilt[num]={minifigNum:num,name:c.name||num,imgUrl:c.imgUrl||'',setIds:c.setIds||[],partNums:c.partNums||[],dbPartCount:(c.partNums?c.partNums.length:0)};
+      });
+      window._scannedMinifigs=rebuilt;
+    }
   }
   if(Object.keys(window._scannedMinifigs).length>0) renderCharactersList();
 }
