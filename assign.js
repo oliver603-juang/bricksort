@@ -267,10 +267,23 @@ function removeOverflowBag(bag){
 function editPickupSlot(currentSlot){
   if(!currentItem)return;
   const i=currentItem;
-  const val=prompt('修改取用點位置\n\n目前：'+currentSlot+'\n\n請輸入新位置（例：125a 半格、125 整格、L05 大抽屜）：',currentSlot);
+  const val=prompt('修改取用點位置\n\n目前：'+currentSlot+'（'+(i.pickupQty||0)+' 件）\n\n輸入新位置（例：125a 半格、125 整格、L05 大抽屜）\n或【清空欄位後按確定】＝刪除取用點、件數併回主位 '+(i.slot||'')+'：',currentSlot);
   if(val===null)return; // 使用者取消
   const slot=val.trim();
-  if(!slot){showToast('位置不可空白','error');return}
+  if(!slot){
+    // 清空＝刪除取用點：件數併回主位（總量不變，主位=總量-溢位；取用三欄一起清，避免孤兒）
+    const moveQty=i.pickupQty||0;
+    if(!confirm('刪除取用點 '+currentSlot+'？\n\n會把 '+moveQty+' 件併回主位 '+(i.slot||'')+'（總量不變，主位顯示 +'+moveQty+' 件）。\n\n注意：實體上請把這 '+moveQty+' 件從 '+currentSlot+' 拿出、放進 '+(i.slot||'')+'。'))return;
+    i.pickupSlot='';
+    i.pickupType='';
+    i.pickupQty=0;
+    if(Array.isArray(i.locations))i.locations=i.locations.filter(l=>l.role!=='pickup'); // 保險：新模型若有也清掉
+    i.updatedAt=Date.now();
+    markDirty(i.id);
+    populateModal(i);
+    showToast('🗑 已刪除取用點，'+moveQty+' 件併回主位 '+(i.slot||''));
+    return;
+  }
   // 驗證格式並判斷 pickupType
   let pickupType='small';
   if(/^L\d+$/i.test(slot)){
