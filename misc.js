@@ -276,7 +276,7 @@ async function scanCharactersFromSets(){
       minifigNum:mf.minifigNum,
       imgUrl:mf.imgUrl,
       partNums:mf.partNums,
-      bagType:mf.dbPartCount>=5?'dedicated':'shared'
+      bagType:decideBagType(mf.name,null)
     };
     autoEnabled++;
   });
@@ -290,6 +290,35 @@ function loadCachedScan(){
     if(cached){window._scannedMinifigs=JSON.parse(cached);return true}
   }catch(e){}
   return false;
+}
+
+// ===== 角色專屬袋判定：白名單 + 跨盒 recurrence =====
+// 規則：只有「白名單角色」且「橫跨 ≥ CHAR_DEDICATED_MIN_SETS 個擁有的套件」才開專屬袋；
+// 其餘一律走共用/類型收納。避免單盒人偶(~5件)各自開袋造成碎片化。
+// 白名單可隨時擴充（跨主題就把角色名加進來）。
+const CHAR_DEDICATED_MIN_SETS=5;
+const CHAR_WHITELIST=['Lloyd','Kai','Zane','Jay','Cole','Nya','Wu','Arin','Sora','Mateo','Zoey','Wyldfyre','Ras','Garmadon','Pythor','Warden','Grimspawn','Enderman'];
+// 把人偶名歸併到白名單角色 key（變體共用同一 key）；非白名單回 null
+function charKeyOf(name){
+  const n=(name||'').toLowerCase();
+  for(let i=0;i<CHAR_WHITELIST.length;i++){
+    const w=CHAR_WHITELIST[i].toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    if(new RegExp('\\b'+w+'\\b').test(n))return CHAR_WHITELIST[i];
+  }
+  return null;
+}
+// 此角色橫跨幾個「擁有的套件」（聯集所有變體的 setIds）
+function characterSetSpread(key){
+  if(!key)return 0;
+  const sets=new Set(),all=window._scannedMinifigs||{};
+  Object.keys(all).forEach(k=>{const m=all[k];if(charKeyOf(m&&m.name)===key)(m.setIds||[]).forEach(s=>sets.add(s));});
+  return sets.size;
+}
+// 決定 bagType：尊重使用者手動設定(userSet)；否則白名單且跨盒達標才 dedicated
+function decideBagType(name,prev){
+  if(prev&&prev.userSet)return prev.bagType||'shared';
+  const key=charKeyOf(name);
+  return (key&&characterSetSpread(key)>=CHAR_DEDICATED_MIN_SETS)?'dedicated':'shared';
 }
 
 // 🛒 新購入套件後的角色統整（增量，不必重掃全部套件）
@@ -328,28 +357,28 @@ async function integrateSetCharacters(setNum){
     // 已建檔數（參考用）
     const lcSet=new Set((mf.partNums||[]).map(p=>p.toLowerCase()));
     mf.dbPartCount=allItems.filter(it=>lcSet.has((it.designId||'').toLowerCase())||(it.altIds||[]).some(a=>lcSet.has((a||'').toLowerCase()))).length;
-    // 預估規模（set-based）
-    const predictedScale=(mf.setIds.length||1)*((mf.partNums||[]).length||0);
-    mf.predictedScale=predictedScale;
     const prev=slotConfig.characters[mfNum]||{};
-    // 跨過門檻自動升級成專屬袋；但絕不把使用者已設的 dedicated 降級
-    const bagType=(prev.bagType==='dedicated'||predictedScale>=5)?'dedicated':'shared';
+    const charKey=charKeyOf(mf.name);
+    const spread=characterSetSpread(charKey);            // 橫跨幾個擁有的套件
+    const bagType=decideBagType(mf.name,prev);           // 白名單 + 跨≥N盒 才 dedicated
+    mf.predictedScale=(mf.setIds.length||1)*((mf.partNums||[]).length||0); // 仍存著供參考
     slotConfig.characters[mfNum]={
       enabled:prev.enabled!==undefined?prev.enabled:true,
       name:mf.name,minifigNum:mfNum,imgUrl:mf.imgUrl,
-      partNums:mf.partNums,predictedScale:predictedScale,bagType:bagType
+      partNums:mf.partNums,charKey:charKey||'',setSpread:spread,
+      bagType:bagType,userSet:prev.userSet||false
     };
-    summaries.push({name:mf.name,scale:predictedScale,bag:bagType});
+    summaries.push({name:mf.name,key:charKey||'(非白名單)',spread:spread,bag:bagType});
   }
   // 3) 快取 + 寫回 Firebase 設定
   try{localStorage.setItem('bricksort_scanned_minifigs',JSON.stringify(window._scannedMinifigs))}catch(e){}
   try{markDirty('__config__');await db.collection(FB_COL).doc(FB_CONFIG_DOC).set({characters:slotConfig.characters||{}},{merge:true})}catch(e){}
   // 4) 回報預估結果
-  summaries.sort((a,b)=>b.scale-a.scale);
+  summaries.sort((a,b)=>b.spread-a.spread);
   const ded=summaries.filter(s=>s.bag==='dedicated');
   let msg=`🛒 ${setNum}：統整 ${summaries.length} 個角色`;
-  if(ded.length)msg+=`\n專屬袋(預估≥5)：`+ded.slice(0,6).map(s=>`${s.name}×${s.scale}`).join('、');
-  else msg+=`\n（都 <5，先走共用/類型收納）`;
+  if(ded.length)msg+=`\n專屬袋(白名單且跨≥${CHAR_DEDICATED_MIN_SETS}盒)：`+ded.slice(0,6).map(s=>`${s.name}(${s.spread}盒)`).join('、');
+  else msg+=`\n（無人達標，全走共用/類型收納）`;
   showToast(msg,'',6000);
   if(typeof renderCharactersPage==='function'){try{renderCharactersPage()}catch(e){}}
 }
@@ -424,7 +453,7 @@ function toggleCharacter(mfNum,enabled){
       minifigNum:mfNum,
       imgUrl:mf.imgUrl,
       partNums:mf.partNums,
-      bagType:existing.bagType||(mf.dbPartCount>=5?'dedicated':'shared')
+      bagType:existing.bagType||decideBagType(mf.name,existing)
     };
   }else{
     if(slotConfig.characters[mfNum])slotConfig.characters[mfNum].enabled=false;
@@ -439,6 +468,7 @@ function setCharacterBagType(mfNum,type){
     slotConfig.characters[mfNum]={enabled:false,name:mf.name,minifigNum:mfNum,imgUrl:mf.imgUrl,partNums:mf.partNums};
   }
   slotConfig.characters[mfNum].bagType=type;
+  slotConfig.characters[mfNum].userSet=true;
   renderCharactersList();
 }
 
@@ -453,7 +483,7 @@ function selectAllCharacters(enabled){
         minifigNum:mf.minifigNum,
         imgUrl:mf.imgUrl,
         partNums:mf.partNums,
-        bagType:mf.dbPartCount>=5?'dedicated':'shared'
+        bagType:decideBagType(mf.name,null)
       };
     }else{
       slotConfig.characters[mf.minifigNum].enabled=enabled;
