@@ -510,6 +510,7 @@ async function cameraRecognize(base64,imgSrc){
   setProcessingMsg('🔍 Brickognize 辨識中…');
   const bkResult=await brickognizePredict(base64);
   if(bkResult&&bkResult.score>=40){
+    window._bkWeakMatch=false;
     let match=null;let matchType='';
     const bkId=bkResult.id||'';const bkName=(bkResult.name||'').toLowerCase();const baseId=getBaseDesignId(bkId);const numBase=getNumericBase(bkId);
     if(bkId){match=allItems.find(i=>(i.designId||'').toLowerCase()===bkId.toLowerCase());if(match)matchType='exact'}
@@ -524,10 +525,21 @@ async function cameraRecognize(base64,imgSrc){
       const moldMatch=window._bsKeepFullId?null:await findByMoldVariant(bkId);
       if(moldMatch){if(moldMatch._altIdMatch){match=moldMatch;matchType='mold-variant';delete moldMatch._altIdMatch}else{const newImg=currentImageData||bkResult.imgUrl||'';const yes=await showVariantConfirm(bkId,bkResult.name,newImg,moldMatch);if(yes){match=moldMatch;matchType='mold-variant'}}}
     }
-    if(!match&&bkName.length>=3){const found=allItems.find(i=>i.brickognizeName&&i.brickognizeName.toLowerCase()===bkName);if(found){match=found;matchType='bk-name'}}
-    if(!match&&bkName.length>=5){const found=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(bkName)||bkName.includes(n))});if(found){match=found;matchType='name-fuzzy'}}
+    if(!match&&bkName.length>=3){const found=allItems.find(i=>i.brickognizeName&&i.brickognizeName.toLowerCase()===bkName);if(found){match=found;matchType='bk-name';window._bkWeakMatch=true}}
+    if(!match&&bkName.length>=5){const found=allItems.find(i=>{const n=(i.name||'').toLowerCase();return n.length>=5&&(n.includes(bkName)||bkName.includes(n))});if(found){match=found;matchType='name-fuzzy';window._bkWeakMatch=true}}
     if(match){
-      setProcessingMsg('✓ '+bkResult.name+' → '+match.slot);
+      // [把關 方案3+4] BK 命中既有件 → 先請使用者確認，避免誤把非原廠件當原廠靜默套用。
+      // 名稱類命中(bk-name/name-fuzzy)最不可靠，措辭更謹慎。
+      const _weak=window._bkWeakMatch||(matchType==='bk-name'||matchType==='name-fuzzy');
+      const _how=matchType==='exact'?'ID 精確':matchType==='print-variant'?'印刷變體':matchType==='variant-confirmed'?'變體':matchType==='mold-variant'?'模具變體':matchType==='bk-name'?'名稱相同':'名稱相似';
+      const _msg=_weak
+        ? ('⚠ Brickognize 以「'+_how+'」推測這是「'+(match.nameCN||match.name)+'」('+(match.designId||'')+'，信心 '+bkResult.score+'%)。\n\n名稱相似不代表同一零件，這顆可能是非原廠/自訂件。\n\n「確定」＝就是這顆原廠件，套用既有位置 '+match.slot+'\n「取消」＝不是，轉為非原廠/自訂建檔')
+        : ('Brickognize 辨識為「'+(match.nameCN||match.name)+'」('+(match.designId||'')+'，'+_how+'，信心 '+bkResult.score+'%)，已在 '+match.slot+'。\n\n確認是同一顆原廠零件？\n\n「確定」＝套用此位置\n「取消」＝不是，轉為非原廠/自訂建檔');
+      if(!window.confirm(_msg)){
+        match=null; window._forceCustomFromBK=true;
+      }
+    }
+    if(match){
       const thumbnailUrl=match.thumbnailUrl||bkResult.imgUrl||(bkId?'https://cdn.rebrickable.com/media/parts/ldraw/7/'+baseId+'.png':'');
       pendingPart={design_id:bkId||match.designId,name:match.name||bkResult.name,name_cn:match.nameCN||'',designId:bkId||match.designId,slot:match.slot,slotType:match.slotType||'small',thumbnailUrl,estimateVolumeMl:match.estimateVolumeMl||0,featureTags:match.featureTags||[],bricklinkCategory:match.bricklinkCategory||'',description:match.description||'',imageData:currentImageData||'',isUpdate:true,matchedId:match.id,_brickognize:{score:bkResult.score,id:bkId,name:bkResult.name}};
       document.getElementById('result-img').src=thumbnailUrl||currentImageData||'';
@@ -566,6 +578,12 @@ async function cameraRecognize(base64,imgSrc){
     }
     // Brickognize matched but NOT in DB → auto-register with Gemini enrichment
     // [把關] BK 高信心但庫存無此件 → 先請使用者確認，避免「認錯零件靜默建錯檔」
+    if(window._forceCustomFromBK){
+      // 使用者剛在「BK 命中既有件」確認框按了取消 → 直接轉非原廠建檔，不再問是不是樂高
+      window._forceCustomFromBK=false; window._forceCustomBuild=true;
+      try{await cameraRecognize(base64,imgSrc)}catch(e){showTab('main');showToast('建檔失敗：'+e.message,'error')}
+      return;
+    }
     if(window._procTimer){clearInterval(window._procTimer);window._procTimer=null}
     const _bkConfirm=window.confirm('Brickognize 辨識為「'+(bkResult.name||'')+'」('+bkId+'，信心 '+bkResult.score+'%)。\n\n庫存中尚無此件。確認這是正確的樂高零件並直接建檔？\n\n（若辨識錯誤或這不是樂高零件，請按「取消」，將轉為自訂/非原廠建檔）');
     if(!_bkConfirm){
