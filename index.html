@@ -1,1451 +1,1355 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
-<head>
+<html lang="zh-TW"><head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>StoreSmart 智慧收納</title>
-<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABCGlDQ1BJQ0MgUHJvZmlsZQAAeJxjYGA8wQAELAYMDLl5JUVB7k4KEZFRCuwPGBiBEAwSk4sLGHADoKpv1yBqL+viUYcLcKakFicD6Q9ArFIEtBxopAiQLZIOYWuA2EkQtg2IXV5SUAJkB4DYRSFBzkB2CpCtkY7ETkJiJxcUgdT3ANk2uTmlyQh3M/Ck5oUGA2kOIJZhKGYIYnBncAL5H6IkfxEDg8VXBgbmCQixpJkMDNtbGRgkbiHEVBYwMPC3MDBsO48QQ4RJQWJRIliIBYiZ0tIYGD4tZ2DgjWRgEL7AwMAVDQsIHG5TALvNnSEfCNMZchhSgSKeDHkMyQx6QJYRgwGDIYMZAKbWPz9HbOBQAAAIKklEQVR4nLWXa3BU5RnHf+97ztnd7CbZJJAEAowBkshNg5FGbgkSFJhSFJVS0V6mTpkOMzrV6vSL08uM7YyjndEPth/6QWvFW4uVOq2SiBJCIhcDVAQiQuQWQhJy2d1kN7vn8r79sEtgiQo60+fj2fec5//+n+f/f54VgOZ6Q4CUEgDlqayfpJF5rtQ3+SLiegAIKRBCZCUN5oWoWVULQnCwcR+JWDwLjNYara6N5CsBCCEQUoz7UFXtHJZuWM5td9eRV5AHwEhkhL3bWvhoazOf7Ts6DrhWGq2/HMw4AFJKENkUF08rpXbtEuo2NFBePZO+s320/qOZfdtaQMNt6+pY9uBKwhPzOd9xhpY3P2T/v1u5eLb3KlZAq+zSCUBfuu2VSQPBADctr6H+/juoXlGD1nBg+35a3thB78lzVM6bxsqNdQA0vrqLtQ/fy2DUZvDiMEvXLwOtOPzBQVre2MHhnQdJJpLZYDKsjGNgRnUFS9YvZ+G6OiZMLebkoRM0b3mfjt3/paAgh7q7FlB/90KmVE7GdVxAIKVAK8Xedw+w5Y/biMVsZi2t5vYH76TilkoGuvvZvXUXbVt3cu5I59WlFrqgpJAFaxZT/4MVVCy4kUjfEG1v7WLftt2kYjFq6mbTsGEps2ur8AUsEsMJUkkHcRX8YH4QARzbd4IP/97Kod0dWHl5LLynjsX31kNePp+3f0b7P5v5tHEPsYsRRGHJBP3UjucoKpvAoaZ2dr7axNlPT1JeOYmG7y+mduUtFJaGSY2mGB1JopVOS06IcbVUmfrmhAL4g36GeqN83HSID7d+xOnPe5g0ZyYL1jcwt+FWYj2DPLfuCURhaZFu+NFq2t/bgyUUy+9bxOofLqe8YhoaTSKZwHVchJRpZWTnHRdak1GOwrRMgoEcBJIzned4b0szTW/uwdFw05217H3z/eweeP3IC+SGQ/zpyZeJDsUQIl3fa2b9GjQqI+FwQR6bnvoJp7ttfrno52NHTCHI3E4iBLTvOkzLK+2s/e5aUqkk4tsmv4IRx3NoeqeJBXfWUFQ1C2kaGXAKE9KalzJ9OBgKYOUanOk7heM4CNIAhBAguC53G0tOpjdQ+EMWgVAgLT+VLhGCNIBLIQR4SuGz/EwpnYKdsscSO46D63nkBALfLLsGVzmcOnUK5alx1TTHvac0Q4MRotEoyVQyTZXWzKqYxZSyqTS37cRTXoaZa7ChLzvgUDSaadBsFscACCmID49SefN0Nj/7AC8/s5WJwUkUF0/EcRz6owNoCUk7ibrS17X+UhhaayzLYqC3j/7RXh59/qdUVU/nbJ9HIOQnGU9mAzAMSTA3wLSqMjY9sZHWd9qpKriJ8hk3kEgkcD0X1/VY9J3FWYkMaWBZJlpnBpgQGT/QmJbFZx3H6YweY8Mja+jtilA6o4RbVy+i7a2dSGlgXrqMnXJ47rEXcVQKn+Xj+Kdn6DL7ud2opzBciFIKIQSJ0Tj60g1Niws93Rw8chhDGtjJBLbjkJ+fT8r1qCgvJxwMk7IdIhdjSCmI9g5x6pMTGZYUEsBnGvx2/ULOHzjD048/z9TcudxRFmJukeJ09wUCfv/YjYWQSJE2pYDfT2dXN9UFNjfIAe57YCMv/u1FGOln7WRB56lOpDQQpHvB8JlE+iJ0n+waK5OE9AheNncaVtCH6zNxLIOqsjCzyibg6q/2AQF4WjD/hhJmTioi4ULCBZ/lp76yDNPyjW9KU2Ja1tgjCeB6HoZhsmZeGc9svh/7aDP11VUMxOIY1zAiKWBgOM6Km2fyxfZXeOHRH/O9eWXYSuNdNfsvgbhyOTHTVEDIb/LCzxpwPFCATCX5S+MBpHUZgBQiLW8hINN0hiFJOR73zJ9Gw+xJmFISkIJ/tX0+xtLXxZgKYkmX8wNxhhNJpGmQKwWu0lkfSNo2Ugg8z0Oj8JkWjuvieJq+kRR90ThoRUEwh7jjXSN1FgOaTX9uxPEUOaEQqZSNqT36YiPULDAwTYv9h3bR030Gx9NYPj9Ka5STwnVd3hOaj559FyUNLNMilUygPA8rXHzNjTe9SwvBY8srCeblceSLc6zf9DCLi32svnEywykHy5D0XBzkybvmM6c0SOOOD3jplS3cWurjocUVrF8yh9tmFPDIr39P6ydHyc/N4fGVs/GuY2yYABXFYeaXl9C/vYPNj/yCtj17WVtUSF88iZdpGCElRXk5CGnym6f+wMhInPycILl+E2mY+AvDvPraaxw80I5tO5Tk53zlJjyOgdllBcwoCfPkqrmEj/6H+yYluKe2kqF4MqOC9AI5arv87v4lzHeOsyzYza/uXUQ8aRMZSbJpVQ3rykaZPvAxTz+wBIRI7wJag05PXOWpcVuxCbDj2HkuRBJsbpiDYi6uVvhSaefzWT4CgQCWaeIzDVYsrGTFLdPJuABvt3VgIJg3awrzykvAMEAo3t6+H9M08fl8GJZBXkEIxxPk5I5mdg+BRqcBxFM2TUdOc7Srn6TjgYB8KekaHGbQOc+x4x1EohEOdnYzcdcRIvH0ohK2DE5cGGAESWPrUfpjowgpCJkG+0/2MBQZ4mzXWQaig7S++zGuEnR+EcN17DEGhGmaeurkqbgKlL4sOw1YhkSgUEpjGBLX03hXjNLLZ8D2VJZkpZRYUqB0mknXdtEaPOVi+kyU1vT29WDmhfJ4aONDBANBlMrW7qVUgjRdArL2Q8FlVxMZk7r8cvaYlkLgeh79kQEQkLJTvPz6XzGTqVFa9rRgmuZ1de23DSEEtmuTTKUyYFxsx76+f8f/z/gfXIzJaopAkfwAAAAASUVORK5CYII=">
-<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/firebase@9.22.0/firebase-app-compat.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/firebase@9.22.0/firebase-firestore-compat.min.js"></script>
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
+<meta name="theme-color" content="#605b4d">
+<title>BrickSort</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/firebase@9.22.0/firebase-app-compat.min.js"></script><script src="https://cdn.jsdelivr.net/npm/firebase@9.22.0/firebase-firestore-compat.min.js"></script>
 <style>
-:root { --bg:#0d0d0d; --surface:#161616; --card:#1e1e1e; --border:#2a2a2a; --accent:#f59e0b; --accent-bg:rgba(245,158,11,0.12); --accent-dim:rgba(245,158,11,0.06); --text:#e8e8e8; --muted:#777; --dim:#444; --green:#22c55e; --green-bg:rgba(34,197,94,0.12); --blue:#3b82f6; --blue-bg:rgba(59,130,246,0.12); --red:#ef4444; --red-bg:rgba(239,68,68,0.12); --mono:'JetBrains Mono',monospace; --sans:'Noto Sans TC',sans-serif; }
+:root{--bg:#0a0a0a;--surface:#131313;--card:#1a1a1a;--border:#262626;--accent:#f7c948;--accent-bg:rgba(247,201,72,.12);--accent-dim:rgba(247,201,72,.06);--text:#e8e8e8;--muted:#777;--dim:#444;--green:#22c55e;--green-bg:rgba(34,197,94,.12);--blue:#3b82f6;--blue-bg:rgba(59,130,246,.12);--red:#ef4444;--red-bg:rgba(239,68,68,.12);--orange:#f97316;--orange-bg:rgba(249,115,22,.12);--purple:#a78bfa;--purple-bg:rgba(167,139,250,.1);--mono:'JetBrains Mono',monospace;--sans:'Noto Sans TC',sans-serif;--radius:10px}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden;font-size:15px}
-.screen{display:none;flex-direction:column;min-height:100vh}
-.screen.active{display:flex}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;font-size:15px;overflow-x:hidden}
 
-/* HEADER & BUTTONS */
-.header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
-.header-title{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--accent);letter-spacing:0.05em}
-.back-btn{background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:4px 0;font-family:var(--sans)}
-.back-btn:hover{color:var(--text)}
-.header-actions{display:flex;gap:8px}
-.icon-btn{background:none;border:1px solid var(--border);color:var(--muted);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
-.icon-btn:hover{border-color:var(--accent);color:var(--accent)}
-.btn-primary{width:100%;background:var(--accent);color:#0d0d0d;border:none;padding:14px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--sans);margin-top:8px;transition:opacity .15s}
-.btn-primary:hover{opacity:.9}
-.btn-primary:active{opacity:.7}
-.btn-ghost{width:100%;background:none;border:1px solid var(--border);color:var(--muted);padding:12px;border-radius:10px;font-size:14px;cursor:pointer;font-family:var(--sans);margin-top:8px}
-.btn-ghost:hover{border-color:var(--text);color:var(--text)}
-.btn-sm{background:var(--card);border:1px solid var(--border);color:var(--text);padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-family:var(--sans)}
-.btn-sm:hover{border-color:var(--accent)}
-.btn-danger{background:var(--red-bg);border:1px solid var(--red);color:var(--red);padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer}
+.header{position:sticky;top:0;z-index:10;background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px}
+.header-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.header h1{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent);white-space:nowrap}
+.header-actions{display:flex;gap:6px;align-items:center}
+.nav-tabs{display:flex;gap:0;margin-top:8px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.nav-tab{flex-shrink:0;padding:6px 12px;font-size:11px;font-weight:600;color:var(--dim);border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;text-align:center;transition:.15s}
+.nav-tab:hover{color:var(--muted)}
+.nav-tab.active{color:var(--accent);border-color:var(--accent)}
 
-/* SETUP SCREEN */
-#s-setup{background:var(--bg)}
-.setup-container{max-width:440px;margin:0 auto;padding:40px 20px}
-.logo-block{text-align:center;margin-bottom:36px}
-.logo-icon{font-size:48px;color:var(--accent);margin-bottom:12px}
-.logo-block h1{font-family:var(--mono);font-size:26px;font-weight:700;color:var(--text)}
-.logo-sub{color:var(--muted);font-size:14px;margin-top:4px}
-.setup-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px}
-.setup-card h3{font-size:15px;font-weight:700;margin-bottom:20px;color:var(--text)}
-.setup-card label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;margin-top:14px;font-family:var(--mono);letter-spacing:.04em}
-.setup-card input{width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:14px;font-family:var(--mono);outline:none}
-.setup-card input:focus{border-color:var(--accent)}
-.req{background:var(--accent-bg);color:var(--accent);font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;font-family:var(--sans)}
-.divider{display:flex;align-items:center;gap:10px;margin:20px 0 4px;color:var(--muted);font-size:12px}
-.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
-.opt-label{font-size:11px;color:var(--dim);text-align:center;margin-top:14px}
+.btn{border:1px solid var(--border);background:var(--card);color:var(--text);padding:7px 14px;border-radius:8px;font-size:13px;cursor:pointer;font-family:var(--sans);transition:.15s;white-space:nowrap}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+.btn-primary{background:var(--accent);color:#0a0a0a;border-color:var(--accent);font-weight:700}
+.btn-primary:hover{opacity:.85}
+.btn-danger{background:var(--red-bg);border-color:var(--red);color:var(--red)}
+.btn-warn{background:var(--orange-bg);border-color:var(--orange);color:var(--orange)}
+.btn-green{background:var(--green-bg);border-color:var(--green);color:var(--green)}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-lg{padding:14px 28px;font-size:15px;border-radius:12px}
 
-/* MAIN SCREEN */
-.main-content{flex:1;overflow-y:auto;padding:0 0 80px}
-.scan-section{padding:24px 20px 16px}
-.scan-btn{width:100%;background:var(--accent-dim);border:2px dashed var(--accent);border-radius:16px;padding:36px 20px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;transition:background .15s;color:var(--text)}
-.scan-btn:active{background:var(--accent-bg)}
-.scan-icon{font-size:40px;color:var(--accent)}
-.scan-btn>span:first-of-type{font-size:16px;font-weight:700}
-.scan-sub{font-size:12px;color:var(--muted)}
-.search-section{padding:0 20px 16px}
-.search-bar{display:flex;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:0 14px;gap:8px}
-.search-bar input{flex:1;background:none;border:none;color:var(--text);padding:12px 0;font-size:14px;outline:none;font-family:var(--sans)}
-.search-icon{color:var(--muted);font-size:16px}
-.stats-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:0 20px 16px}
-.stat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
-.stat-num{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--accent)}
-.stat-label{font-size:11px;color:var(--muted);margin-top:2px}
-.section-header{padding:4px 20px 10px;font-size:12px;font-family:var(--mono);color:var(--muted);letter-spacing:.06em}
+.screen{display:none;flex-direction:column;min-height:calc(100vh - 80px)}.screen.active{display:flex}
+.content{padding:12px 16px 100px}
 
-/* ITEM LIST */
-.item-list{padding:0 20px}
-.padded{padding:16px 20px}
-.item-row{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:13px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:border-color .15s}
+.stats-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px;margin-bottom:12px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center}
+.stat-num{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent)}
+.stat-label{font-size:10px;color:var(--muted);margin-top:2px}
+
+.mode-tabs{display:flex;gap:8px;margin-bottom:12px}
+.mode-tab{flex:1;padding:12px;border-radius:10px;text-align:center;cursor:pointer;font-size:14px;font-weight:700;border:2px solid var(--border);color:var(--muted);background:var(--card);transition:.15s}
+.mode-tab.active{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+
+.input-group{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px}
+.input-group label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+.input-row{display:flex;gap:8px;align-items:center}
+.input-row input{flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:6px;font-size:14px;font-family:var(--mono);outline:none}
+.input-row input:focus{border-color:var(--accent)}
+
+.search-bar{display:flex;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:0 12px;gap:8px;margin-bottom:10px}
+.search-bar input{flex:1;background:none;border:none;color:var(--text);padding:12px 0;font-size:14px;outline:none}
+.search-bar button{background:var(--accent);color:#0a0a0a;border:none;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer}
+
+/* Table */
+.tbl-wrap{overflow-x:auto;margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{position:sticky;top:0;background:var(--surface);color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;padding:10px 6px;text-align:left;border-bottom:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap}
+th:hover{color:var(--accent)}
+td{padding:6px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr{cursor:pointer;transition:.1s}
+tr:hover{background:var(--accent-bg)}
+.thumb{width:40px;height:40px;border-radius:6px;object-fit:cover;background:var(--surface)}
+.mono{font-family:var(--mono)}
+.tag{display:inline-block;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:10px;padding:2px 6px;border-radius:4px;margin:1px}
+.slot-badge{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:4px;font-weight:700}
+.slot-small{background:var(--blue-bg);color:var(--blue)}
+.slot-large{background:var(--orange-bg);color:var(--orange)}
+.slot-bag{background:var(--green-bg);color:var(--green)}
+.slot-box{background:var(--red-bg);color:var(--red)}
+.overflow-tag{background:var(--purple-bg);color:var(--purple);font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px;margin-left:4px}
+
+/* Drawer map */
+.drawer-grid{display:grid;gap:4px;padding:0}
+.drawer-cell{background:var(--card);border:1px solid var(--border);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:var(--muted);cursor:pointer;padding:2px 0;min-height:48px;transition:.15s}
+.drawer-cell:hover{border-color:var(--accent)}
+.drawer-cell.has-items{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+
+/* Item list */
+.item-list{padding:0}
+.item-row{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:.15s}
 .item-row:hover{border-color:var(--accent)}
-.item-thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;background:var(--surface);flex-shrink:0}
-.item-thumb-placeholder{width:44px;height:44px;border-radius:8px;background:var(--surface);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--dim)}
+.item-thumb{width:40px;height:40px;border-radius:8px;object-fit:cover;background:var(--surface);flex-shrink:0}
 .item-info{flex:1;min-width:0}
-.item-name{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.item-meta{display:flex;align-items:center;gap:6px;margin-top:3px}
-.item-loc{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700}
-.item-cat{font-size:11px;color:var(--muted)}
-.empty-state{text-align:center;padding:48px 20px;color:var(--muted);font-size:14px}
-.empty-icon{font-size:36px;margin-bottom:12px;color:var(--dim)}
+.item-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item-meta{display:flex;align-items:center;gap:6px;margin-top:2px;font-size:11px;color:var(--muted)}
 
-/* PROCESSING SCREEN */
-#s-processing{background:var(--bg);justify-content:center;align-items:center}
-.processing-container{text-align:center;padding:40px}
-.spinner{width:48px;height:48px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 20px}
-@keyframes spin{to{transform:rotate(360deg)}}
-#processing-msg{color:var(--muted);font-size:14px;font-family:var(--mono)}
+/* Modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.open{opacity:1;pointer-events:auto}
+.modal{background:var(--card);border-radius:20px 20px 0 0;padding:0;width:100%;max-width:540px;max-height:88vh;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .25s}
+.overlay.open .modal{transform:translateY(0)}
+.modal-drag{width:36px;height:4px;background:var(--border);border-radius:2px;margin:12px auto 0}
+.modal-head{padding:16px 20px 0;display:flex;gap:12px;align-items:center}
+.modal-head img{width:72px;height:72px;border-radius:10px;object-fit:cover;background:var(--surface);flex-shrink:0}
+.modal-head-info{flex:1;min-width:0}
+.modal-head-info h2{font-size:17px;font-weight:700;word-break:break-word}
+.modal-head-info .sub{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
+.modal-body{flex:1;overflow-y:auto;padding:16px 20px 20px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:4px;text-transform:uppercase}
+.field input,.field textarea,.field select{width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:8px;font-size:14px;font-family:var(--sans);outline:none}
+.field input:focus,.field textarea:focus{border-color:var(--accent)}
+.field textarea{resize:vertical;min-height:60px}
+.dim-row{display:flex;gap:6px;align-items:center}
+.dim-row input{flex:1;text-align:center;font-family:var(--mono)}
+.dim-row span{color:var(--muted);font-size:14px}
+.vol-display{background:var(--accent-bg);border:1px solid rgba(247,201,72,.25);border-radius:10px;padding:12px;text-align:center;margin-bottom:14px;font-family:var(--mono);font-size:13px;color:var(--accent)}
+.vol-display b{font-size:20px}
+.link-row{display:flex;gap:8px;align-items:center;margin-bottom:14px}
+.link-row a{font-size:13px;white-space:nowrap;color:var(--accent)}
+.modal-footer{padding:12px 20px 20px;display:flex;gap:8px;border-top:1px solid var(--border);flex-wrap:wrap}
+.modal-footer .btn{flex:1;padding:12px;font-size:14px;text-align:center;min-width:80px}
+.overflow-warn{background:var(--orange-bg);border:1px solid var(--orange);border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px;color:var(--orange)}
+.overflow-info{background:var(--purple-bg);border:1px solid var(--purple);border-radius:10px;padding:10px;margin-bottom:14px;font-size:12px;color:var(--purple);font-family:var(--mono)}
+.paste-hint{font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer}
+.paste-hint:hover{color:var(--accent)}
 
-/* RESULT SCREEN */
-.result-content{flex:1;overflow-y:auto;padding:20px}
-.result-image-wrap{width:100%;max-height:200px;border-radius:12px;overflow:hidden;background:var(--card);margin-bottom:16px;border:1px solid var(--border)}
-.result-image-wrap img{width:100%;height:200px;object-fit:cover}
-.result-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
-.result-name-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
-.result-name{font-size:18px;font-weight:700;flex:1}
-.category-badge{font-size:11px;padding:3px 8px;border-radius:5px;background:var(--blue-bg);color:var(--blue);white-space:nowrap;margin-top:3px;flex-shrink:0}
-.result-desc{font-size:13px;color:var(--muted);line-height:1.5}
-.match-banner{background:var(--green-bg);border:1px solid var(--green);border-radius:10px;padding:12px 14px;margin-bottom:12px}
-.match-banner-title{font-size:13px;font-weight:700;color:var(--green);margin-bottom:4px}
-.match-banner-sub{font-size:12px;color:var(--muted)}
-.location-display{background:var(--accent-dim);border:2px solid var(--accent);border-radius:14px;padding:20px;margin-bottom:20px;text-align:center}
-.location-label{font-size:12px;color:var(--accent);font-family:var(--mono);letter-spacing:.06em;margin-bottom:10px}
-.location-main{display:flex;align-items:center;justify-content:center;gap:12px}
-.loc-zone{font-family:var(--mono);font-size:16px;color:var(--muted)}
-.loc-bag{font-family:var(--mono);font-size:42px;font-weight:700;color:var(--accent)}
-.result-actions{display:flex;flex-direction:column;gap:8px}
+/* Result display */
+.slot-display{background:var(--accent-dim);border:2px solid var(--accent);border-radius:14px;padding:20px;margin-bottom:16px;text-align:center}
+.slot-main{font-family:var(--mono);font-size:42px;font-weight:700;color:var(--accent)}
+.slot-type{font-size:12px;color:var(--muted);margin-top:4px}
 
-/* INVENTORY SCREEN */
-.zone-group{margin-bottom:24px}
-.zone-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.zone-code{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent);width:36px}
-.zone-name{font-size:14px;font-weight:500}
-.zone-count{font-size:12px;color:var(--muted);margin-left:auto;font-family:var(--mono)}
-.bag-group{margin-bottom:12px}
-.bag-header{font-family:var(--mono);font-size:12px;color:var(--muted);padding:6px 10px;background:var(--surface);border-radius:6px;margin-bottom:6px;letter-spacing:.04em;display:flex;align-items:center;gap:6px}
-.bag-header span{color:var(--accent);font-weight:700}
+/* Progress */
+.progress-bar{background:var(--surface);border-radius:4px;height:8px;overflow:hidden;margin:8px 0}
+.progress-fill{height:100%;background:var(--accent);border-radius:4px;transition:width .4s}
 
-/* DETAIL MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;display:flex;align-items:flex-end}
-.modal-overlay.hidden{display:none}
-.modal-sheet{background:var(--card);border-radius:20px 20px 0 0;padding:24px 20px;width:100%;max-height:80vh;overflow-y:auto}
-.modal-drag{width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px}
-.modal-name{font-size:18px;font-weight:700;margin-bottom:4px}
-.modal-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:14px}
-.modal-key{color:var(--muted)}
-.modal-val{font-family:var(--mono);font-weight:700;color:var(--accent)}
-.modal-actions{display:flex;gap:8px;margin-top:16px}
+/* Card */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.card-title{font-size:13px;font-weight:700;color:var(--accent);font-family:var(--mono);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em}
 
-/* TOAST */
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--green);color:#0d0d0d;padding:10px 20px;border-radius:24px;font-size:14px;font-weight:700;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
-.toast.show{opacity:1}
+/* Badge */
+.badge{display:inline-block;font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:4px;font-weight:700}
+.b-small{background:var(--blue-bg);color:var(--blue)}
+.b-large{background:var(--orange-bg);color:var(--orange)}
+.b-bag{background:var(--green-bg);color:var(--green)}
+.b-box{background:var(--red-bg);color:var(--red)}
+.b-merge{background:var(--purple-bg);color:var(--purple)}
 
-/* BATCH */
-.batch-item{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px}
-.batch-item.processing{border-color:var(--accent);background:var(--accent-dim)}
-.batch-item.done{border-color:var(--green);opacity:.8}
-.batch-item.error{border-color:var(--red);background:var(--red-bg)}
-.batch-thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--surface)}
-.batch-info{flex:1;min-width:0}
-.batch-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
-.batch-meta{font-size:11px;color:var(--muted);margin-top:2px}
-.batch-status-icon{font-size:18px;flex-shrink:0;width:22px;text-align:center}
-.keywords{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
-.keyword-tag{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:11px;padding:3px 8px;border-radius:4px;font-family:var(--mono)}
+/* Log */
+.log{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-family:var(--mono);font-size:11px;color:var(--muted);max-height:300px;overflow-y:auto;white-space:pre-wrap;line-height:1.6}
+.log .ok{color:var(--green)}.log .warn{color:var(--orange)}.log .info{color:var(--accent)}.log .err{color:var(--red)}
 
-/* BATCH SELECT / CHECKBOX */
-.item-checkbox { display:none; margin-right:10px; width:20px; height:20px; -webkit-appearance:none; appearance:none; background:var(--surface); border:2px solid var(--dim); border-radius:4px; pointer-events:none; flex-shrink:0; cursor:pointer; transition:background 0.2s, border-color 0.2s; }
-.item-checkbox:checked { background-color:var(--accent); border-color:var(--accent); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230d0d0d' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E"); background-size:80%; background-position:center; background-repeat:no-repeat; }
-.select-mode .item-checkbox { display:inline-block; }
-.select-mode .item-row:has(.item-checkbox:checked) { border-color:var(--accent); background:var(--accent-dim); }
-.batch-action-bar { position:fixed; bottom:0; left:0; right:0; background:var(--surface); border-top:1px solid var(--border); padding:14px 20px; display:flex; justify-content:space-between; align-items:center; transform:translateY(100%); transition:transform .3s; z-index:20; }
-.batch-action-bar.show { transform:translateY(0); }
-.sync-bar{padding:4px 20px 12px;font-size:12px}
-.sync-bar-inner{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 14px}
+/* Sync bar */
+.sync-bar{font-size:12px;margin-bottom:12px}
+.sync-inner{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 14px}
 .sync-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.sync-dot.online{background:var(--green)}
-.sync-dot.offline{background:var(--red)}
-.sync-dot.local{background:var(--accent)}
-.sync-info{flex:1;color:var(--muted);font-family:var(--mono);font-size:11px}
-.sync-btn{background:var(--accent-bg);border:1px solid var(--accent);color:var(--accent);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-family:var(--sans);white-space:nowrap}
-.sync-btn:hover{background:var(--accent);color:#0d0d0d}
-.sync-btn:disabled{opacity:.4;cursor:not-allowed}
-.select-all-btn { display:none; margin-left:10px; background:var(--surface); border:1px solid var(--border); color:var(--text); padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-family:var(--sans); }
-.select-all-btn:hover { border-color:var(--accent); color:var(--accent); }
-.select-mode .select-all-btn { display:inline-block; }
+.sync-dot.online{background:var(--green)}.sync-dot.offline{background:var(--red)}
+
+/* Spinner */
+.loading{text-align:center;padding:60px 20px;color:var(--muted)}
+.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:10px 24px;border-radius:24px;font-size:14px;font-weight:700;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+@media(min-width:640px){.modal{border-radius:20px;max-height:80vh;margin-bottom:5vh}.overlay{align-items:center}}
 </style>
+<script src="config.js"></script>
+<script src="firebase.js"></script>
+<script src="assign.js"></script>
+<script src="ai.js"></script>
+<script src="map.js"></script>
+<script src="misc.js"></script>
 </head>
 <body>
 
-<div id="s-setup" class="screen">
-<div class="setup-container">
-  <div class="logo-block">
-    <div class="logo-icon"><img src="icon-192.png" style="width:48px;height:48px;border-radius:12px" alt="StoreSmart"></div>
-    <h1>StoreSmart</h1>
-    <p class="logo-sub">智慧收納系統</p>
-  </div>
-  <div class="setup-card">
-    <button id="setup-back-btn" onclick="showScreen('s-main')" style="display:none;background:none;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;margin-bottom:12px">← 返回首頁</button>
-    <h3>初始設定</h3>
-    <label id="lbl-apikey">Gemini API Key <span class="req">必填</span></label>
-    <input type="password" id="inp-apikey" placeholder="AIzaSy..." autocomplete="off">
-    <div style="margin-top:16px;padding:10px 14px;background:var(--green-bg);border:1px solid var(--green);border-radius:8px;font-size:12px;color:var(--green)">☁️ Firebase 多裝置同步已預設啟用<br><span style="color:var(--muted);font-size:11px">Project: storesmart-7ae65 · 輸入 API Key 即自動連線</span></div>
-    <input type="hidden" id="inp-fbproject" value="storesmart-7ae65">
-    <input type="hidden" id="inp-fbapikey" value="AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10">
-    <input type="hidden" id="inp-fbcol" value="items">
-    <button class="btn-primary" onclick="saveSetup()">開始使用（含雲端同步）</button>
-    <button class="btn-ghost" onclick="useLocalOnly()">僅使用本機儲存（單裝置）</button>
-  </div>
-</div>
-</div>
-
-<div id="s-main" class="screen">
+<!-- ═══ HEADER ═══ -->
 <div class="header">
-  <span class="header-title">◈ StoreSmart</span>
-  <div class="header-actions">
-    <button class="icon-btn" onclick="openLocations()" title="收納位置">⊞</button>
-    <button class="icon-btn" onclick="openInventory()" title="全部物品">☰</button>
-    <button class="icon-btn" onclick="showScreen('s-setup')" title="設定">⚙</button>
-  </div>
-</div>
-<div class="main-content">
-  <div class="scan-section">
-    <input type="file" id="file-input" accept="image/*" multiple style="display:none" onchange="handleBatchCapture(event)">
-    <input type="file" id="sv-visual-pick" accept="image/*" style="display:none">
-    <button class="scan-btn" onclick="document.getElementById('file-input').click()">
-      <div class="scan-icon">⬡</div>
-      <span>實物建檔</span>
-      <span class="scan-sub">相機或相簿 · 可多選</span>
-    </button>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn-sm" style="flex:1;background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:700" onclick="runStorageVisualMatch()">🧠 視覺比對（找物）</button>
-    </div>
-  </div></div>
-  </div>
-
-  <div class="search-section">
-    <div class="search-bar">
-      <span class="search-icon">⌕</span>
-      <input type="text" id="search-input" placeholder="搜尋物品、分區..."
-        onkeydown="if(event.key==='Enter'||event.keyCode===13){doSearch(this.value)}"
-        onsearch="doSearch(this.value)">
-      <button onclick="doSearch(document.getElementById('search-input').value)"
-        style="background:var(--accent);color:#0d0d0d;border:none;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">搜尋</button>
+  <div class="header-top">
+    <h1>🧱 BrickSort</h1>
+    <div class="header-actions">
+      <span id="sync-badge" onclick="saveAllToFirebase()" style="background: rgb(226, 75, 74); color: white; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; font-size: 11px; cursor: pointer; padding: 4px 8px; border-radius: 4px;       ">☁ 待同步</span>
+      <span id="status-text" style="font-size: 11px; color: var(--muted); font-family: var(--mono); ">✅ 1684筆</span>
+      <button class="btn btn-sm" onclick="showScreen('s-settings')">⚙ 設定</button>
     </div>
   </div>
-  <div style="padding:0 20px 8px;display:flex;gap:8px;overflow-x:auto">
-    <button onclick="openInventory()" class="btn-sm">☰ 全部物品</button>
+  <div class="nav-tabs" id="nav-tabs">
+    <div class="nav-tab active" onclick="showTab('main')">格子</div>
+    <div class="nav-tab" onclick="showTab('merged')">已融合</div>
+    <div class="nav-tab" onclick="showTab('map-small')">小抽屜</div>
+    <div class="nav-tab" onclick="showTab('map-large')">大抽屜</div>
+    <div class="nav-tab" onclick="showTab('map-bag')">收納袋</div>
+    <div class="nav-tab" onclick="showTab('allparts')">全部零件</div>
   </div>
-  <div class="stats-row" id="stats-row"></div>
-  <div id="sync-status" class="sync-bar"></div>
-  <div class="section-header">— 近期建檔</div>
-  <div id="recent-list" class="item-list"></div>
+</div>
+
+<!-- ═══ MAIN ═══ -->
+<div id="s-main" class="screen active">
+<div class="content">
+  <input type="file" id="camera-take" accept="image/*" capture="environment" style="display:none" onchange="handleCameraPhoto(event)">
+  <input type="file" id="gallery-pick" accept="image/*" style="display:none" onchange="handleGalleryPick(event)">
+  <input type="file" id="instruction-camera" accept="image/*" capture="environment" style="display:none" onchange="handleInstructionCamera(event)">
+  <input type="file" id="instruction-gallery" accept="image/*" style="display:none" onchange="handleInstructionCamera(event)">
+
+  <!-- Search -->
+  <div class="search-bar">
+    <span style="color: var(--muted); ">⌕</span>
+    <input type="text" id="search-input" placeholder="搜尋零件、抽屜號…" onkeydown="if(event.key==='Enter')doSearch(this.value)">
+    <button onclick="doSearch(document.getElementById('search-input').value)">搜尋</button>
+  </div>
+
+  <!-- Main buttons -->
+  <div style="display:flex;gap:8px;margin-bottom:4px">
+    <button class="btn" style="flex: 1 1 0%; padding: 14px; font-size: 14px; font-weight: 700; background: var(--accent-dim); border-color: var(--accent); color: var(--accent);   " onclick="document.getElementById('camera-take').click()">📷 拍照</button>
+    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="toggleInstructionMenu()">📋 說明書</button>
+    <button class="btn" style="flex:1;padding:14px;font-size:14px;font-weight:700" onclick="openContinuousScan()">📷 連續識別</button>
+  </div>
+  
+  <div id="instruction-menu" style="display:none;margin-bottom:6px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <button class="btn" style="padding:10px;font-size:13px" onclick="startInstructionCapture('camera')">📷 拍照</button>
+      <button class="btn" style="padding:10px;font-size:13px" onclick="startInstructionCapture('gallery')">🖼 從圖庫選</button>
+      <button class="btn" style="padding:10px;font-size:13px" onclick="startInstructionCapture('clipboard')">📋 貼上剪貼簿</button>
+      <button class="btn" style="padding:10px;font-size:13px" onclick="startInstructionCapture('capture')">🖥 擷取螢幕</button>
+    </div>
+    <div style="font-size: 10px; color: var(--dim); text-align: center; margin-top: 4px; ">💡 筆電 Chrome：Win+Shift+S 截圖後按「貼上剪貼簿」最快</div>
+  </div>
+  
+  
+  <div style="font-size: 10px; color: var(--dim); text-align: center; margin-bottom: 10px; ">拍照：查位置／自動建檔 ｜ 說明書：拍照或選圖→手動框選</div>
+
+  <!-- 新購入套件：自動建檔整盒未建檔零件 + 統整角色規模預估 -->
+  <button class="btn btn-green" style="width:100%;margin-bottom:10px;padding:12px;font-size:14px;font-weight:600" onclick="openNumpad(document.getElementById('newset-input'),'newPurchaseSet')">🛒 新購入套件</button>
+  <input type="text" id="newset-input" readonly="" style="display:none">
+
+  <!-- Advanced panel -->
+  <div style="margin-bottom:10px">
+    <button class="btn btn-sm" onclick="togglePanel('adv-panel')" style="width: 100%; text-align: left; padding: 8px 12px; font-size: 12px; color: var(--muted); ">▸ 進階功能</button>
+    <div id="adv-panel" style="display:none;padding:8px 0">
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+        <input type="text" id="part-id-input" readonly="" placeholder="零件編號（如 3001 54200）" style="flex: 1 1 0%; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; font-size: 12px; font-family: var(--mono); caret-color: var(--accent);   " onfocus="openNumpad(this,'handlePartIdBatch')">
+        <button class="btn btn-sm" onclick="handlePartIdBatch()">🔍 查詢</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+        <input type="text" id="set-check-input" readonly="" placeholder="盒組編號（如 42115）查庫存" style="flex: 1 1 0%; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; font-size: 12px; font-family: var(--mono); caret-color: var(--accent);   " onfocus="openNumpad(this,'checkSetInventory')">
+        <button class="btn btn-sm" onclick="checkSetInventory()">📦 庫存</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input type="text" id="set-id-input" readonly="" placeholder="盒組編號（如 42115）匯入建檔" style="flex: 1 1 0%; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; font-size: 12px; font-family: var(--mono); caret-color: var(--accent);   " onfocus="openNumpad(this,'importSet')">
+        <button class="btn btn-sm btn-green" onclick="importSet()">📥 匯入</button>
+      </div>
+      <button class="btn" style="width:100%;margin-top:8px;padding:10px;font-size:13px" onclick="showStocktakeSetup()">📋 清點庫存</button>
+    </div>
+  </div>
+
+  <div id="stats-row" class="stats-row" style="margin-top:12px"></div>
+  <div id="sync-status" class="sync-bar"><div class="sync-inner"><div class="sync-dot online"></div><span style="flex: 1 1 0%; font-family: var(--mono); font-size: 11px; color: var(--muted); ">Firebase 已連線 · 本機 1684 件 · ⚠ 待上傳 </span><button class="btn btn-sm btn-primary" onclick="saveAllToFirebase()">☁ 上傳</button><button class="btn btn-sm" onclick="loadData()">↓ 下載</button></div></div>
+
+  <!-- Editor controls -->
+  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+    <select id="sort-select" onchange="applySort()" style="background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 8px; border-radius: 6px; font-size: 12px;   ">
+      <option value="createdAt-desc">建檔日期 ↓ 新→舊</option>
+      <option value="createdAt-asc">建檔日期 ↑ 舊→新</option>
+      <option value="updatedAt-desc">收納日期 ↓ 新→舊</option>
+      <option value="updatedAt-asc">收納日期 ↑ 舊→新</option>
+      <option value="name-asc">名稱 A→Z</option>
+      <option value="name-desc">名稱 Z→A</option>
+	  <option value="rank-asc">常用度 ↓ 熱門→冷門</option>
+	  <option value="rank-desc">常用度 ↑ 冷門→熱門</option>
+      <option value="designId-asc">Design ID ↑</option>
+      <option value="designId-desc">Design ID ↓</option>
+      <option value="vol-desc">單件體積 ↓ 大→小</option>
+      <option value="vol-asc">單件體積 ↑ 小→大</option>
+      <option value="totalVol-desc">佔位體積 ↓ 大→小</option>
+      <option value="totalVol-asc">佔位體積 ↑ 小→大</option>
+      <option value="dimW-desc">寬 ↓</option>
+      <option value="dimW-asc">寬 ↑</option>
+      <option value="dimL-desc">長 ↓</option>
+      <option value="dimL-asc">長 ↑</option>
+      <option value="dimH-desc">高 ↓</option>
+      <option value="dimH-asc">高 ↑</option>
+      <option value="slot-asc">格子 ↑</option>
+      <option value="slot-desc">格子 ↓</option>
+      <option value="quantity-desc">數量 ↓</option>
+      <option value="quantity-asc">數量 ↑</option>
+    </select>
+    <input type="text" id="filter-input" placeholder="🔍 搜尋…" oninput="applyFilter()" style="flex: 1 1 0%; min-width: 120px; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 12px; outline: none;    ">
+    <span id="count-label" style="font-size: 11px; color: var(--muted); font-family: var(--mono); white-space: nowrap; ">1684/1684</span>
+    <button class="btn btn-primary btn-sm" onclick="saveAllToFirebase()">☁️ 回傳</button>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr>
+        <th style="width:44px"></th>
+        <th onclick="sortBy('name')">名稱</th>
+        <th onclick="sortBy('designId')">ID</th>
+        <th onclick="sortBy('vol')">體積ml</th>
+        <th onclick="sortBy('quantity')">數量</th>
+        <th>位置</th>
+        <th>標籤</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div id="loading" class="loading" style="display: none;"><div class="spinner"></div>從 Firebase 載入中…</div>
+  </div>
 </div>
 </div>
 
-<div id="s-processing" class="screen">
-<div class="processing-container">
-  <div class="spinner"></div>
-  <p id="processing-msg">AI 辨識中...</p>
-<p id="processing-timer" style="color:var(--accent);font-family:var(--mono);font-size:13px;margin-top:8px"></p>
+<!-- ═══ DRAWER MAP SCREENS ═══ -->
+<div id="s-map-small" class="screen"><div class="content"><div id="map-small-content"></div></div></div>
+<div id="s-map-large" class="screen"><div class="content"><div id="map-large-content"></div></div></div>
+<div id="s-map-bag" class="screen"><div class="content"><div id="map-bag-content"></div></div></div>
+<div id="s-merged" class="screen"><div class="content"><div id="merged-content"></div></div></div>
+<div id="s-allparts" class="screen"><div class="content"><div id="allparts-content"></div></div></div>
+
+<!-- ═══ PROCESSING ═══ -->
+<div id="s-processing" class="screen" style="justify-content:center;align-items:center">
+<div style="text-align:center;padding:40px">
+  <div class="spinner" style="width:48px;height:48px"></div>
+  <p id="processing-msg" style="color: var(--muted); font-size: 14px; font-family: var(--mono); ">AI 辨識中...</p>
+  <p id="processing-timer" style="color: var(--accent); font-family: var(--mono); font-size: 13px; margin-top: 8px; "></p>
 </div>
 </div>
 
+<!-- ═══ RESULT ═══ -->
 <div id="s-result" class="screen">
-<div class="header">
-  <button class="back-btn" onclick="cancelResult()">← 返回</button>
-  <span class="header-title">辨識結果</span>
+<div style="padding:12px 16px">
+  <button class="btn btn-sm" onclick="cancelResult()">← 返回</button>
 </div>
-<div class="result-content">
-  <div class="result-image-wrap"><img id="result-img" src="" alt=""></div>
-  <div class="result-card">
-    <div class="result-name-row">
-      <span id="result-name" class="result-name"></span>
-      <span id="result-category" class="category-badge"></span>
+<div style="flex:1;overflow-y:auto;padding:0 16px 80px">
+  <div class="card">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;cursor:pointer" onclick="openResultItem()" title="點擊查看物品詳情">
+      <img id="result-img" src="" style="width: 64px; height: 64px; border-radius: 8px; object-fit: cover; background: var(--surface); " onerror="if(this.dataset.fb){this.src=this.dataset.fb;this.dataset.fb=''}">
+      <div style="flex:1"><div id="result-name" style="font-size:18px;font-weight:700"></div><div id="result-designid" style="font-family: var(--mono); font-size: 12px; color: var(--muted); "></div></div>
     </div>
-    <p id="result-desc" class="result-desc"></p>
-    <div class="keywords" id="result-keywords"></div>
+    <div id="result-desc" style="font-size: 13px; color: var(--muted); margin-bottom: 8px; "></div>
+    <div id="result-lens-summary" style="display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 12px; color: var(--muted); line-height: 1.5;   "></div>
+    <div id="result-tags"></div>
+    <div id="result-series-char" style="margin-top:6px"></div>
+    <div id="result-volume" style="margin-top: 8px; font-size: 12px; color: var(--muted); font-family: var(--mono); "></div>
   </div>
-  <div id="match-banner" class="match-banner" style="display:none"></div>
-  <div class="location-display">
-    <div class="location-label">收納位置</div>
-    <div class="location-main">
-      <div>
-        <div id="result-zonename" style="font-size:13px;color:var(--muted);font-family:var(--mono)"></div>
-        <div id="result-bag" class="loc-bag"></div>
+  <div id="match-banner" style="display: none; background: var(--green-bg); border: 1px solid var(--green); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px;  "></div>
+  <div id="frequent-banner" style="display: none; background: rgba(251, 191, 36, 0.15); border: 1px solid var(--accent); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px;   "></div>
+  <div class="slot-display" id="result-slot-display" style="cursor:pointer" onclick="jumpToSlotFromResult()">
+    <div style="font-size: 12px; color: var(--accent); font-family: var(--mono); margin-bottom: 10px; ">收納位置 <span style="font-size: 10px; color: var(--dim); ">（點擊查看格子內容）</span></div>
+    <div id="result-slot" class="slot-main"></div>
+    <div id="result-slot-type" class="slot-type"></div>
+    <div id="result-slot-override" style="margin-top:8px"><button class="btn btn-sm" onclick="event.stopPropagation();showSlotOverride()" style="font-size:11px;padding:4px 10px">✏️ 變更收納位置</button></div>
+  </div>
+  <div id="result-minimap" style="margin-bottom:12px"></div>
+  <div id="result-qty-row" style="display: none; margin-bottom: 12px; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;  ">
+    <label style="font-size: 13px; color: var(--muted); white-space: nowrap; ">追加數量</label>
+    <button onclick="var el=document.getElementById('result-qty');el.value=Math.max(0,(parseInt(el.value)||0)-1)" style="width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 18px; cursor: pointer;   ">−</button>
+    <input type="text" id="result-qty" value="1" readonly="" inputmode="none" onfocus="openNumpad(this,null,'int')" style="width: 60px; text-align: center; background: var(--surface); border: 1px solid var(--border); color: var(--accent); padding: 8px; border-radius: 8px; font-size: 18px; font-weight: 700; font-family: var(--mono); caret-color: var(--accent);   ">
+    <button onclick="var el=document.getElementById('result-qty');el.value=(parseInt(el.value)||0)+1" style="width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 18px; cursor: pointer;   ">+</button>
+    <button id="result-qty-save" class="btn btn-green" style="flex:1;padding:8px;font-size:13px" onclick="saveResultQty()">✓ 追加</button>
+  </div>
+  <div id="result-dims-required" style="display:none;margin-bottom:12px">
+    <div style="background: var(--orange-bg); border: 1px solid var(--orange); border-radius: 10px; padding: 12px; margin-bottom: 8px;  ">
+      <div style="font-size: 13px; font-weight: 700; color: var(--orange); margin-bottom: 6px; ">📐 確認零件尺寸 (mm)</div>
+      <div id="rdim-hint" style="font-size: 12px; color: var(--muted); ">AI 未提供尺寸，請輸入（單位：公釐）</div>
+    </div>
+    <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px;  ">
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-bottom:10px">
+        <span style="font-size: 12px; color: var(--muted); text-align: right; ">寬 W</span>
+        <div style="display:flex;align-items:center;gap:4px"><input type="text" id="rdim-w" readonly="" inputmode="none" placeholder="0" onfocus="openNumpad(this,null,'int')" style="flex: 1 1 0%; min-width: 0px; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 8px; font-size: 14px; font-family: var(--mono); text-align: center; caret-color: var(--accent);   "><span style="font-size: 11px; color: var(--muted); width: 20px; ">mm</span></div>
+        <span style="font-size: 12px; color: var(--muted); text-align: right; ">長 L</span>
+        <div style="display:flex;align-items:center;gap:4px"><input type="text" id="rdim-l" readonly="" inputmode="none" placeholder="0" onfocus="openNumpad(this,null,'int')" style="flex: 1 1 0%; min-width: 0px; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 8px; font-size: 14px; font-family: var(--mono); text-align: center; caret-color: var(--accent);   "><span style="font-size: 11px; color: var(--muted); width: 20px; ">mm</span></div>
+        <span style="font-size: 12px; color: var(--muted); text-align: right; ">高 H</span>
+        <div style="display:flex;align-items:center;gap:4px"><input type="text" id="rdim-h" readonly="" inputmode="none" placeholder="0" onfocus="openNumpad(this,null,'int')" style="flex: 1 1 0%; min-width: 0px; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 8px; font-size: 14px; font-family: var(--mono); text-align: center; caret-color: var(--accent);   "><span style="font-size: 11px; color: var(--muted); width: 20px; ">mm</span></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button class="btn btn-sm" onclick="pasteResultDims()" style="flex:1;font-size:11px">📋 貼上尺寸（BrickLink W×L×H cm 自動轉mm）</button>
+        <button class="btn btn-sm" onclick="openExternalLink('https://www.bricklink.com/catalogList.asp?q='+encodeURIComponent(pendingPart?.designId||''))" style="font-size:11px">🔍 查 BL</button>
+      </div>
+      <button class="btn btn-green" style="width:100%;padding:10px;font-size:14px" onclick="applyResultDims()">✓ 確認尺寸並分派位置</button>
+    </div>
+  </div>
+  <button id="result-confirm-btn" class="btn-primary" style="width:100%" onclick="confirmPart()">✓ 確認儲存</button>
+  <button id="result-cancel-btn" class="btn" style="width:100%;margin-top:8px" onclick="cancelResult()">取消</button>
+</div>
+</div>
+
+<!-- ═══ STOCKTAKE ═══ -->
+<div id="s-stocktake" class="screen">
+<div style="padding:12px 16px">
+  <button class="btn btn-sm" onclick="cancelStocktake()">✕ 結束清點</button>
+  <span style="font-family: var(--mono); font-size: 14px; color: var(--accent); margin-left: 8px; ">📋 清點庫存</span>
+  <span id="st-progress" style="font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: 8px; "></span>
+</div>
+<div style="flex:1;overflow-y:auto;padding:0 16px 100px">
+  <div class="card" id="st-card">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+      <img id="st-img" src="" style="width: 72px; height: 72px; border-radius: 10px; object-fit: cover; background: var(--surface); " onerror="if(this.dataset.fb){this.src=this.dataset.fb;this.dataset.fb=''}">
+      <div style="flex:1">
+        <div id="st-name" style="font-size:16px;font-weight:700"></div>
+        <div id="st-ids" style="font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 2px; "></div>
+        <div id="st-desc" style="font-size: 12px; color: var(--muted); margin-top: 4px; "></div>
       </div>
     </div>
+    <div id="st-tags" style="margin-bottom:8px"></div>
+    <div id="st-vol" style="font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 12px; "></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <label style="font-size:14px;font-weight:600;white-space:nowrap">數量</label>
+      <button onclick="var el=document.getElementById('st-qty');el.value=Math.max(0,(parseInt(el.value)||0)-1)" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 22px; cursor: pointer;   ">−</button>
+      <input type="text" id="st-qty" readonly="" inputmode="none" onfocus="openNumpad(this,null,'int')" style="flex: 1 1 0%; text-align: center; background: var(--surface); border: 2px solid var(--accent); color: var(--accent); padding: 10px; border-radius: 10px; font-size: 28px; font-weight: 900; font-family: var(--mono); caret-color: var(--accent);   ">
+      <button onclick="var el=document.getElementById('st-qty');el.value=(parseInt(el.value)||0)+1" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 22px; cursor: pointer;   ">+</button>
+    </div>
+    <div id="st-diff" style="font-size:13px;font-family:var(--mono);text-align:center;margin-bottom:8px"></div>
   </div>
-  <div class="result-actions">
-    <button class="btn-primary" onclick="confirmItem()">✓ 確認儲存</button>
-    <button class="btn-ghost" onclick="cancelResult()">取消</button>
-  </div>
-</div>
-</div>
-
-<div id="s-search" class="screen">
-<div class="header">
-  <button class="back-btn" onclick="showScreen('s-main')">← 返回</button>
-  <span class="header-title" id="search-title">搜尋結果</span>
-</div>
-<div id="search-results" class="item-list padded"></div>
-</div>
-
-<div id="s-inventory" class="screen">
-<div class="header">
-  <button class="back-btn" onclick="closeInventory()">← 返回</button>
-  <span class="header-title">全部物品</span>
-  <button class="back-btn" id="btn-toggle-select" onclick="toggleSelectMode()">選取</button>
-</div>
-<div id="inventory-content" class="padded" style="padding-bottom:80px"></div>
-<div id="batch-action-bar" class="batch-action-bar">
-  <span id="selected-count" style="font-size:14px;color:var(--text);font-weight:700">已選取 0 件</span>
-  <button class="btn-danger" style="margin:0;padding:8px 20px" onclick="confirmBatchDelete()">刪除</button>
-</div>
-</div>
-
-<div id="modal-overlay" class="modal-overlay hidden" onclick="closeModal(event)">
-<div class="modal-sheet" onclick="event.stopPropagation()">
-  <div class="modal-drag"></div>
-  <div id="modal-thumb-wrap" style="width:100%;max-height:300px;border-radius:10px;overflow:hidden;background:var(--surface);margin-bottom:14px;display:flex;justify-content:center;align-items:center;">
-    <img id="modal-img" src="" style="max-width:100%;max-height:300px;object-fit:contain;">
-  </div>
-  <div id="modal-name" class="modal-name"></div>
-  <div id="modal-badge" class="category-badge" style="display:inline-block;margin-bottom:12px"></div>
-  <div id="modal-rows"></div>
-  <div class="modal-actions">
-    <button class="btn-sm" onclick="closeModalPanel()">關閉</button>
-    <button class="btn-danger" id="modal-delete-btn">刪除此物品</button>
+  <div style="position: fixed; bottom: 0px; left: 0px; right: 0px; background: var(--bg); border-top: 1px solid var(--border); padding: 12px 16px; display: flex; gap: 8px; z-index: 60;  ">
+    <button class="btn" style="flex:1;padding:14px;font-size:14px" onclick="skipStocktakeItem()">⏭ 跳過</button>
+    <button class="btn btn-primary" style="flex:2;padding:14px;font-size:15px;font-weight:800" onclick="saveAndNextStocktake()">✓ 下一個</button>
   </div>
 </div>
 </div>
 
+<!-- ═══ STOCKTAKE SETUP OVERLAY ═══ -->
+<div id="stocktake-setup" style="position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px;  ">
+<div class="card" style="max-width:380px;width:100%">
+  <div style="font-size: 18px; font-weight: 800; color: var(--accent); margin-bottom: 16px; ">📋 清點庫存</div>
+  <div style="font-size: 13px; color: var(--muted); margin-bottom: 16px; line-height: 1.6; ">依序顯示每個格子的零件，確認實際數量。</div>
+  <div class="field" style="margin-bottom:12px">
+    <label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block">區域</label>
+    <div style="display:flex;gap:8px">
+      <label style="flex: 1 1 0%; display: flex; align-items: center; gap: 6px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px;  ">
+        <input type="radio" name="st-zone" value="small" checked="" style="accent-color:var(--accent)"> 小抽屜</label>
+      <label style="flex: 1 1 0%; display: flex; align-items: center; gap: 6px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px;  ">
+        <input type="radio" name="st-zone" value="large" style="accent-color:var(--accent)"> 大抽屜</label>
+      <label style="flex: 1 1 0%; display: flex; align-items: center; gap: 6px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px;  ">
+        <input type="radio" name="st-zone" value="bag" style="accent-color:var(--accent)"> 收納袋</label>
+    </div>
+  </div>
+  <div class="field" id="st-side-field" style="margin-bottom:12px">
+    <label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block">格子面</label>
+    <div style="display:flex;gap:8px">
+      <label style="flex: 1 1 0%; display: flex; align-items: center; gap: 6px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px;  ">
+        <input type="radio" name="st-side" value="all" checked="" style="accent-color:var(--accent)"> 全部</label>
+      <label style="flex: 1 1 0%; display: flex; align-items: center; gap: 6px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px;  ">
+        <input type="radio" name="st-side" value="a" style="accent-color:var(--accent)"> 只有 a 面</label>
+      <label style="flex: 1 1 0%; display: flex; align-items: center; gap: 6px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px;  ">
+        <input type="radio" name="st-side" value="b" style="accent-color:var(--accent)"> 只有 b 面</label>
+    </div>
+  </div>
+  <div class="field" style="margin-bottom:16px">
+    <label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block">範圍</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="st-from" readonly="" inputmode="none" value="1" onfocus="openNumpad(this,null,'int')" style="flex: 1 1 0%; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 9px; border-radius: 8px; font-size: 14px; font-family: var(--mono); text-align: center; caret-color: var(--accent);   ">
+      <span style="color: var(--muted); ">～</span>
+      <input type="text" id="st-to" readonly="" inputmode="none" value="450" onfocus="openNumpad(this,null,'int')" style="flex: 1 1 0%; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 9px; border-radius: 8px; font-size: 14px; font-family: var(--mono); text-align: center; caret-color: var(--accent);   ">
+    </div>
+  </div>
+  <div id="st-setup-count" style="font-size: 12px; color: var(--muted); text-align: center; margin-bottom: 12px; "></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn" style="flex:1;padding:12px" onclick="hideStocktakeSetup()">取消</button>
+    <button class="btn btn-primary" style="flex:2;padding:12px;font-size:15px" onclick="startStocktake()">▶ 開始清點</button>
+  </div>
+</div>
+</div>
+
+<!-- ═══ BATCH ═══ -->
 <div id="s-batch" class="screen">
-<div class="header">
-  <button class="back-btn" id="batch-back-btn" onclick="cancelBatch()">✕ 取消</button>
-  <span class="header-title" id="batch-title">批次建檔</span>
-</div>
-<div style="padding:16px 20px 80px;flex:1;overflow-y:auto">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px">
+<div style="padding:12px 16px"><button class="btn btn-sm" id="batch-back-btn" onclick="cancelBatch()">✕ 取消</button> <span style="font-family: var(--mono); font-size: 14px; color: var(--accent); margin-left: 8px; ">批次建檔</span></div>
+<div style="padding:0 16px 80px;flex:1;overflow-y:auto">
+  <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span id="batch-status-text" style="font-size:14px;font-weight:500"></span>
-      <span id="batch-count-badge" style="font-family:var(--mono);font-size:13px;color:var(--accent)"></span>
+      <span id="batch-count-badge" style="font-family: var(--mono); font-size: 13px; color: var(--accent); "></span>
     </div>
-    <div style="background:var(--surface);border-radius:4px;height:6px;overflow:hidden">
-      <div id="batch-progress-bar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width .4s"></div>
-    </div>
+    <div class="progress-bar"><div id="batch-progress-bar" class="progress-fill" style="width:0%"></div></div>
   </div>
   <div id="batch-item-list"></div>
-  <div id="batch-done-panel" style="display:none">
-    <div style="text-align:center;padding:16px 0 24px">
-      <div style="font-size:36px;margin-bottom:8px" id="batch-done-icon">✓</div>
-      <div id="batch-done-text" style="font-size:16px;font-weight:700;color:var(--text)"></div>
-      <div id="batch-done-sub" style="font-size:13px;color:var(--muted);margin-top:4px"></div>
-    </div>
-    <button class="btn-primary" onclick="showScreen('s-main');refreshMain()">返回主畫面</button>
+  <div id="batch-done-panel" style="display:none;text-align:center;padding:16px 0">
+    <div style="font-size:36px;margin-bottom:8px" id="batch-done-icon">✓</div>
+    <div id="batch-done-text" style="font-size:16px;font-weight:700"></div>
+    <div id="batch-done-sub" style="font-size: 13px; color: var(--muted); margin-top: 4px; "></div>
+    <button class="btn-primary" style="margin-top:16px" onclick="showTab('main')">返回主畫面</button>
   </div>
 </div>
 </div>
 
-<div id="s-zones" class="screen">
-<div class="header">
-  <button class="back-btn" onclick="showScreen('s-main')">← 返回</button>
-  <span class="header-title">收納位置管理</span>
+<!-- ═══ ASSIGN PIPELINE ═══ -->
+<div id="s-assign" class="screen">
+<div style="padding:12px 16px;display:flex;align-items:center;gap:12px">
+  <button class="btn btn-sm" onclick="goBack()">← 返回</button>
+  <span style="font-family: var(--mono); font-size: 14px; color: var(--accent); ">格子自動分配</span>
+  <span class="mono" style="font-size: 11px; color: var(--muted); margin-left: auto; " id="assign-status">準備中</span>
 </div>
-<div id="zones-content" class="padded"></div>
+<div class="content" id="assign-content">
+  <div class="card" style="text-align:center;padding:32px">
+    <div style="font-size:48px;margin-bottom:12px">🧱</div>
+    <h2 style="margin-bottom:8px">BrickSort 格子自動分配</h2>
+    <p style="color: var(--muted); margin-bottom: 24px; font-size: 13px; ">從 Firebase 讀取所有零件 → 依體積/分類自動分配格子 → 回寫 Firebase</p>
+    <button class="btn btn-primary btn-lg" onclick="startPipeline()">▶ 開始分配</button>
+  </div>
+</div>
+</div>
+
+<!-- ═══ INSTRUCTION LOOKUP ═══ -->
+<!-- ═══ INSTRUCTION CROP ═══ -->
+<div id="s-instruction-crop" class="screen">
+<div style="padding:12px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+  <button class="btn btn-sm" onclick="goBack()">← 返回</button>
+  <span style="font-family: var(--mono); font-size: 14px; color: var(--accent); ">✏️ 框選零件</span>
+  <span id="crop-box-count" style="font-size: 12px; color: var(--muted); font-family: var(--mono); "></span>
+  <div style="flex:1"></div>
+  <button class="btn btn-sm" onclick="undoCropBox()" id="btnCropUndo" style="font-size:11px" disabled="">↩ 撤銷</button>
+  <button class="btn btn-sm" onclick="confirmCrops()" id="btnCropConfirm" style="font-size: 11px; background: var(--green); color: rgb(0, 0, 0);  " disabled="">✅ 確認辨識</button>
+</div>
+<div style="padding: 0px 16px 8px; font-size: 11px; color: var(--dim); ">👆 在零件上拖曳畫框，框完所有零件後點「確認辨識」</div>
+<div class="content" style="padding:0 16px">
+  <div style="position:relative;touch-action:none;line-height:0">
+    <canvas id="cropCanvas" style="max-width: 100%; border-radius: 8px; border: 1px solid var(--border); "></canvas>
+  </div>
+  <div id="cropPreviewGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;margin-top:10px"></div>
+</div>
+</div>
+
+<!-- ═══ INSTRUCTION RESULTS ═══ -->
+<div id="s-instruction" class="screen">
+<div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span style="font-family: var(--mono); font-size: 14px; color: var(--accent); margin-left: 8px; ">📋 說明書零件查找</span></div>
+<div class="content" id="instruction-results"></div>
+</div>
+
+<!-- ═══ SET CHECK ═══ -->
+<div id="s-setcheck" class="screen">
+<div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span id="setcheck-title" style="font-family: var(--mono); font-size: 14px; color: var(--accent); margin-left: 8px; ">📦 盒組零件檢查</span></div>
+<div class="content" id="setcheck-results"></div>
+</div>
+
+<!-- ═══ SEARCH RESULTS ═══ -->
+<div id="s-search" class="screen">
+<div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span id="search-title" style="font-family: var(--mono); font-size: 14px; color: var(--accent); margin-left: 8px; ">搜尋結果</span></div>
+<div id="search-results" class="content"></div>
+</div>
+
+<!-- ═══ SETTINGS ═══ -->
+<div id="s-settings" class="screen">
+<div style="padding:12px 16px"><button class="btn btn-sm" onclick="goBack()">← 返回</button> <span style="font-family: var(--mono); font-size: 14px; color: var(--accent); margin-left: 8px; ">設定</span> <span id="app-version" style="font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: 8px; ">v2026.04.20bl</span></div>
+<div class="content">
+  <div class="card">
+    <div class="card-title">API Keys</div>
+    <div class="field"><label>Gemini API Key <span style="color: var(--accent); font-size: 10px; ">必填</span></label><input type="password" id="inp-apikey" placeholder="AIzaSy..."></div>
+    <div style="font-size:12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><a href="https://aistudio.google.com/apikey" onclick="openExternalLink(this.href);return false" style="color: var(--accent); ">🔑 取得 Gemini API Key →</a><button onclick="pasteToInput('inp-apikey')" style="background: var(--surface); border: 1px solid var(--border); color: var(--accent); padding: 3px 10px; border-radius: 5px; font-size: 11px; cursor: pointer; white-space: nowrap;   ">📋 貼上剪貼簿</button></div>
+    <div class="field"><label>Rebrickable API Key</label><input type="text" id="inp-rbkey" placeholder="56ee6047eaeb..."></div>
+    <div style="font-size:12px;margin-bottom:8px"><a href="https://rebrickable.com/api/" onclick="openExternalLink(this.href);return false" style="color: var(--accent); ">🔑 取得 Rebrickable Key →</a></div>
+    <button class="btn-primary" style="width:100%" onclick="saveSettings()">💾 儲存設定</button>
+  </div>
+  <div class="card">
+    <div class="card-title">Firebase 狀態</div>
+    <div id="fb-status" style="font-family: var(--mono); font-size: 12px; color: var(--muted); "></div>
+  </div>
+  <div class="card">
+    <div class="card-title">操作</div>
+    <button class="btn" style="width:100%;margin-bottom:8px" onclick="loadData()">🔄 重新載入 Firebase</button>
+    <button class="btn" style="width:100%;margin-bottom:8px" onclick="openAssignPage()">🔀 開啟格子分配工具</button>
+    <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="saveAllToFirebase()">☁️ 全部回傳 Firebase</button>
+    <button class="btn" style="width:100%" onclick="exportForLabels()">🏷 匯出標籤列印資料 (JSON)</button>
+  </div>
+  <div class="card">
+    <div class="card-title">🎭 角色標籤（進階）</div>
+    <div style="font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.6; ">把主角和專屬配件放在同一收納袋，方便找配件。例：Lloyd 頭髮/軀幹/專屬武器 → B-Lloyd 袋</div>
+    <button class="btn" style="width:100%" onclick="showScreen('s-characters');renderCharactersPage()">🎭 開啟角色管理</button>
+  </div>
+  <div class="card">
+    <div class="card-title">📦 離線備份 / 還原</div>
+    <div style="font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.6; ">Firebase 無法使用時，可匯出完整資料到手機，之後再匯入還原。</div>
+    <button class="btn btn-green" style="width:100%;margin-bottom:8px" onclick="exportFullData()">📤 匯出完整資料 (JSON)</button>
+    <input type="file" id="import-json-input" accept=".json" style="display:none" onchange="importFullData(event)">
+    <button class="btn" style="width:100%;margin-bottom:8px" onclick="document.getElementById('import-json-input').click()">📥 匯入 JSON 資料</button>
+    <div id="import-status" style="font-size: 12px; color: var(--muted); margin-top: 4px; "></div>
+  </div>
+  <div class="card">
+    <div class="card-title">⭐ 常用零件快取分派</div>
+    <div style="font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.6; ">對所有 Top 500 常用零件執行雙層分派：分配「快取點」到抽屜方便取用，剩餘放主袋/主位。會產生搬運清單。</div>
+    <div class="field" style="margin-bottom:10px">
+      <label style="font-size:13px">常用門檻（零件出現在 ≥ N 個盒組就自動視為常用）</label>
+      <input type="text" id="inp-freq-threshold" readonly="" inputmode="none" placeholder="如 200" onfocus="openNumpad(this,null,'int')" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px 8px;border-radius:8px;font-size:14px;font-family:var(--mono);text-align:center;margin-top:4px">
+      <div style="font-size:11px;color:var(--dim);margin-top:4px;line-height:1.5">設 0 表示不自動判定（只靠手動標記）。數字越大越嚴格，越少零件被視為常用。</div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="reassignAllFrequent()">🔄 重新分派所有常用零件</button>
+    <div id="reassign-status" style="font-size: 12px; color: var(--muted); margin-top: 4px; "></div>
+  </div>
+  <div class="card">
+    <div class="card-title">📏 螢幕像素校正</div>
+    <div style="font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.6; ">校正後可在零件詳情頁點擊縮圖，顯示 1:1 實體尺寸的立體線框圖來比對實品。</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <label style="font-size:13px;flex-shrink:0">px/mm</label>
+      <input type="text" id="inp-pxmm" readonly="" inputmode="none" placeholder="如 3.96" onfocus="openNumpad(this,null,'decimal')" style="flex: 1 1 0%; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 9px 8px; border-radius: 8px; font-size: 14px; font-family: var(--mono); text-align: center;   ">
+      <button class="btn btn-sm" style="white-space:nowrap" onclick="autoDetectPxMm()">自動偵測</button>
+    </div>
+    <div id="pxmm-ruler" style="display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px;  ">
+      <div style="font-size: 12px; color: var(--accent); margin-bottom: 8px; ">📐 用尺量下方線段的實際長度（mm），輸入後按確認</div>
+      <div id="pxmm-line" style="height: 2px; background: var(--accent); border-radius: 1px; margin: 12px 0px; "></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size: 12px; color: var(--muted); ">實測長度</label>
+        <input type="text" id="pxmm-measured" readonly="" inputmode="none" placeholder="mm" onfocus="openNumpad(this,null,'decimal')" style="width: 70px; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px; border-radius: 6px; font-size: 13px; text-align: center;   ">
+        <span style="font-size: 12px; color: var(--muted); ">mm</span>
+        <button class="btn btn-sm btn-primary" onclick="confirmPxMm()">確認</button>
+      </div>
+    </div>
+    <div id="pxmm-status" style="font-size: 12px; color: var(--muted); ">尚未校正</div>
+  </div>
+  <div class="card" id="lock-card">
+    <div class="card-title">🔒 編排鎖定</div>
+    <div id="lock-status"><div style="background: var(--orange-bg); border: 1px solid var(--orange); border-radius: 8px; padding: 12px; margin-bottom: 12px;  "><div style="font-size: 14px; font-weight: 700; color: var(--orange); margin-bottom: 6px; ">🔓 編排未鎖定</div><div style="font-size: 12px; color: var(--muted); line-height: 1.6; ">完成分配並將零件放入實體抽屜後，請鎖定編排。<br>鎖定後新零件只會往後追加，不會動到已有的格子。</div></div><button class="btn btn-green" style="width:100%" onclick="toggleLock()">🔒 鎖定編排（零件已放入抽屜）</button></div>
+  </div>
+</div>
+</div>
+
+<!-- ═══ CHARACTERS MANAGEMENT ═══ -->
+<div id="s-characters" class="screen">
+<div style="padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; ">
+  <button class="btn btn-sm" onclick="goBack()">← 返回</button>
+  <span style="font-family: var(--mono); font-size: 14px; color: var(--accent); margin-left: 4px; ">🎭 角色管理</span>
+</div>
+<div class="content" id="characters-content"></div>
+</div>
+
+<!-- ═══ VARIANT CONFIRM MODAL ═══ -->
+<!-- ═══ NUMPAD ═══ -->
+<div id="numpad-overlay" style="display:none;position:fixed;inset:0;z-index:8000" onclick="closeNumpad()">
+<div style="position: absolute; bottom: 0px; left: 0px; right: 0px; background: var(--bg); border-top: 2px solid var(--accent); padding: 8px 12px 16px; box-shadow: rgba(0, 0, 0, 0.5) 0px -4px 20px;   " onclick="event.stopPropagation()">
+  <div style="display:flex;align-items:center;margin-bottom:8px;gap:8px">
+    <div id="numpad-display" style="flex: 1 1 0%; background: var(--surface); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; font-size: 18px; font-family: var(--mono); color: var(--text); min-height: 24px; letter-spacing: 2px;   "></div>
+    <button style="background: var(--accent); color: rgb(17, 17, 17); border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 8px; padding: 10px 18px; font-size: 15px; font-weight: 700; cursor: pointer;      " onclick="numpadSubmit()">確定</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+    <button class="nk" onclick="numpadKey('1')">1</button>
+    <button class="nk" onclick="numpadKey('2')">2</button>
+    <button class="nk" onclick="numpadKey('3')">3</button>
+    <button class="nk" style="background: var(--surface); color: var(--red); font-size: 14px;  " onclick="numpadKey('del')">⌫</button>
+    <button class="nk" onclick="numpadKey('4')">4</button>
+    <button class="nk" onclick="numpadKey('5')">5</button>
+    <button class="nk" onclick="numpadKey('6')">6</button>
+    <button class="nk" style="background: var(--surface); color: var(--muted); font-size: 13px;  " onclick="numpadKey('clear')">清除</button>
+    <button class="nk" onclick="numpadKey('7')">7</button>
+    <button class="nk" onclick="numpadKey('8')">8</button>
+    <button class="nk" onclick="numpadKey('9')">9</button>
+    <button class="nk" style="background: var(--surface); color: var(--muted); font-size: 13px;  " onclick="closeNumpad()">取消</button>
+    <button class="nk" id="numpad-dash" style="font-size:13px" onclick="numpadKey('-')">-</button>
+    <button class="nk" onclick="numpadKey('0')">0</button>
+    <button class="nk" id="numpad-space" style="font-size:12px" onclick="numpadKey(' ')">空格</button>
+    <button class="nk" id="numpad-dot" style="font-size:20px;display:none" onclick="numpadKey('.')">.</button>
+    <button class="nk" style="background: var(--accent); color: rgb(17, 17, 17); font-size: 15px; font-weight: 700;  " onclick="numpadSubmit()">⏎</button>
+  </div>
+</div>
+</div>
+<style>.nk{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:14px 0;font-size:20px;font-weight:600;cursor:pointer;font-family:var(--mono);-webkit-tap-highlight-color:transparent}.nk:active{background:var(--accent);color:#111}</style>
+
+<div class="overlay" id="variant-overlay" onclick="resolveVariant(false)" style="align-items:center">
+<div class="modal" onclick="event.stopPropagation()" style="max-width:380px;padding:20px;border-radius:20px;transform:none">
+  <div style="text-align: center; font-size: 15px; font-weight: 700; color: var(--accent); margin-bottom: 16px; ">🔍 發現疑似相同零件</div>
+  <div style="display:flex;gap:12px;margin-bottom:16px">
+    <div style="flex: 1 1 0%; background: var(--surface); border-radius: 10px; padding: 10px; text-align: center; ">
+      <div style="font-size: 10px; color: var(--muted); margin-bottom: 6px; ">新辨識</div>
+      <img id="vc-new-img" src="" style="width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: rgba(255, 255, 255, 0.08);   display: none;" onerror="this.style.display='none'">
+      <div id="vc-new-id" style="font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--accent); margin-top: 6px; "></div>
+      <div id="vc-new-name" style="font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.3; "></div>
+    </div>
+    <div style="flex: 1 1 0%; background: var(--surface); border-radius: 10px; padding: 10px; text-align: center; ">
+      <div style="font-size: 10px; color: var(--muted); margin-bottom: 6px; ">資料庫</div>
+      <img id="vc-db-img" src="" style="width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: rgba(255, 255, 255, 0.08);   display: none;" onerror="this.style.display='none'">
+      <div id="vc-db-id" style="font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--green); margin-top: 6px; "></div>
+      <div id="vc-db-name" style="font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.3; "></div>
+      <div id="vc-db-meta" style="font-size: 10px; color: var(--dim); margin-top: 4px; "></div>
+    </div>
+  </div>
+  <button class="btn-primary" style="width:100%;padding:12px;font-size:14px" onclick="resolveVariant(true)">✓ 同一零件（放到 <span id="vc-slot"></span>）</button>
+  <label id="vc-keep-label" style="display: flex; align-items: center; gap: 6px; margin: 4px 0px 8px; font-size: 13px; color: rgb(170, 170, 170); cursor: pointer; "><input type="checkbox" id="vc-keep-full-id" style="width:16px;height:16px"><span id="vc-keep-text">保留完整 ID 另建新檔</span></label>
+  <button class="btn" style="width:100%;margin-top:8px;padding:10px" onclick="resolveVariant(false)">✕ 不同零件</button>
+</div>
+</div>
+
+<!-- ═══ DETAIL MODAL ═══ -->
+<div class="overlay" id="overlay" onclick="closeModal()">
+<div class="modal" onclick="event.stopPropagation()">
+  <div class="modal-drag"></div>
+  <div class="modal-head">
+    <img id="m-img" src="" onclick="show1to1Box()" style="cursor: zoom-in; display: none;" title="點擊顯示 1:1 尺寸線框圖" onerror="if(this.dataset.fb){this.src=this.dataset.fb;this.dataset.fb=''}else this.style.display='none'">
+    <div class="modal-head-info"><h2 id="m-name"></h2><div class="sub" id="m-ids"></div><div id="m-frequent-badge" style="margin-top:4px"></div></div>
+  </div>
+  <div class="modal-body">
+    <div id="m-overflow-warn"></div>
+    <div id="m-overflow-info" class="overflow-info" style="display:none"></div>
+    <div class="field"><label>數量（件）</label><input type="text" id="m-qty" readonly="" inputmode="none" style="caret-color:var(--accent)" onfocus="openNumpad(this,null,'int')" oninput="recalcVol()"></div>
+    <div class="vol-display" id="m-vol-display"></div>
+    <div class="field"><label>尺寸 (mm)</label>
+      <div class="dim-row">
+        <input type="text" id="m-dimW" readonly="" inputmode="none" placeholder="寬" onfocus="openNumpad(this,null,'decimal')" oninput="recalcVol()"><span>×</span>
+        <input type="text" id="m-dimL" readonly="" inputmode="none" placeholder="長" onfocus="openNumpad(this,null,'decimal')" oninput="recalcVol()"><span>×</span>
+        <input type="text" id="m-dimH" readonly="" inputmode="none" placeholder="高" onfocus="openNumpad(this,null,'decimal')" oninput="recalcVol()"><span>mm</span>
+      </div>
+      <div class="paste-hint" onclick="pasteFromClipboard()">📋 貼上尺寸（從 BrickLink 複製 W x L x H cm，自動轉 mm）</div>
+    </div>
+
+    <div class="field"><label>格子位置</label>
+      <div class="dim-row">
+        <input type="text" id="m-slot" class="mono" style="flex:2">
+        <select id="m-slotType" style="flex: 1 1 0%; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 9px 8px; border-radius: 8px; font-size: 13px;   ">
+          <option value="small">小抽屜</option><option value="large">大抽屜</option>
+          <option value="bag">收納袋</option><option value="box">紙箱</option>
+        </select>
+      </div>
+      <div style="margin-top:6px;display:flex;gap:6px">
+        <button class="btn btn-sm" onclick="showEditorMoveList('move_all')" style="flex:1;font-size:12px;padding:8px">🔄 變更位置（Top 5 最空）</button>
+        <button class="btn btn-sm" onclick="showEditorMoveList('overflow')" style="flex:1;font-size:12px;padding:8px">➕ 指派第二位置</button>
+      </div>
+      <div style="font-size: 10px; color: var(--muted); margin-top: 4px; ">💡 移動 Left/Right 鏡射件時自動同步（名稱需含 Left/Right 或 左/右）</div>
+      <div id="editor-move-list" style="margin-top:8px"></div>
+    </div>
+    <div class="link-row">
+      <a id="m-bl-link" href="#" onclick="openExternalLink(this.href);return false">🔍 查 BrickLink</a>
+      <a id="m-rb-link" href="#" onclick="openExternalLink(this.href);return false">🔍 查 Rebrickable</a>
+    </div>
+    <div class="field"><label>BrickLink 分類</label><input type="text" id="m-blcat" placeholder="如 Minifigure, Body Wear"></div>
+    <div class="field"><label>外型標籤</label><input type="text" id="m-tags" placeholder="多個用逗號分隔"></div>
+    <div class="field"><label>描述</label><textarea id="m-desc" rows="2"></textarea></div>
+    <div class="field"><label>英文名稱</label><input type="text" id="m-nameEN"></div>
+    <div class="field"><label>中文名稱</label><input type="text" id="m-nameCN"></div>
+    <div class="field"><label>Design ID</label><input type="text" id="m-did" class="mono"></div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="closeModal()">取消</button>
+    <button class="btn btn-danger" onclick="deleteItem()">🗑 刪除</button>
+    <button class="btn btn-primary" onclick="editorSaveItem()">💾 儲存</button>
+  </div>
+</div>
 </div>
 
 <div id="toast" class="toast"></div>
 
 <script>
-/* StoreSmart v1.2 — cleaned up: removed dead code (handleLensScreenshot, triggerCamera, handleCapture, identifyItem); merged camera+album to single "實物建檔" button */
-// ══════════════════════════════════════════════
-// CONFIG & STATE
-// ══════════════════════════════════════════════
-const STORAGE_KEY = 'storesmart_cfg';
-const ITEMS_KEY   = 'storesmart_items';
+// ═══ Service Worker registration (for Web Share Target) ═══
 
-// Firebase 預設值（寫死，新裝置自動連線）
-const DEFAULT_FB = {
-  fbProject: 'storesmart-7ae65',
-  fbApiKey: 'AIzaSyDZltB8OQti4ZPkME-K95HXZL51oByXE10',
-  fbCol: 'items'
-};
-
-// ══════════════════════════════════════════════
-// GEMINI API HELPER (REPLACES CLAUDE)
-// ══════════════════════════════════════════════
-// Gemini 模型 fallback：503 過載時自動切換，快取成功模型
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview'];
-let _lastWorkingModel = null; // 快取上次成功的模型
-
-async function callGeminiAPI(prompt, base64Image = null, _retryIdx = 0) {
-  // 優先使用上次成功的模型，跳過 503 等待
-  let model;
-  if (_retryIdx === 0 && _lastWorkingModel) {
-    model = _lastWorkingModel;
-  } else {
-    model = GEMINI_MODELS[_retryIdx] || GEMINI_MODELS[0];
-  }
-  
-  const parts = [{ text: prompt }];
-  if (base64Image) parts.push({ inlineData: { mimeType: 'image/jpeg', data: base64Image } });
-
-  const _t = performance.now();
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cfg.apiKey}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json" } })
-  });
-
-  if (resp.status === 503) {
-    // 清除快取，嘗試下一個模型
-    _lastWorkingModel = null;
-    const curIdx = GEMINI_MODELS.indexOf(model);
-    const nextIdx = curIdx >= 0 ? curIdx + 1 : _retryIdx + 1;
-    if (nextIdx < GEMINI_MODELS.length) {
-      const next = GEMINI_MODELS[nextIdx];
-      console.log('[FALLBACK] ' + model + ' 過載 → ' + next);
-      if (typeof setProcessingMsg === 'function') setProcessingMsg(model + ' 過載，切換 ' + next + '...');
-      return callGeminiAPI(prompt, base64Image, nextIdx);
-    }
-  }
-
-  if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(`Gemini API Error ${resp.status}: ${e?.error?.message || ''}`); }
-  
-  // 成功！快取此模型
-  _lastWorkingModel = model;
-  const data = await resp.json();
-  console.log('[TIMING] ' + model + ': ' + Math.round(performance.now() - _t) + 'ms');
-  return data.candidates[0].content.parts[0].text;
-}
-
-// ══════════════════════════════════════════════
-// LOCATION-BASED STORAGE SYSTEM
-// ══════════════════════════════════════════════
-const LOCATIONS_KEY = 'storesmart_locations';
-const FILL_RATE = 0.65; // 柜体装填率：留空隙/取放空间，约 65%
-// 由柜体长宽高(cm)与单袋容量(ml)估「最多能放几个袋」（只显示，不强制）
-function calcMaxBags(loc){
-  const l=Number(loc&&loc.dimL)||0, w=Number(loc&&loc.dimW)||0, h=Number(loc&&loc.dimH)||0, bag=Number(loc&&loc.bagSizeMl)||0;
-  if(l<=0||w<=0||h<=0||bag<=0) return null;        // 没填齐就不显示
-  const cabinetMl = l*w*h;                          // 1cm³ = 1ml
-  return Math.floor(cabinetMl * FILL_RATE / bag);
-}
-function countLocBags(locId, allItems){
-  const set={}; (allItems||[]).filter(i=>i.locationId===locId).forEach(i=>{set[i.bagNum||1]=1;});
-  return Object.keys(set).length;
-}
-const DEFAULT_LOCATIONS = [
-  { id:'loc_1', name:'書房書櫃', bagSizeMl:2000, hints:'文具、電子配件、小物', dimL:0, dimW:0, dimH:0 },
-  { id:'loc_2', name:'車庫層架', bagSizeMl:10000, hints:'工具、五金、戶外', dimL:0, dimW:0, dimH:0 },
-  { id:'loc_3', name:'廚房層架1', bagSizeMl:5000, hints:'餐具，南北貨', dimL:0, dimW:0, dimH:0 },
-];
-
-let LOCATIONS = [];
-
-function loadLocations() {
-  const saved = localStorage.getItem(LOCATIONS_KEY);
-  LOCATIONS = saved ? JSON.parse(saved) : JSON.parse(JSON.stringify(DEFAULT_LOCATIONS));
-}
-
-function saveLocations() { localStorage.setItem(LOCATIONS_KEY, JSON.stringify(LOCATIONS)); }
-
-function addLocation(name, bagSizeMl, hints, dims) {
-  const id = 'loc_' + Date.now();
-  dims = dims || {};
-  LOCATIONS.push({ id, name, bagSizeMl: Number(bagSizeMl), hints, dimL:Number(dims.l)||0, dimW:Number(dims.w)||0, dimH:Number(dims.h)||0 });
-  saveLocations();
-  return LOCATIONS[LOCATIONS.length - 1];
-}
-
-function removeLocation(id) {
-  LOCATIONS = LOCATIONS.filter(l => l.id !== id);
-  saveLocations();
-}
-
-function assignBag(locationId, featureTags, totalVolumeMl, allItems) {
-  const loc = LOCATIONS.find(l => l.id === locationId);
-  if (!loc) return { locationId, locationName:'未知', bagNum:1 };
-
-  const locItems = allItems.filter(i => i.locationId === locationId);
-  const bags = {};
-  locItems.forEach(i => {
-    const b = i.bagNum || 1;
-    if (!bags[b]) bags[b] = { usedMl: 0, tags: new Set() };
-    bags[b].usedMl += (i.estimateVolumeMl || 0) * (i.quantity || 1);
-    (i.featureTags || []).forEach(t => bags[b].tags.add(t));
-  });
-
-  const bagNums = Object.keys(bags).map(Number).sort((a,b) => a-b);
-  if (bagNums.length === 0) return { locationId, locationName: loc.name, bagNum: 1 };
-
-  const newTags = new Set((featureTags || []).map(t => t.toLowerCase()));
-  for (let i = bagNums.length - 1; i >= 0; i--) {
-    const num = bagNums[i];
-    const bag = bags[num];
-    const bagTagsLower = new Set([...bag.tags].map(t => t.toLowerCase()));
-    const overlap = [...newTags].filter(t => bagTagsLower.has(t));
-    if (overlap.length > 0 && bag.usedMl + totalVolumeMl <= loc.bagSizeMl) {
-      return { locationId, locationName: loc.name, bagNum: num };
-    }
-  }
-
-  // [利用率] 袋號是否用完：已用袋數 ≥ 最大可放袋數（須有填櫃體尺寸才有上限）
-  const maxBags = calcMaxBags(loc);
-  const usedBags = bagNums.length;
-  const capReached = (maxBags !== null && usedBags >= maxBags);
-
-  if (!capReached) {
-    // 袋號還沒用完 → 維持原邏輯：開新袋（同類聚集優先，前面已試過併袋）
-    const maxBag = Math.max(...bagNums);
-    return { locationId, locationName: loc.name, bagNum: maxBag + 1 };
-  }
-
-  // 袋號用完 → 放寬同類限制：找「任何塞得下」的現有袋，從最空的開始塞
-  let best = null;
-  bagNums.forEach(num => {
-    const remain = loc.bagSizeMl - bags[num].usedMl;
-    if (remain >= totalVolumeMl && (best === null || remain > best.remain)) best = { num, remain };
-  });
-  if (best) return { locationId, locationName: loc.name, bagNum: best.num, relaxed: true };
-
-  // 袋號用完且全部塞不下 → 交給上層決定（硬開新袋 / 封存此位置）
-  return { locationId, locationName: loc.name, bagNum: Math.max(...bagNums) + 1, needDecision: true, maxBags, usedBags };
-}
-
-function getLocationPromptList() {
-  return LOCATIONS.filter(l => !l.archived).map(l => `"${l.name}"（${l.bagSizeMl >= 1000 ? (l.bagSizeMl/1000)+'L' : l.bagSizeMl+'ml'}袋，適合放：${l.hints}）`).join('\n');
-}
-// 封存位置：之後不再新建收納（AI 不建議、分配跳過），只能查詢；可解除
-function setLocationArchived(id, archived) {
-  const loc = LOCATIONS.find(l => l.id === id); if (!loc) return;
-  loc.archived = !!archived; saveLocations();
-  showToast(archived ? ('🔒 已封存「'+loc.name+'」：只能查詢，不再新建') : ('🔓 已解除封存「'+loc.name+'」'));
-}
-// 取第一個未封存的位置（fallback 用）
-function firstActiveLocation() { return LOCATIONS.find(l => !l.archived) || LOCATIONS[0]; }
-
-let cfg = {}; let db = null; let pendingItem = null; let currentImageData = null;
-
-// ══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 // INIT
-// ══════════════════════════════════════════════
-function init() {
-  if (typeof firebase === 'undefined') {
-    let waited = 0;
-    const poll = setInterval(() => { waited += 100; if (typeof firebase !== 'undefined' || waited >= 3000) { clearInterval(poll); _init(); } }, 100);
-  } else { _init(); }
+// ═══════════════════════════════════════════════════
+function init(){
+  const saved=localStorage.getItem('bricksort_cfg');
+  if(saved) cfg={...cfg,...JSON.parse(saved)};
+  try{db=firebase.initializeApp(FB_CONFIG,'bs').firestore()}catch(e){try{db=firebase.app('bs').firestore()}catch(e2){}}
+  if(document.getElementById('inp-apikey'))document.getElementById('inp-apikey').value=cfg.apiKey||'';
+  if(document.getElementById('inp-rbkey'))document.getElementById('inp-rbkey').value=cfg.rbKey||DEFAULT_RB_KEY;
+  if(document.getElementById('app-version'))document.getElementById('app-version').textContent='v'+APP_VERSION;
+  // Auto version check: fetch latest from server, reload if stale
+  if(!sessionStorage.getItem('_vcheck_'+APP_VERSION)){
+    sessionStorage.setItem('_vcheck_'+APP_VERSION,'1');
+    fetch(location.pathname+'?_t='+Date.now(),{cache:'no-store'}).then(r=>r.text()).then(html=>{
+      const m=html.match(/APP_VERSION\s*=\s*'([^']+)'/);
+      if(m&&m[1]!==APP_VERSION){console.log('版本更新: '+APP_VERSION+' → '+m[1]);location.reload()}
+    }).catch(()=>{});
+  }
+  initPxMmUI();
+  _loadPromise=loadData();
+  // Bluetooth shutter listener (calibrated click + Enter/Camera key)
+  // Check for shared content (from Web Share Target)
+  checkSharedContent();
 }
 
-function _init() {
-  loadLocations();
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) {
-    cfg = JSON.parse(saved);
-    if (cfg.apiKey)    document.getElementById('inp-apikey').value   = cfg.apiKey;
-    if (cfg.fbProject) document.getElementById('inp-fbproject').value = cfg.fbProject;
-    if (cfg.fbApiKey)  document.getElementById('inp-fbapikey').value  = cfg.fbApiKey;
-    if (cfg.fbCol)     document.getElementById('inp-fbcol').value     = cfg.fbCol;
-    if (cfg.apiKey) {
-      // 自動補上 Firebase 設定（舊裝置升級用）
-      if (!cfg.fbProject) { cfg.fbProject = DEFAULT_FB.fbProject; cfg.fbApiKey = DEFAULT_FB.fbApiKey; cfg.fbCol = DEFAULT_FB.fbCol; delete cfg.localOnly; localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg)); }
-      initFirebase(); showScreen('s-main'); refreshMain(); return;
+// Check IndexedDB for image shared via Web Share Target and process it
+async function checkSharedContent(){
+  const params=new URLSearchParams(location.search);
+  if(params.get('share')!=='received')return;
+  // Clean URL (don't re-trigger on reload)
+  history.replaceState({},'',location.pathname);
+  try{
+    const payload=await readSharedInbox();
+    if(!payload){showToast('未收到分享內容','error');return}
+    if(payload.image){
+      // Wait for data load then process
+      await _loadPromise;
+      const reader=new FileReader();
+      reader.onload=async e=>{
+        const resized=await resizeImage(e.target.result,800);
+        currentImageData=resized;
+        showScreen('s-processing');
+        setProcessingMsg('📷 收到分享圖片，辨識中…');
+        try{
+          await showSharedImageDialog(resized.split(',')[1],resized);
+        }catch(err){showTab('main');showToast('辨識失敗：'+err.message,'error')}
+      };
+      reader.readAsDataURL(payload.image);
+      showToast('已收到分享圖片，開始辨識…');
+    }else if(payload.text){
+      showToast('收到文字分享：'+payload.text.substring(0,40));
     }
-  }
-  showScreen('s-setup');
-}
-
-function initFirebase() {
-  if (!cfg.fbProject || !cfg.fbApiKey) return;
-  if (typeof firebase === 'undefined') { console.warn('Firebase SDK not loaded'); cfg.localOnly = true; return; }
-  try { const app = firebase.app('storesmart'); db = app.firestore(); } 
-  catch(e) {
-    try { const app = firebase.initializeApp({ apiKey: cfg.fbApiKey, projectId: cfg.fbProject }, 'storesmart'); db = app.firestore(); } 
-    catch(e2) { console.warn('Firebase init failed', e2); cfg.localOnly = true; }
+  }catch(err){
+    console.error('[share] read inbox failed:',err);
+    showToast('讀取分享失敗: '+err.message,'error');
   }
 }
 
-function saveSetup() {
-  const apiKey = document.getElementById('inp-apikey').value.trim();
-  if (!apiKey) { alert('請輸入 Gemini API Key'); return; }
-  cfg = { apiKey, provider: 'gemini', ...DEFAULT_FB };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-  initFirebase(); showScreen('s-main'); refreshMain();
-}
-
-function useLocalOnly() {
-  const apiKey = document.getElementById('inp-apikey').value.trim();
-  if (!apiKey) { alert('請輸入 Gemini API Key'); return; }
-  cfg = { apiKey, provider: 'gemini', localOnly: true };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-  showScreen('s-main'); refreshMain();
-}
-
-function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active'); window.scrollTo(0,0);
-  if (id === 's-setup') {
-    const bb = document.getElementById('setup-back-btn');
-    if (bb) bb.style.display = (cfg && cfg.apiKey) ? 'inline-block' : 'none';
-  }
-  if (id !== 's-processing' && window._procTimer) {
-    clearInterval(window._procTimer); window._procTimer = null;
-    const el = document.getElementById('processing-timer'); if (el) el.textContent = '';
-  }
-}
-
-// ══════════════════════════════════════════════
-// CAMERA / FILE CAPTURE
-// ══════════════════════════════════════════════
-// [v1.2] removed: triggerCamera (inlined in scan-btn onclick)
-// [v1.2] removed: handleCapture (camera-input dropped, use handleBatchCapture for all)
-
-async function resizeImage(dataUrl, maxDim) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxDim / Math.max(img.width, img.height)), w = Math.round(img.width * scale), h = Math.round(img.height * scale);
-      const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h); resolve(canvas.toDataURL('image/jpeg', 0.85));
+function readSharedInbox(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open('bricksort-share',1);
+    req.onupgradeneeded=()=>{req.result.createObjectStore('inbox',{keyPath:'id'})};
+    req.onsuccess=()=>{
+      const db2=req.result;
+      const tx=db2.transaction('inbox','readwrite');
+      const store=tx.objectStore('inbox');
+      const getReq=store.get('latest');
+      getReq.onsuccess=()=>{
+        const data=getReq.result;
+        if(data)store.delete('latest'); // consume
+        tx.oncomplete=()=>{db2.close();resolve(data||null)};
+      };
+      getReq.onerror=()=>reject(getReq.error);
     };
-    img.src = dataUrl;
+    req.onerror=()=>reject(req.error);
   });
 }
 
-// ══════════════════════════════════════════════
-// BATCH PROCESSING
-// ══════════════════════════════════════════════
-let batchQueue = []; let batchRunning = false; let batchCancelled = false;
-
-async function handleBatchCapture(event) {
-  const files = Array.from(event.target.files || []); event.target.value = ''; if (!files.length) return;
-  if (files.length === 1) {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      currentImageData = await resizeImage(e.target.result, 1024);
-      showScreen('s-processing'); setProcessingMsg('AI 辨識中...');
-      try {
-        const result = await identifyWithGemini(currentImageData);
-        if (!result) { showScreen('s-main'); showToast('辨識失敗，請重拍', 'error'); return; }
-        await processIdentifiedItem(result);
-      } catch (err) { showScreen('s-main'); showToast('辨識失敗：' + err.message, 'error'); }
-    };
-    reader.readAsDataURL(files[0]); return;
+function saveSettings(){
+  cfg.apiKey=(document.getElementById('inp-apikey').value||'').trim();
+  cfg.rbKey=(document.getElementById('inp-rbkey').value||'').trim()||DEFAULT_RB_KEY;
+  cfg.pxPerMm=parseFloat(document.getElementById('inp-pxmm').value)||cfg.pxPerMm||0;
+  localStorage.setItem('bricksort_cfg',JSON.stringify(cfg));
+  // 常用門檻 → 存入 slotConfig（同步到 Firebase）
+  const ftEl=document.getElementById('inp-freq-threshold');
+  if(ftEl){
+    const ft=parseInt((ftEl.value||'').trim());
+    const newThreshold=isNaN(ft)?0:Math.max(0,ft);
+    if(typeof slotConfig==='object'&&slotConfig.rebrickableFrequentThreshold!==newThreshold){
+      slotConfig.rebrickableFrequentThreshold=newThreshold;
+      if(typeof markDirty==='function')markDirty('__config__');
+    }
   }
-  await startBatch(files, 'photo');
+  showToast('設定已儲存');
+  showTab('main');
 }
 
-async function startBatch(files, mode) {
-  batchCancelled = false; batchRunning = true;
-  batchQueue = files.map((f, i) => ({ id: i, file: f, mode, dataUrl: null, status: 'pending', result: null, error: null, name: f.name }));
-
-  showScreen('s-batch'); document.getElementById('batch-title').textContent = `批次建檔 ${files.length} 張`;
-  document.getElementById('batch-back-btn').textContent = '✕ 取消'; document.getElementById('batch-done-panel').style.display = 'none'; renderBatchList();
-
-  await Promise.all(batchQueue.map(item => new Promise(resolve => {
-    const reader = new FileReader(); reader.onload = async (e) => { item.dataUrl = await resizeImage(e.target.result, 600); resolve(); }; reader.readAsDataURL(item.file);
-  })));
-  renderBatchList();
-
-  let done = 0, errors = 0;
-  for (const item of batchQueue) {
-    if (batchCancelled) break;
-    item.status = 'processing'; renderBatchList(); updateBatchProgress(done, batchQueue.length, item);
-
-    try {
-      let result;
-      const fullDataUrl = await new Promise(resolve => { const reader = new FileReader(); reader.onload = e => resolve(e.target.result); reader.readAsDataURL(item.file); });
-
-      const imageData = await resizeImage(fullDataUrl, 1024);
-      item.dataUrl = imageData;
-      result = await identifyWithGemini(imageData);
-
-      const allItems = await loadItems();
-      const loc = LOCATIONS.find(l => l.name === (result.suggested_location || '')) || LOCATIONS[0];
-      const volMl = parseInt(result.estimate_volume_ml) || 100, featureTags = result.feature_tags || [];
-      const bagInfo = assignBag(loc.id, featureTags, volMl, allItems);
-      const now = Date.now();
-      const savedItem = { name: result.name, name_en: result.name_en || '', locationId: bagInfo.locationId, locationName: bagInfo.locationName, bagNum: bagInfo.bagNum, estimateVolumeMl:volMl, quantity: 1, featureTags: featureTags, description: result.description || '', keywords: result.keywords || [], id: 'item_' + now + '_' + Math.random().toString(36).slice(2,5), createdAt: now, updatedAt: now, imageData: result._useThumb || item.dataUrl || '' };
-      await saveItem(savedItem);
-
-      item.result = savedItem; item.status = 'done'; done++;
-    } catch(err) { item.error = err.message; item.status = 'error'; errors++; }
-
-    renderBatchList(); updateBatchProgress(done + errors, batchQueue.length, null);
-    if (!batchCancelled) await new Promise(r => setTimeout(r, 600));
-  }
-
-  batchRunning = false; document.getElementById('batch-back-btn').textContent = '← 返回'; document.getElementById('batch-done-panel').style.display = 'block';
-  document.getElementById('batch-done-icon').textContent = errors === 0 ? '✓' : '⚠';
-  document.getElementById('batch-done-text').textContent = batchCancelled ? '已取消批次建檔' : `完成！共建檔 ${done} 件`;
-  document.getElementById('batch-done-sub').textContent = errors > 0 ? `失敗 ${errors} 件，可重試` : '所有物品已儲存';
-  updateBatchProgress(batchQueue.length, batchQueue.length, null);
+// ═══ Screen Calibration ═══
+function autoDetectPxMm(){
+  const dpr=window.devicePixelRatio||1;
+  // Show a 200px CSS-pixel line for user to measure
+  const ruler=document.getElementById('pxmm-ruler');
+  ruler.style.display='block';
+  document.getElementById('pxmm-line').style.width='200px';
+  document.getElementById('pxmm-status').textContent='DPR: '+dpr+' | 線段寬度: 200 CSS px';
+  document.getElementById('pxmm-measured').value='';
+  document.getElementById('pxmm-measured').focus();
+}
+function confirmPxMm(){
+  const measured=parseFloat(document.getElementById('pxmm-measured').value);
+  if(!measured||measured<=0){showToast('請輸入實測長度','error');return}
+  const pxPerMm=200/measured;
+  cfg.pxPerMm=Math.round(pxPerMm*100)/100;
+  document.getElementById('inp-pxmm').value=cfg.pxPerMm;
+  document.getElementById('pxmm-ruler').style.display='none';
+  document.getElementById('pxmm-status').innerHTML='✅ <b>'+cfg.pxPerMm+' px/mm</b> | 1mm = '+cfg.pxPerMm.toFixed(1)+' CSS像素';
+  localStorage.setItem('bricksort_cfg',JSON.stringify(cfg));
+  showToast('校正完成: '+cfg.pxPerMm+' px/mm');
+}
+function initPxMmUI(){
+  if(document.getElementById('inp-pxmm'))document.getElementById('inp-pxmm').value=cfg.pxPerMm||'';
+  const st=document.getElementById('pxmm-status');
+  if(st){if(cfg.pxPerMm)st.innerHTML='✅ <b>'+cfg.pxPerMm+' px/mm</b>';else st.textContent='尚未校正'}
 }
 
-function cancelBatch() { if (batchRunning) { batchCancelled = true; batchRunning = false; } showScreen('s-main'); refreshMain(); }
-function updateBatchProgress(done, total, current) {
-  const pct = total > 0 ? Math.round(done / total * 100) : 0;
-  document.getElementById('batch-progress-bar').style.width = pct + '%'; document.getElementById('batch-count-badge').textContent = `${done} / ${total}`;
-  document.getElementById('batch-status-text').textContent = current ? `辨識中：${current.file.name.slice(0,20)}...` : done === total ? '全部完成' : '準備中...';
-}
-function renderBatchList() {
-  document.getElementById('batch-item-list').innerHTML = batchQueue.map(item => {
-    const statusIcon = item.status === 'pending' ? '<span style="color:var(--dim)">○</span>' : item.status === 'processing' ? '<div class="spinner" style="width:18px;height:18px;border-width:2px;margin:0"></div>' : item.status === 'done' ? '<span style="color:var(--green)">✓</span>' : '<span style="color:var(--red)">✗</span>';
-    const name = item.result?.name || item.name || '辨識中...';
-    const meta = item.status === 'done' ? `#${item.result?.bagNum || 1} ${item.result?.locationName || ''}` : item.status === 'error' ? item.error?.slice(0,40) || '失敗' : item.status === 'processing' ? '辨識中...' : '等待中';
-    return `<div class="batch-item ${item.status}">${item.dataUrl ? `<img class="batch-thumb" src="${item.dataUrl}">` : `<div class="batch-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:18px">◻</div>`}<div class="batch-info"><div class="batch-name">${name}</div><div class="batch-meta">${meta}</div></div><div class="batch-status-icon">${statusIcon}</div></div>`;
-  }).join('');
-}
-
-// ══════════════════════════════════════════════
-// GOOGLE LENS SCREENSHOT MODE
-// ══════════════════════════════════════════════
-
-
-// [v1.2] removed: identifyItem (wrapper, now handleBatchCapture calls identifyWithGemini directly)
-
-function safeParseJSON(text) {
-  text = text.replace(/^```json\s*/i, '').replace(/```\s*$/,'').trim();
-  try { return JSON.parse(text); } catch(e1) {}
-  const m = text.match(/\{[\s\S]*\}/); if (!m) throw new Error('回應中找不到 JSON 格式');
-  let raw = m[0].replace(/&amp;/g, '&');
-  raw = raw.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match) => match.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t'));
-  try { return JSON.parse(raw); } catch(e2) {}
-  const extract = (key) => { const r = raw.match(new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`, 'i')); return r ? r[1] : ''; };
-  const extractArr = (key) => { const r = raw.match(new RegExp(`"${key}"\\s*:\\s*\\[([^\\]]*)\\]`, 'i')); if (!r) return []; return r[1].match(/"([^"]*)"/g)?.map(s => s.replace(/"/g,'')) || []; };
-  return {
-    name: extract('name') || extract('product_name') || '未知商品', name_en: extract('name_en'), brand: extract('brand'), description: extract('description') || extract('summary_text'),
-    keywords: extractArr('keywords'), feature_tags: extractArr('feature_tags'), key_features: extractArr('key_features'), suggested_location: extract('suggested_location') || '',
-    estimate_volume_ml: parseInt(extract('estimate_volume_ml')) || 100, confidence: extract('confidence') || 'medium',
-    matched_existing_id: extract('matched_existing_id') || null,
+// ═══ 1:1 Wireframe 3D Box ═══
+function show1to1Box(){
+  if(!currentItem)return;
+  const w=(currentItem.dimW||0)*10,l=(currentItem.dimL||0)*10,h=(currentItem.dimH||0)*10;
+  if(w<=0||l<=0||h<=0){showToast('此零件無尺寸資料','error');return}
+  if(!cfg.pxPerMm||cfg.pxPerMm<=0){showToast('請先在設定中校正螢幕像素','error');return}
+  const ppm=cfg.pxPerMm;
+  // Convert mm to CSS pixels
+  const pw=w*ppm,pl=l*ppm,ph=h*ppm;
+  // Oblique projection: depth at 30° angle, 50% foreshortening
+  const dScale=0.5,dAngle=30*Math.PI/180;
+  const dx=pl*dScale*Math.cos(dAngle),dy=pl*dScale*Math.sin(dAngle);
+  // SVG size with padding
+  const pad=40;
+  const svgW=pw+dx+pad*2,svgH=ph+dy+pad*2;
+  // Origin: bottom-left of front face
+  const ox=pad,oy=pad+dy+ph;
+  // 8 vertices of the box
+  const pts={
+    flb:[ox,oy],frb:[ox+pw,oy],flt:[ox,oy-ph],frt:[ox+pw,oy-ph],
+    blb:[ox+dx,oy-dy],brb:[ox+pw+dx,oy-dy],blt:[ox+dx,oy-dy-ph],brt:[ox+pw+dx,oy-dy-ph]
   };
+  const line=(a,b,dash)=>'<line x1="'+a[0]+'" y1="'+a[1]+'" x2="'+b[0]+'" y2="'+b[1]+'" stroke="'+(dash?'#555':'#F5A623')+'" stroke-width="'+(dash?'1':'1.5')+'"'+(dash?' stroke-dasharray="4,3"':'')+'/>';
+  // Dimension labels
+  const mid=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+  const dimLabel=(x,y,text,anchor)=>'<text x="'+x+'" y="'+y+'" fill="#F5A623" font-size="13" font-family="monospace" font-weight="700" text-anchor="'+(anchor||'middle')+'">'+text+'</text>';
+  let svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+svgW+'" height="'+svgH+'" viewBox="0 0 '+svgW+' '+svgH+'">';
+  // Back edges (dashed)
+  svg+=line(pts.blb,pts.brb,1)+line(pts.blb,pts.blt,1)+line(pts.blb,pts.flb,1);
+  // Front face
+  svg+=line(pts.flb,pts.frb)+line(pts.frb,pts.frt)+line(pts.frt,pts.flt)+line(pts.flt,pts.flb);
+  // Top face
+  svg+=line(pts.flt,pts.blt)+line(pts.blt,pts.brt)+line(pts.brt,pts.frt);
+  // Right face
+  svg+=line(pts.frb,pts.brb)+line(pts.brb,pts.brt);
+  // Dimension labels: W (bottom), H (left), L (top-right)
+  const mW=mid(pts.flb,pts.frb);svg+=dimLabel(mW[0],mW[1]+16,w+'mm');
+  const mH=mid(pts.flb,pts.flt);svg+=dimLabel(mH[0]-8,mH[1],h+'mm','end');
+  const mL=mid(pts.frt,pts.brt);svg+=dimLabel(mL[0]+8,mL[1]-4,l+'mm','start');
+  // Volume info
+  svg+=dimLabel(svgW/2,svgH-8,Math.round(w*l*h/1000*10)/10+'ml','middle');
+  svg+='</svg>';
+  // Show overlay
+  let ov=document.getElementById('wireframe-overlay');
+  if(!ov){ov=document.createElement('div');ov.id='wireframe-overlay';document.body.appendChild(ov)}
+  ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
+  ov.onclick=()=>{ov.style.display='none'};
+  ov.innerHTML='<div style="color:var(--accent);font-size:14px;font-weight:700;margin-bottom:12px">📏 1:1 實體尺寸（點擊任意處關閉）</div><div style="color:var(--muted);font-size:12px;margin-bottom:16px">'+(currentItem.nameCN||currentItem.name||'')+' · '+w+'×'+l+'×'+h+' mm</div><div style="overflow:auto;max-width:100%;max-height:70vh">'+svg+'</div><div style="color:#555;font-size:11px;margin-top:12px">'+cfg.pxPerMm+' px/mm · 將零件放在螢幕上比對</div>';
 }
 
-async function buildExistingItemsList() {
-  const items = await loadItems();
-  if (!items.length) return '';
-  const grouped = {};
-  items.forEach(i => {
-    const loc = i.locationName || '未分類';
-    if (!grouped[loc]) grouped[loc] = [];
-    if (grouped[loc].length < 20) {
-      grouped[loc].push('[' + i.id + '] ' + i.name + '（' + (i.featureTags||[]).join(',') + '）');
-    }
-  });
-  let list = '\n已建檔物品清單（重複偵測用）：\n';
-  for (const [loc, arr] of Object.entries(grouped)) {
-    list += loc + '：\n';
-    arr.forEach(x => list += '- ' + x + '\n');
+// ═══════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════
+const navHistory=[];
+function showScreen(id,pushHistory=true){
+  const current=document.querySelector('.screen.active');
+  const currentId=current?current.id:'';
+  // Push to history (skip transient screens like processing)
+  if(pushHistory&&currentId&&currentId!==id&&currentId!=='s-processing'){
+    navHistory.push(currentId);
+    if(navHistory.length>20)navHistory.shift();
   }
-  return list;
-}
-
-function buildPrompt(existingList) {
-  const locList = getLocationPromptList();
-  return `你是智慧收納系統的物品辨識模組。請辨識圖片中的物品。\n家中有以下收納位置：\n${locList}\n${existingList || ""}\n請根據物品特性，建議最適合的收納位置，並估算物品的收納體積。回應純 JSON 格式（不要有任何其他文字）：\n{"name": "完整商品中文名稱","name_en": "English product name","brand": "品牌名稱","description": "30字內描述","keywords": ["關鍵字1"],"feature_tags": ["書寫"],"suggested_location": "位置名稱","estimate_volume_ml": 100,
-"matched_existing_id": "如果新物品與已建檔清單中某物品是同一件實體商品（品牌型號相同、只是名稱寫法或顏色描述不同），填入該物品的 id（如 item_xxx）。完全不同的物品填 null"}`;
-}
-
-async function identifyWithGemini(imageData) {
-  const base64 = imageData.split(',')[1];
-  const existingList = await buildExistingItemsList();
-  const textResp = await callGeminiAPI(buildPrompt(existingList), base64);
-  return safeParseJSON(textResp);
-}
-
-async function processIdentifiedItem(item) {
-  setProcessingMsg('指派收納位置...');
-  const allItems = await loadItems();
-  const volMl = parseInt(item.estimate_volume_ml) || 100, featureTags = item.feature_tags || [], qty = 1;
-
-  // ══ [BrickSort 移植 §3] 視覺主鍵優先：圖對圖比對既有件 ══
-  // 文字比對降為 fallback。match→沿用既有位置；uncertain→確認框；no_match→放行新建。
-  let match = null;            // 視為「同一件」的既有物件
-  let visualResult = null;     // 圖對圖結果（供 UI 顯示信心）
-  let needConfirm = false;     // uncertain：需人為裁決
-  try {
-    if (currentImageData && currentImageData.length > 100) {
-      setProcessingMsg('視覺比對既有物品...');
-      // [§1 統一口徑] 查詢圖重新壓到與建檔縮圖相同的 800px/0.85，避免尺寸差異拉低信心
-      let queryImg = currentImageData;
-      try { queryImg = await resizeImage(currentImageData, 800); } catch(_) {}
-      visualResult = await matchStorageVisual(queryImg, { estimateVolumeMl: volMl, featureTags });
-      try { console.log('[visualMatch] decision=' + (visualResult && visualResult.decision) + ' conf=' + (visualResult && visualResult.bestMatch && visualResult.bestMatch.confidence)); } catch(e) {}
-      if (visualResult && !visualResult.error && visualResult.bestMatch && visualResult.bestMatch._internalItem) {
-        if (visualResult.decision === 'match') {
-          match = visualResult.bestMatch._internalItem;            // ≥70：同一件
-        } else if (visualResult.decision === 'uncertain') {
-          match = visualResult.bestMatch._internalItem;            // 40-69：疑似 → 走確認框
-          needConfirm = true;
-        }
-      }
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  // 開啟設定畫面時，載入常用門檻值（未設定預設 200）
+  if(id==='s-settings'){
+    const ft=document.getElementById('inp-freq-threshold');
+    if(ft){
+      const t=(typeof slotConfig==='object'&&slotConfig.rebrickableFrequentThreshold!=null)?slotConfig.rebrickableFrequentThreshold:200;
+      ft.value=t;
     }
-  } catch (e) { try { console.log('[visualMatch] 失敗，改用文字 fallback：' + e.message); } catch(_) {} }
-
-  // ══ Fallback：圖對圖無結果時，才用文字比對（matched_existing_id / findDuplicate）══
-  if (!match) {
-    if (item.matched_existing_id && item.matched_existing_id !== 'null') {
-      match = allItems.find(i => i.id === item.matched_existing_id);
-    }
-    if (!match) match = findDuplicate(item.name, item.keywords, allItems);
   }
-
-  // ══ [§4] 位置決定：match→繼承既有 locationId/bagNum（嚴禁重新 assignBag）；no_match→分配新號 ══
-  let bagInfo;
-  if (match) {
-    bagInfo = { locationId: match.locationId, locationName: match.locationName, bagNum: match.bagNum };
+  window.scrollTo(0,0);
+}
+function goBack(){
+  if(navHistory.length>0){
+    const prev=navHistory.pop();
+    showScreen(prev,false);
+    // Update tab highlight if going back to a tab screen
+    const tabMap={'s-main':'main','s-merged':'merged','s-map-small':'map-small','s-map-large':'map-large','s-map-bag':'map-bag','s-allparts':'allparts'};
+    if(tabMap[prev]){
+      currentTab=tabMap[prev];
+      document.querySelectorAll('.nav-tab').forEach((t,i)=>t.classList.toggle('active',['main','merged','map-small','map-large','map-bag','allparts'][i]===currentTab));
+      // Re-render tab content if needed
+      if(currentTab==='merged')renderMergedView();
+      else if(currentTab==='map-small')renderDrawerMap('small');
+      else if(currentTab==='map-large')renderDrawerMap('large');
+      else if(currentTab==='map-bag')renderDrawerMap('bag');
+      else if(currentTab==='allparts')renderAllParts();
+    }
   } else {
-    let loc = LOCATIONS.find(l => l.name === (item.suggested_location || '') && !l.archived) || firstActiveLocation();
-    bagInfo = assignBag(loc.id, featureTags, volMl * qty, allItems);
-    // [利用率] 袋號用完且塞不下 → 詢問：硬開新袋 / 封存此位置
-    if (bagInfo.needDecision) {
-      const goNew = confirm(
-        `⚠ 「${loc.name}」已達建議上限（${bagInfo.usedBags}/${bagInfo.maxBags} 袋，65% 空間），且現有袋都塞不下這件。\n\n` +
-        `「確定」＝硬開新袋 #${bagInfo.bagNum}（超出建議但繼續用）\n` +
-        `「取消」＝封存此位置（之後只能查詢、不再新建，請改放其他位置）`
-      );
-      if (!goNew) {
-        setLocationArchived(loc.id, true);
-        // 改分配到其他未封存位置
-        const alt = firstActiveLocation();
-        if (alt && alt.id !== loc.id) { loc = alt; bagInfo = assignBag(alt.id, featureTags, volMl * qty, allItems); }
-        else { showToast('⚠ 已無可用位置，請先到「收納位置」新增或解除封存', 'error'); }
-      }
-    }
-  }
-
-  pendingItem = { ...item, ...bagInfo, featureTags, estimateVolumeMl: volMl, quantity: qty, imageData: currentImageData, isUpdate: !!match, matchedId: match ? match.id : null };
-
-  document.getElementById('result-img').src = pendingItem._useThumb || currentImageData || '';
-  document.getElementById('result-name').textContent = item.name; document.getElementById('result-category').textContent = item.description || ''; document.getElementById('result-desc').textContent = '';
-
-  const kw = document.getElementById('result-keywords'); kw.innerHTML = '';
-  if (featureTags.length) featureTags.forEach(t => { const s = document.createElement('span'); s.className = 'keyword-tag'; s.style.cssText = 'background:var(--blue-bg);color:var(--blue);border-color:rgba(59,130,246,.3)'; s.textContent = t; kw.appendChild(s); });
-  const volLabel = volMl >= 1000 ? (volMl/1000).toFixed(1)+'L' : volMl+'ml';
-  const volBadge = document.createElement('span'); volBadge.className = 'keyword-tag'; volBadge.style.cssText = 'background:var(--accent-bg);color:var(--accent);border-color:var(--accent)'; volBadge.textContent = '單件 ≈ ' + volLabel; kw.appendChild(volBadge);
-
-  const qtyRow = document.createElement('div'); qtyRow.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px';
-  qtyRow.innerHTML = `<span style="font-size:13px;color:var(--muted)">數量</span><button onclick="adjustQty(-1)" style="width:30px;height:30px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:16px;cursor:pointer">−</button><span id="qty-display" style="font-family:var(--mono);font-size:18px;font-weight:700;min-width:28px;text-align:center">1</span><button onclick="adjustQty(1)" style="width:30px;height:30px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:16px;cursor:pointer">+</button><span id="qty-total-vol" style="font-size:12px;color:var(--muted);margin-left:auto;font-family:var(--mono)">= ${volLabel}</span>`;
-  kw.appendChild(qtyRow);
-
-  // [方案3] 可手動覆寫尺寸/體積：預填 AI 估值，使用者想改才改
-  const sizeRow = document.createElement('div');
-  sizeRow.style.cssText = 'margin-top:8px;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px';
-  sizeRow.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="font-size:13px;color:var(--muted)">單件體積</span>
-      <input id="size-vol-input" type="number" inputmode="numeric" value="${volMl}" min="1"
-        style="width:84px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:14px;font-family:var(--mono);text-align:right"> 
-      <span style="font-size:12px;color:var(--muted)">ml</span>
-      <span style="font-size:11px;color:var(--accent);margin-left:auto">AI 估</span>
-      <button id="size-vol-apply" style="background:var(--accent);color:#0d0d0d;border:none;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">套用</button>
-    </div>
-    <div style="margin-top:8px">
-      <button id="size-lwh-toggle" style="background:none;border:none;color:var(--accent);font-size:12px;cursor:pointer;padding:0">📐 用長×寬×高(cm)算體積</button>
-      <div id="size-lwh-box" style="display:none;align-items:center;gap:6px;margin-top:6px">
-        <input id="size-l" type="number" inputmode="decimal" placeholder="長" min="0" style="width:54px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px;font-size:13px;font-family:var(--mono);text-align:center">
-        <span style="color:var(--muted)">×</span>
-        <input id="size-w" type="number" inputmode="decimal" placeholder="寬" min="0" style="width:54px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px;font-size:13px;font-family:var(--mono);text-align:center">
-        <span style="color:var(--muted)">×</span>
-        <input id="size-h" type="number" inputmode="decimal" placeholder="高" min="0" style="width:54px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px;font-size:13px;font-family:var(--mono);text-align:center">
-        <span style="font-size:11px;color:var(--muted)">cm</span>
-        <button id="size-lwh-apply" style="background:var(--accent);color:#0d0d0d;border:none;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:auto">換算並套用</button>
-      </div>
-    </div>`;
-  kw.appendChild(sizeRow);
-  // 綁定事件（用 addEventListener 避免內嵌引號問題）
-  sizeRow.querySelector('#size-vol-apply').addEventListener('click', function(){
-    const v = parseInt(document.getElementById('size-vol-input').value);
-    if (v && v > 0) applySizeOverride(v, true);
-  });
-  sizeRow.querySelector('#size-lwh-toggle').addEventListener('click', function(){
-    const box = document.getElementById('size-lwh-box');
-    box.style.display = (box.style.display === 'none' || !box.style.display) ? 'flex' : 'none';
-  });
-  sizeRow.querySelector('#size-lwh-apply').addEventListener('click', function(){
-    const l = parseFloat(document.getElementById('size-l').value) || 0;
-    const w = parseFloat(document.getElementById('size-w').value) || 0;
-    const h = parseFloat(document.getElementById('size-h').value) || 0;
-    if (l > 0 && w > 0 && h > 0) {
-      const ml = Math.round(l * w * h); // 1cm³ = 1ml
-      document.getElementById('size-vol-input').value = ml;
-      applySizeOverride(ml, false, {l, w, h});
-    } else { showToast('請輸入三邊長度', 'error'); }
-  });
-
-  if (item.keywords?.length) { const kwDiv = document.createElement('div'); kwDiv.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:8px'; (item.keywords || []).forEach(k => { const s = document.createElement('span'); s.className = 'keyword-tag'; s.textContent = k; kwDiv.appendChild(s); }); kw.appendChild(kwDiv); }
-
-  const banner = document.getElementById('match-banner');
-  if (match) {
-    banner.style.display = 'block';
-    const conf = (visualResult && visualResult.bestMatch && visualResult.bestMatch.confidence) || 0;
-    const viaVisual = !!(visualResult && visualResult.bestMatch && visualResult.bestMatch._internalItem && visualResult.bestMatch._internalItem.id === match.id);
-    const confTxt = viaVisual ? ('（視覺信心 ' + conf + '%）') : '（文字比對）';
-    if (match && !needConfirm && viaVisual) {
-      // [§3/§4] 強匹配 ≥70：直接認定同一件，沿用既有位置、數量 +1
-      pendingItem.isUpdate = true; pendingItem.matchedId = match.id;
-      pendingItem.locationId = match.locationId; pendingItem.locationName = match.locationName; pendingItem.bagNum = match.bagNum;
-      pendingItem.quantity = (match.quantity || 1) + 1; pendingItem.name = match.name;
-      pendingItem.featureTags = match.featureTags || pendingItem.featureTags;
-      pendingItem._matchRef = match;
-      const qd = document.getElementById('qty-display'); if (qd) qd.textContent = pendingItem.quantity;
-      banner.innerHTML = `<div class="match-banner-title" style="color:var(--green)">✅ 已辨識為既有物品 ${confTxt}</div><div class="match-banner-sub" style="margin-bottom:10px">「${match.name}」請放回 <strong>#${match.bagNum} ${match.locationName}</strong>，數量將更新為 ${pendingItem.quantity}</div><div style="display:flex;gap:8px"><button class="btn-sm" style="flex:1">✓ 同一物品 +1（預設）</button><button class="btn-sm" style="flex:1;background:var(--surface)" onclick="chooseDuplicateAction('newItem')">其實是不同物品</button></div>`;
-    } else {
-      // uncertain 40-69，或文字 fallback 命中：交給使用者裁決
-      banner.innerHTML = `<div class="match-banner-title" style="color:var(--accent)">⚠ 疑似既有物品 ${confTxt}</div><div class="match-banner-sub" style="margin-bottom:10px">「${match.name}」已在 <strong>#${match.bagNum} ${match.locationName}</strong></div><div style="display:flex;gap:8px"><button class="btn-sm" style="flex:1;background:var(--green-bg);border-color:var(--green);color:var(--green)" onclick="chooseDuplicateAction('addQty')">同一物品 +1</button><button class="btn-sm" style="flex:1" onclick="chooseDuplicateAction('newItem')">不同物品（另外建檔）</button></div>`;
-      pendingItem._matchRef = match; pendingItem.isUpdate = false;
-    }
-  } else { banner.style.display = 'none'; }
-
-  document.getElementById('result-zonename').textContent = pendingItem.locationName; document.getElementById('result-bag').textContent = '#' + pendingItem.bagNum; showScreen('s-result');
-}
-
-function adjustQty(delta) {
-  if (!pendingItem) return;
-  pendingItem.quantity = Math.max(1, (pendingItem.quantity||1) + delta); document.getElementById('qty-display').textContent = pendingItem.quantity;
-  const totalVol = pendingItem.estimateVolumeMl * pendingItem.quantity; document.getElementById('qty-total-vol').textContent = '= ' + (totalVol >= 1000 ? (totalVol/1000).toFixed(1)+'L' : totalVol+'ml');
-  loadItems().then(allItems => {
-    const bagInfo = assignBag(pendingItem.locationId, pendingItem.featureTags || [], totalVol, allItems);
-    pendingItem.locationId = bagInfo.locationId; pendingItem.locationName = bagInfo.locationName; pendingItem.bagNum = bagInfo.bagNum;
-    document.getElementById('result-zonename').textContent = bagInfo.locationName; document.getElementById('result-bag').textContent = '#' + bagInfo.bagNum;
-  });
-}
-
-// [方案3] 手動覆寫單件體積（直接 ml 或由長寬高換算）→ 更新體積、重算袋號
-function applySizeOverride(volMl, viaDirect, dims) {
-  if (!pendingItem || !volMl || volMl <= 0) return;
-  pendingItem.estimateVolumeMl = volMl;
-  pendingItem.manualVolume = true;                 // 標記為手動值，圖對圖粗篩仍可用
-  if (dims) { pendingItem.dimL = dims.l; pendingItem.dimW = dims.w; pendingItem.dimH = dims.h; }
-  // 更新「單件 ≈」徽章 與 數量總體積
-  const single = volMl >= 1000 ? (volMl/1000).toFixed(1)+'L' : volMl+'ml';
-  const badge = Array.from(document.querySelectorAll('#result-keywords .keyword-tag')).find(function(s){return (s.textContent||'').indexOf('單件 ≈')>=0;});
-  if (badge) badge.textContent = '單件 ≈ ' + single;
-  const totalVol = volMl * (pendingItem.quantity || 1);
-  const qtv = document.getElementById('qty-total-vol'); if (qtv) qtv.textContent = '= ' + (totalVol >= 1000 ? (totalVol/1000).toFixed(1)+'L' : totalVol+'ml');
-  // 改「AI 估」標記為「已調整」
-  const tag = document.querySelector('#size-vol-input') && document.querySelector('#size-vol-input').parentElement.querySelector('span[style*="margin-left:auto"]');
-  if (tag) { tag.textContent = '已調整'; tag.style.color = 'var(--green)'; }
-  // 體積變了 → 重新分配袋號（袋滿開新袋，與 adjustQty 同邏輯）
-  loadItems().then(function(allItems){
-    const bagInfo = assignBag(pendingItem.locationId, pendingItem.featureTags || [], totalVol, allItems);
-    pendingItem.locationId = bagInfo.locationId; pendingItem.locationName = bagInfo.locationName; pendingItem.bagNum = bagInfo.bagNum;
-    document.getElementById('result-zonename').textContent = bagInfo.locationName; document.getElementById('result-bag').textContent = '#' + bagInfo.bagNum;
-  });
-  showToast('已套用體積 ' + single + (dims ? '（' + dims.l + '×' + dims.w + '×' + dims.h + 'cm）' : ''));
-}
-
-function chooseDuplicateAction(action) {
-  if (!pendingItem || !pendingItem._matchRef) return;
-  const match = pendingItem._matchRef, banner = document.getElementById('match-banner');
-  if (action === 'addQty') {
-    pendingItem.isUpdate = true; pendingItem.matchedId = match.id; pendingItem.locationId = match.locationId; pendingItem.locationName = match.locationName; pendingItem.bagNum = match.bagNum; pendingItem.quantity = (match.quantity || 1) + 1; pendingItem.name = match.name; pendingItem.featureTags = match.featureTags || pendingItem.featureTags;
-    document.getElementById('qty-display').textContent = pendingItem.quantity;
-    const totalVol = pendingItem.estimateVolumeMl * pendingItem.quantity; document.getElementById('qty-total-vol').textContent = '= ' + (totalVol >= 1000 ? (totalVol/1000).toFixed(1)+'L' : totalVol+'ml');
-    document.getElementById('result-zonename').textContent = match.locationName; document.getElementById('result-bag').textContent = '#' + match.bagNum;
-    banner.innerHTML = `<div class="match-banner-title" style="color:var(--green)">✓ 同一物品，數量 +1</div><div class="match-banner-sub">將更新「${match.name}」的數量為 ${pendingItem.quantity}</div>`;
-  } else {
-    pendingItem.isUpdate = false; pendingItem.matchedId = null; pendingItem._matchRef = null;
-    banner.innerHTML = `<div class="match-banner-title" style="color:var(--blue)">→ 另外建檔為不同物品</div><div class="match-banner-sub">將以「${pendingItem.name}」建立新的收納紀錄</div>`;
+    showTab('main');
   }
 }
+async function showTab(tab){
+  currentTab=tab;
+  navHistory.length=0; // Tab click = fresh navigation, clear history
+  document.querySelectorAll('.nav-tab').forEach((t,i)=>t.classList.toggle('active',['main','merged','map-small','map-large','map-bag','allparts'][i]===tab));
+  if(tab==='main'){showScreen('s-main',false);return}
+  // Wait for data if not ready yet
+  if(!dataReady&&_loadPromise){await _loadPromise}
+  if(tab==='map-small'){showScreen('s-map-small',false);renderDrawerMap('small');return}
+  if(tab==='map-large'){showScreen('s-map-large',false);renderDrawerMap('large');return}
+  if(tab==='map-bag'){showScreen('s-map-bag',false);renderDrawerMap('bag');return}
+  if(tab==='merged'){showScreen('s-merged',false);renderMergedView();return}
+  if(tab==='allparts'){showScreen('s-allparts',false);renderAllParts();return}
+  showScreen('s-'+tab,false);
+}
+function togglePanel(id){const el=document.getElementById(id);el.style.display=el.style.display==='none'?'':'none'}
 
-// ══════════════════════════════════════════════
-// DUPLICATE DETECTION & DATA LAYER
-// ══════════════════════════════════════════════
-function findDuplicate(name, keywords, allItems) {
-  const normName = name.toLowerCase().replace(/\s/g,'');
-  for (const item of allItems) {
-    const normItem = (item.name||'').toLowerCase().replace(/\s/g,'');
-    if (normItem === normName) return item;
-    if (normItem.length >= 6 && normName.length >= 6) {
-      const shorter = Math.min(normItem.length, normName.length), longer = Math.max(normItem.length, normName.length);
-      if (shorter / longer >= 0.6 && (normItem.includes(normName) || normName.includes(normItem))) return item;
-    }
-    const itemKw = (item.keywords || []).map(k=>k.toLowerCase()), qKw = (keywords || []).map(k=>k.toLowerCase()), overlap = qKw.filter(k => itemKw.includes(k));
-    if (overlap.length >= 4 && qKw.length > 0 && overlap.length / qKw.length >= 0.4) return item;
+let _numpadTarget=null,_numpadAction='',_numpadMode='text';
+function openNumpad(input,action,mode){
+  _numpadTarget=input;_numpadAction=action;_numpadMode=mode||'text';
+  input.blur(); // prevent system keyboard
+  document.getElementById('numpad-display').textContent=input.value||'';
+  // Show/hide decimal point button
+  const dotBtn=document.getElementById('numpad-dot');
+  if(dotBtn)dotBtn.style.display=(_numpadMode==='decimal')?'':'none';
+  const spaceBtn=document.getElementById('numpad-space');
+  if(spaceBtn)spaceBtn.style.display=(_numpadMode==='decimal')?'none':'';
+  const dashBtn=document.getElementById('numpad-dash');
+  if(dashBtn)dashBtn.style.display=(_numpadMode==='int'||_numpadMode==='decimal')?'none':'';
+  document.getElementById('numpad-overlay').style.display='block';
+}
+function closeNumpad(){
+  document.getElementById('numpad-overlay').style.display='none';
+  if(_numpadTarget&&_numpadMode!=='text'){
+    // Trigger recalcVol for modal fields
+    try{recalcVol()}catch(e){}
   }
-  return null;
+  _numpadTarget=null;_numpadAction='';_numpadMode='text';
+}
+function numpadKey(k){
+  const disp=document.getElementById('numpad-display');
+  let val=disp.textContent||'';
+  if(k==='del'){val=val.slice(0,-1)}
+  else if(k==='clear'){val=''}
+  else if(k==='.'&&val.includes('.')){}// only one dot
+  else if(_numpadMode==='int'&&(k==='.'||k===' '||k==='-')){}// int mode: digits only
+  else{val+=k}
+  disp.textContent=val;
+  if(_numpadTarget)_numpadTarget.value=val;
+  // Live update volume for modal
+  if(_numpadMode==='int'||_numpadMode==='decimal'){try{recalcVol()}catch(e){}}
+}
+function numpadSubmit(){
+  const disp=document.getElementById('numpad-display');
+  if(_numpadTarget)_numpadTarget.value=disp.textContent||'';
+  const action=_numpadAction;
+  const mode=_numpadMode;
+  closeNumpad();
+  if(action&&typeof window[action]==='function')window[action]();
 }
 
-async function confirmItem() {
-  if (!pendingItem) return;
-  showScreen('s-processing'); setProcessingMsg('儲存中...');
-  try {
-    const now = Date.now(), item = { name: pendingItem.name, name_en: pendingItem.name_en || '', locationId: pendingItem.locationId, locationName: pendingItem.locationName, bagNum: pendingItem.bagNum, estimateVolumeMl:pendingItem.estimateVolumeMl || 100, manualVolume: !!pendingItem.manualVolume, dimL: pendingItem.dimL || 0, dimW: pendingItem.dimW || 0, dimH: pendingItem.dimH || 0, quantity: pendingItem.quantity || 1, featureTags: pendingItem.featureTags || [], description: pendingItem.description || '', keywords: pendingItem.keywords || [], imageData: pendingItem._useThumb || pendingItem.imageData || '', updatedAt: now };
-    if (pendingItem.isUpdate && pendingItem.matchedId) {
-      item.id = pendingItem.matchedId; item.createdAt = pendingItem._matchRef?.createdAt || pendingItem.createdAt || now;
-      if (pendingItem._matchRef?.imageData && !item.imageData) item.imageData = pendingItem._matchRef.imageData;
-      await updateItem(item); showToast('已更新：#' + item.bagNum + ' ' + item.locationName);
-    } else {
-      item.id = 'item_' + now + '_' + Math.random().toString(36).slice(2,7); item.createdAt = now;
-      await saveItem(item); showToast('已儲存到 #' + item.bagNum + ' ' + item.locationName);
-    }
-    pendingItem = null; currentImageData = null; showScreen('s-main'); refreshMain();
-  } catch(err) { showScreen('s-result'); showToast('儲存失敗：' + err.message, 'error'); }
-}
+function setProcessingMsg(msg){document.getElementById('processing-msg').textContent=msg;if(!window._procTimer){window._procStart=performance.now();window._procTimer=setInterval(()=>{const el=document.getElementById('processing-timer');if(el&&window._procStart)el.textContent='⏱ '+((performance.now()-window._procStart)/1000).toFixed(1)+'s'},100)}}
 
-function cancelResult() { pendingItem = null; currentImageData = null; showScreen('s-main'); }
+// ═══════════════════════════════════════════════════
 
-async function loadItems() {
-  if (db && !cfg.localOnly) { try { const snap = await db.collection(cfg.fbCol||'items').orderBy('createdAt','desc').get(); return snap.docs.map(d => ({ id: d.id, ...d.data() })); } catch(e) { console.warn('Firestore read failed, using local', e); } }
-  return JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]');
-}
-async function saveItem(item) {
-  if (db && !cfg.localOnly) await db.collection(cfg.fbCol||'items').doc(item.id).set(item);
-  const items = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]'); items.unshift(item); localStorage.setItem(ITEMS_KEY, JSON.stringify(items));
-}
-async function updateItem(item) {
-  if (db && !cfg.localOnly) await db.collection(cfg.fbCol||'items').doc(item.id).set(item, { merge:true });
-  let items = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]'); const idx = items.findIndex(i => i.id === item.id);
-  if (idx >= 0) items[idx] = item; else items.unshift(item); localStorage.setItem(ITEMS_KEY, JSON.stringify(items));
-}
-async function deleteItem(id) {
-  if (db && !cfg.localOnly) await db.collection(cfg.fbCol||'items').doc(id).delete();
-  let items = JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]'); items = items.filter(i => i.id !== id); localStorage.setItem(ITEMS_KEY, JSON.stringify(items));
-}
-
-// ══════════════════════════════════════════════
-// MAIN SCREEN REFRESH & SEARCH
-// ══════════════════════════════════════════════
-async function refreshMain() {
-  renderSyncStatus();
-  const items = await loadItems();
-  const locs = [...new Set(items.map(i=>i.locationName).filter(Boolean))], bagCount = [...new Set(items.map(i=>(i.locationId||'')+'_'+(i.bagNum||1)))].length;
-  document.getElementById('stats-row').innerHTML = `<div class="stat-card"><div class="stat-num">${items.length}</div><div class="stat-label">物品總數</div></div><div class="stat-card"><div class="stat-num">${bagCount}</div><div class="stat-label">收納袋</div></div><div class="stat-card"><div class="stat-num">${locs.length}</div><div class="stat-label">收納位置</div></div>`;
-  const el = document.getElementById('recent-list');
-  if (!items.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">◻</div>尚無建檔物品<br>拍照新增第一件物品</div>`; return; }
-  el.innerHTML = items.slice(0,6).map(item => itemRowHTML(item)).join('');
-}
-
-function itemRowHTML(item) {
-  const thumb = item.imageData ? `<img class="item-thumb" src="${item.imageData}" loading="lazy">` : `<div class="item-thumb-placeholder">◻</div>`;
-  const qtyBadge = (item.quantity||1) > 1 ? `<span style="font-size:10px;color:var(--accent);font-family:var(--mono)">x${item.quantity}</span>` : '';
-  return `<div class="item-row" id="row-${item.id}" data-loc="${item.locationId}" onclick="handleItemClick('${item.id}', this)">
-    <input type="checkbox" class="item-checkbox" id="chk-${item.id}">
-    ${thumb}
-    <div class="item-info"><div class="item-name">${item.name} ${qtyBadge}</div><div class="item-meta"><span class="item-loc">#${item.bagNum||1}</span><span class="item-cat">${item.locationName||''}</span></div></div>
-  </div>`;
-}
-
-async function doSearch(value) {
-  if (!value.trim()) return;
-  const items = await loadItems(), q = value.toLowerCase();
-  const results = items.filter(i => (i.name||'').toLowerCase().includes(q) || (i.name_en||'').toLowerCase().includes(q) || (i.locationName||'').toLowerCase().includes(q) || (i.description||'').toLowerCase().includes(q) || (i.keywords||[]).some(k => k.toLowerCase().includes(q)));
-  document.getElementById('search-title').textContent = `搜尋「${value}」（${results.length}筆）`;
-  const el = document.getElementById('search-results');
-  if (!results.length) el.innerHTML = `<div class="empty-state"><div class="empty-icon">⌕</div>找不到「${value}」相關物品</div>`;
-  else el.innerHTML = results.map(itemRowHTML).join('');
-  showScreen('s-search');
-}
-
-// ══════════════════════════════════════════════
-// INVENTORY
-// ══════════════════════════════════════════════
-async function openInventory() {
-  const items = await loadItems();
-  if (!items.length) { document.getElementById('inventory-content').innerHTML = `<div class="empty-state"><div class="empty-icon">◻</div>尚無建檔物品</div>`; showScreen('s-inventory'); return; }
-
-  const locGroups = {};
-  items.forEach(item => {
-    const locId = item.locationId || 'unknown', b = item.bagNum || 1;
-    if (!locGroups[locId]) locGroups[locId] = { name: item.locationName || '未分類', bags:{} };
-    if (!locGroups[locId].bags[b]) locGroups[locId].bags[b] = { items:[], usedMl:0 };
-    locGroups[locId].bags[b].items.push(item); locGroups[locId].bags[b].usedMl += (item.estimateVolumeMl || 0) * (item.quantity || 1);
-  });
-
-  let html = '';
-  Object.entries(locGroups).forEach(([locId, locData]) => {
-    const loc = LOCATIONS.find(l => l.id === locId), bagSizeMl = loc ? loc.bagSizeMl : 5000;
-    const sizeLabel = bagSizeMl >= 1000 ? (bagSizeMl/1000)+'L' : bagSizeMl+'ml', total = Object.values(locData.bags).reduce((s,b) => s + b.items.length, 0);
-    html += `<div class="zone-group">
-      <div class="zone-header">
-        <span class="zone-code" style="font-size:16px;width:auto">📍</span>
-        <span class="zone-name">${locData.name}</span>
-        <span class="zone-count">${total} 件 · ${sizeLabel}/袋</span>
-        <button class="select-all-btn" id="btn-sel-${locId}" onclick="toggleZoneSelect('${locId}')">全選</button>
-      </div>`;
-    Object.entries(locData.bags).sort((a,b)=>Number(a[0])-Number(b[0])).forEach(([bagNum, bagData]) => {
-      const pct = Math.min(100, Math.round(bagData.usedMl / bagSizeMl * 100)), usedLabel = bagData.usedMl >= 1000 ? (bagData.usedMl/1000).toFixed(1)+'L' : bagData.usedMl+'ml';
-      const barColor = pct >= 90 ? 'var(--red)' : pct >= 70 ? 'var(--accent)' : 'var(--green)';
-      html += `<div class="bag-group">
-        <div class="bag-header" style="display:flex;align-items:center;gap:8px">
-          <span>袋 <span>#${bagNum}</span> · ${bagData.items.length} 件</span>
-          <div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${barColor};border-radius:2px"></div></div>
-          <span style="font-size:10px;color:var(--muted)">${usedLabel}/${sizeLabel}</span>
-        </div>
-        ${bagData.items.map(itemRowHTML).join('')}
-      </div>`;
-    });
-    html += '</div>';
-  });
-
-  document.getElementById('inventory-content').innerHTML = html; showScreen('s-inventory');
-}
-
-// ══════════════════════════════════════════════
-// ITEM DETAIL MODAL
-// ══════════════════════════════════════════════
-async function openItemDetail(id) {
-  const item = (await loadItems()).find(i => i.id === id); if (!item) return;
-  document.getElementById('modal-img').src = item.imageData || ''; document.getElementById('modal-name').textContent = item.name; document.getElementById('modal-badge').textContent = item.locationName || '';
-  const volLabel = (item.estimateVolumeMl||0) >= 1000 ? ((item.estimateVolumeMl||0)/1000).toFixed(1)+'L' : (item.estimateVolumeMl||0)+'ml', qty = item.quantity || 1, totalVol = (item.estimateVolumeMl||0) * qty, totalLabel = totalVol >= 1000 ? (totalVol/1000).toFixed(1)+'L' : totalVol+'ml';
-  document.getElementById('modal-rows').innerHTML = [['收納位置', item.locationName], ['收納袋', '#' + (item.bagNum||1)], ['數量', qty > 1 ? qty + ' 件' : '1 件'], ['預估體積', qty > 1 ? `${volLabel}/件 × ${qty} = ${totalLabel}` : volLabel], ['特徵標籤', (item.featureTags||[]).join('、') || '-'], ['描述', item.description], ['關鍵字', (item.keywords||[]).join('、')]].map(([k,v]) => `<div class="modal-row"><span class="modal-key">${k}</span><span class="modal-val">${v||'-'}</span></div>`).join('');
-  document.getElementById('modal-delete-btn').onclick = () => confirmDelete(item.id, item.name);
-  document.getElementById('modal-overlay').classList.remove('hidden');
-}
-function closeModal(e) { if (e.target === document.getElementById('modal-overlay')) closeModalPanel(); }
-function closeModalPanel() { document.getElementById('modal-overlay').classList.add('hidden'); }
-async function confirmDelete(id, name) {
-  if (!confirm(`確定要刪除「${name}」的建檔資料嗎？`)) return;
-  closeModalPanel(); await deleteItem(id); showToast(name + ' 已刪除'); refreshMain();
-  if (document.getElementById('s-inventory').classList.contains('active')) openInventory();
-}
-
-function setProcessingMsg(msg) {
-  document.getElementById('processing-msg').textContent = msg;
-  if (!window._procTimer) {
-    window._procStart = performance.now();
-    window._procTimer = setInterval(() => {
-      const el = document.getElementById('processing-timer');
-      if (el && window._procStart) el.textContent = '⏱ ' + ((performance.now() - window._procStart)/1000).toFixed(1) + 's';
-    }, 100);
-  }
-}
-function showToast(msg, type='success') { const t = document.getElementById('toast'); t.textContent = msg; t.style.background = type === 'error' ? 'var(--red)' : 'var(--green)'; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2800); }
-
-// ══════════════════════════════════════════════
-// LOCATIONS MANAGEMENT
-// ══════════════════════════════════════════════
-function openLocations() {
-  const inputStyle = 'width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:14px;margin-bottom:8px', labelStyle = 'display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-family:var(--mono)';
-  const dimStyle = 'width:64px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px;font-size:14px;font-family:var(--mono);text-align:center';
-  loadItems().then(function(allItems){
-    let html = `<div style="margin-bottom:16px;font-size:13px;color:var(--muted)">定義家中的收納位置，AI 辨識物品後會建議最適合的位置。<br><span style="color:var(--accent)">目前共 ${LOCATIONS.length} 個收納位置</span></div>`;
-    LOCATIONS.forEach((loc) => {
-      const maxBags = calcMaxBags(loc);
-      const usedBags = countLocBags(loc.id, allItems);
-      const archBadge = loc.archived ? `<div style="font-size:12px;color:var(--red);margin:2px 0 8px;font-weight:700">🔒 已封存：只能查詢，不再新建收納</div>` : '';
-      const capLine = (maxBags!==null)
-        ? `<div style="font-size:12px;color:${usedBags>maxBags?'var(--red)':'var(--green)'};margin:2px 0 8px;font-family:var(--mono)">📦 最大約 ${maxBags} 袋（柜 ${loc.dimL}×${loc.dimW}×${loc.dimH}cm × 65% ÷ ${loc.bagSizeMl}ml）· 已用 ${usedBags} 袋</div>` + archBadge
-        : `<div style="font-size:11px;color:var(--dim);margin:2px 0 8px">填入長寬高後可估算最大袋數</div>` + archBadge;
-      html += `<div id="loc-card-${loc.id}" class="zone-group" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px"><label style="${labelStyle}">位置名稱</label><input type="text" id="edit-name-${loc.id}" value="${loc.name}" style="${inputStyle}" onchange="markLocChanged('${loc.id}')"><label style="${labelStyle}">袋子容量 (ml) — 目前 ${loc.bagSizeMl >= 1000 ? (loc.bagSizeMl/1000)+'L' : loc.bagSizeMl+'ml'}</label><input type="number" id="edit-size-${loc.id}" value="${loc.bagSizeMl}" style="${inputStyle}" onchange="markLocChanged('${loc.id}')"><label style="${labelStyle}">櫃體尺寸 長×寬×高 (cm)</label><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><input type="number" id="edit-dimL-${loc.id}" value="${loc.dimL||''}" placeholder="長" style="${dimStyle}" onchange="markLocChanged('${loc.id}')"><span style="color:var(--muted)">×</span><input type="number" id="edit-dimW-${loc.id}" value="${loc.dimW||''}" placeholder="寬" style="${dimStyle}" onchange="markLocChanged('${loc.id}')"><span style="color:var(--muted)">×</span><input type="number" id="edit-dimH-${loc.id}" value="${loc.dimH||''}" placeholder="高" style="${dimStyle}" onchange="markLocChanged('${loc.id}')"></div>${capLine}<label style="${labelStyle}">提示詞</label><input type="text" id="edit-hints-${loc.id}" value="${loc.hints}" style="${inputStyle}" onchange="markLocChanged('${loc.id}')"><div style="display:flex;gap:8px;margin-top:4px"><button id="save-btn-${loc.id}" class="btn-sm" style="display:none;background:var(--accent-bg);border-color:var(--accent);color:var(--accent)" onclick="doSaveLocation('${loc.id}')">儲存變更</button><button class="btn-sm" style="font-size:11px;padding:4px 10px" onclick="doToggleArchive('${loc.id}')">${loc.archived ? '🔓 解除封存' : '🔒 封存'}</button><button class="btn-danger" style="font-size:11px;padding:4px 10px" onclick="doRemoveLocation('${loc.id}')">刪除</button></div></div>`;
-    });
-    html += `<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-top:16px"><div style="font-size:14px;font-weight:700;margin-bottom:12px;color:var(--accent)">+ 新增收納位置</div><label style="${labelStyle}">位置名稱</label><input type="text" id="new-loc-name" placeholder="例：客廳沙發櫃" style="${inputStyle}"><label style="${labelStyle}">袋子容量 (ml)</label><input type="number" id="new-loc-size" placeholder="2000" value="5000" style="${inputStyle}"><label style="${labelStyle}">櫃體尺寸 長×寬×高 (cm，可留空)</label><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><input type="number" id="new-loc-dimL" placeholder="長" style="${dimStyle}"><span style="color:var(--muted)">×</span><input type="number" id="new-loc-dimW" placeholder="寬" style="${dimStyle}"><span style="color:var(--muted)">×</span><input type="number" id="new-loc-dimH" placeholder="高" style="${dimStyle}"></div><label style="${labelStyle}">提示詞（告訴 AI 這裡通常放什麼）</label><input type="text" id="new-loc-hints" placeholder="例：遙控器、藥品、日用小物" style="${inputStyle}"><button class="btn-primary" style="margin-top:0" onclick="doAddLocation()">新增</button></div>`;
-    document.getElementById('zones-content').innerHTML = html; showScreen('s-zones');
-  });
-}
-function markLocChanged(id) { const btn = document.getElementById('save-btn-' + id); if (btn) btn.style.display = 'inline-block'; }
-function doToggleArchive(id){ const loc=LOCATIONS.find(l=>l.id===id); if(!loc) return; setLocationArchived(id, !loc.archived); openLocations(); }
-async function doSaveLocation(id) {
-  const loc = LOCATIONS.find(l => l.id === id); if (!loc) return;
-  const newName = document.getElementById('edit-name-' + id).value.trim(), newSize = parseInt(document.getElementById('edit-size-' + id).value) || loc.bagSizeMl, newHints = document.getElementById('edit-hints-' + id).value.trim();
-  if (!newName) { alert('位置名稱不能為空'); return; }
-  const oldName = loc.name; loc.name = newName; loc.bagSizeMl = newSize; loc.hints = newHints;
-  loc.dimL = parseFloat(document.getElementById('edit-dimL-' + id).value) || 0;
-  loc.dimW = parseFloat(document.getElementById('edit-dimW-' + id).value) || 0;
-  loc.dimH = parseFloat(document.getElementById('edit-dimH-' + id).value) || 0;
-  saveLocations();
-  if (oldName !== newName) {
-    const items = JSON.parse(localStorage.getItem(ITEMS_KEY) || '[]'); let updated = 0;
-    items.forEach(item => { if (item.locationId === id) { item.locationName = newName; updated++; } });
-    if (updated > 0) { localStorage.setItem(ITEMS_KEY, JSON.stringify(items)); if (db && !cfg.localOnly) for (const item of items.filter(i => i.locationId === id)) try { await db.collection(cfg.fbCol||'items').doc(item.id).update({ locationName: newName }); } catch(e) {} }
-    showToast(`已更新「${newName}」，${updated} 件物品同步更新`);
-  } else { showToast('已儲存變更'); }
-  openLocations();
-}
-function doAddLocation() {
-  const name = document.getElementById('new-loc-name').value.trim(), size = parseInt(document.getElementById('new-loc-size').value) || 5000, hints = document.getElementById('new-loc-hints').value.trim();
-  const dims = { l: parseFloat(document.getElementById('new-loc-dimL').value) || 0, w: parseFloat(document.getElementById('new-loc-dimW').value) || 0, h: parseFloat(document.getElementById('new-loc-dimH').value) || 0 };
-  if (!name) { alert('請輸入位置名稱'); return; } addLocation(name, size, hints, dims); showToast('已新增：' + name); openLocations();
-}
-function doRemoveLocation(id) {
-  const loc = LOCATIONS.find(l => l.id === id); if (!loc) return; if (!confirm(`確定要刪除「${loc.name}」嗎？已建檔的物品不會被刪除。`)) return;
-  removeLocation(id); showToast('已刪除：' + loc.name); openLocations();
-}
-
-// ══════════════════════════════════════════════
-// BATCH DELETE LOGIC
-// ══════════════════════════════════════════════
-let isSelectMode = false; let selectedItemIds = new Set();
-function toggleSelectMode() {
-  isSelectMode = !isSelectMode; selectedItemIds.clear();
-  const inv = document.getElementById('inventory-content'), btn = document.getElementById('btn-toggle-select'), bar = document.getElementById('batch-action-bar');
-  if (isSelectMode) { inv.classList.add('select-mode'); btn.textContent = '取消'; bar.classList.add('show'); updateBatchActionBar(); document.querySelectorAll('.item-checkbox').forEach(c => c.checked = false); document.querySelectorAll('.select-all-btn').forEach(b => b.textContent = '全選'); } 
-  else { inv.classList.remove('select-mode'); btn.textContent = '選取'; bar.classList.remove('show'); }
-}
-function handleItemClick(id, el) {
-  if (!isSelectMode) return openItemDetail(id);
-  const row = el ? el.closest('.item-row') : null;
-  const c = row ? row.querySelector('.item-checkbox') : document.querySelector('#inventory-content #chk-'+id);
-  if (selectedItemIds.has(id)) { selectedItemIds.delete(id); if(c) c.checked=false; } else { selectedItemIds.add(id); if(c) c.checked=true; }
-  updateBatchActionBar();
-}
-function toggleZoneSelect(locId) {
-  event.stopPropagation();
-  const rows = document.querySelectorAll(`#inventory-content .item-row[data-loc="${locId}"]`);
-  const ids = Array.from(rows).map(r => r.id.replace('row-', ''));
-  const allSelected = ids.every(id => selectedItemIds.has(id));
-  ids.forEach((id, i) => {
-    if (allSelected) selectedItemIds.delete(id); else selectedItemIds.add(id);
-    const c = rows[i] ? rows[i].querySelector('.item-checkbox') : null; if (c) c.checked = !allSelected;
-  });
-  const btn = document.getElementById('btn-sel-' + locId); if (btn) btn.textContent = allSelected ? '全選' : '取消全選';
-  updateBatchActionBar();
-}
-function updateBatchActionBar() { document.getElementById('selected-count').textContent = '已選取 ' + selectedItemIds.size + ' 件'; }
-async function confirmBatchDelete() {
-  if (selectedItemIds.size === 0) return;
-  if (!confirm('確定要刪除選取的 ' + selectedItemIds.size + ' 件物品嗎？此動作無法復原。')) return;
-  showScreen('s-processing'); setProcessingMsg('批次刪除中...');
-  try { for (const id of selectedItemIds) await deleteItem(id); showToast('已成功刪除 ' + selectedItemIds.size + ' 件物品'); } catch(e) { showToast('刪除過程發生錯誤','error'); }
-  toggleSelectMode(); refreshMain(); openInventory();
-}
-function closeInventory() { if (isSelectMode) toggleSelectMode(); showScreen('s-main'); }
-
-// ══════════════════════════════════════════════
-// FIREBASE SYNC STATUS & FORCE SYNC
-// ══════════════════════════════════════════════
-function renderSyncStatus() {
-  const el = document.getElementById('sync-status');
-  if (!el) return;
-  const hasFirebase = !!(db && !cfg.localOnly);
-  const localItems = JSON.parse(localStorage.getItem(ITEMS_KEY) || '[]');
-
-  if (!cfg.fbProject && !cfg.fbApiKey) {
-    // No Firebase configured at all
-    el.innerHTML = `<div class="sync-bar-inner">
-      <div class="sync-dot local"></div>
-      <div class="sync-info">僅本機儲存 · ${localItems.length} 件</div>
-      <button class="sync-btn" onclick="showScreen('s-setup')">設定 Firebase</button>
-    </div>`;
-    return;
-  }
-
-  if (hasFirebase) {
-    el.innerHTML = `<div class="sync-bar-inner">
-      <div class="sync-dot online"></div>
-      <div class="sync-info">Firebase 已連線 · 本機 ${localItems.length} 件</div>
-      ${localItems.length > 0 ? '<button class="sync-btn" onclick="forceSync()">上傳並清除本地</button>' : '<span style="color:var(--green);font-size:11px">✓ 已同步</span>'}
-    </div>`;
-  } else {
-    el.innerHTML = `<div class="sync-bar-inner">
-      <div class="sync-dot offline"></div>
-      <div class="sync-info">Firebase 連線失敗 · 本機 ${localItems.length} 件</div>
-      <button class="sync-btn" onclick="location.reload()">重試</button>
-    </div>`;
-  }
-}
-
-async function forceSync() {
-  if (!db || cfg.localOnly) { showToast('Firebase 未連線', 'error'); return; }
-  const localItems = JSON.parse(localStorage.getItem(ITEMS_KEY) || '[]');
-  if (localItems.length === 0) { showToast('本機沒有資料需要同步'); return; }
-
-  if (!confirm('將 ' + localItems.length + ' 件本機物品上傳到 Firebase，上傳後清除本機資料。\n\n繼續？')) return;
-
-  showScreen('s-processing');
-  setProcessingMsg('同步到 Firebase...');
-
-  let uploaded = 0, skipped = 0, errors = 0;
-  try {
-    for (const item of localItems) {
-      setProcessingMsg('上傳中 ' + (uploaded + skipped + errors + 1) + '/' + localItems.length + '...');
-      try {
-        // Check if already exists in Firestore
-        const doc = await db.collection(cfg.fbCol || 'items').doc(item.id).get();
-        if (doc.exists) {
-          skipped++;
-        } else {
-          await db.collection(cfg.fbCol || 'items').doc(item.id).set(item);
-          uploaded++;
-        }
-      } catch (e) {
-        errors++;
-        console.warn('Sync error for', item.id, e);
-      }
-    }
-
-    // Clear localStorage items after successful upload
-    if (errors === 0) {
-      localStorage.setItem(ITEMS_KEY, '[]');
-      showToast('已上傳 ' + uploaded + ' 件，跳過 ' + skipped + ' 件（已存在），本機已清除');
-    } else {
-      showToast('上傳 ' + uploaded + ' 件，失敗 ' + errors + ' 件（本機資料保留）', 'error');
-    }
-  } catch (e) {
-    showToast('同步失敗：' + e.message, 'error');
-  }
-
-  showScreen('s-main');
-  refreshMain();
-}
-
-
-async function callGeminiMultiImage(prompt, base64Images, systemInstruction) {
-  const model = _lastWorkingModel || GEMINI_MODELS[0];
-  const parts = [{ text: prompt }];
-  for (const img of base64Images) {
-    const b64 = img.indexOf(',') >= 0 ? img.split(',')[1] : img;
-    parts.push({ inlineData: { mimeType: 'image/jpeg', data: b64 } });
-  }
-  const body = {
-    contents: [{ parts }],
-    generationConfig: { responseMimeType: 'application/json' }
-  };
-  if (systemInstruction) {
-    body.systemInstruction = { parts: [{ text: systemInstruction }] };
-  }
-  const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + cfg.apiKey, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  if (!resp.ok) {
-    const e = await resp.json().catch(() => ({}));
-    throw new Error('Gemini API Error ' + resp.status + ': ' + (e?.error?.message || ''));
-  }
-  const data = await resp.json();
-  return data.candidates[0].content.parts[0].text;
-}
-
-async function matchStorageVisual(queryDataUrl, queryItem) {
-  const items = await loadItems();
-  const all = items.filter(i => i.imageData && i.imageData.length > 100);
-  if (all.length === 0) {
-    return { error: 'NO_CANDIDATES', message: '資料庫中沒有任何帶縮圖的物品' };
-  }
-  const MAX = 30;
-  // [BrickSort 移植 §2] 體積±30% 或 featureTags 交集 雙軌粗篩，突破 30 張上限、降低無關干擾
-  let pool = all;
-  if (queryItem) {
-    const qVol = queryItem.estimateVolumeMl || queryItem.estimate_volume_ml || 0;
-    const qTags = (queryItem.featureTags || queryItem.feature_tags || []).map(t => String(t).toLowerCase());
-    const filtered = all.filter(item => {
-      const iVol = item.estimateVolumeMl || 0;
-      const isVolumeMatch = qVol > 0 && iVol > 0 ? (Math.abs(iVol - qVol) / qVol <= 0.3) : false;
-      const iTags = (item.featureTags || []).map(t => String(t).toLowerCase());
-      const hasCommonTag = qTags.length > 0 && iTags.some(t => qTags.includes(t));
-      return isVolumeMatch || hasCommonTag;
-    });
-    // 粗篩後若有候選就用粗篩結果；若篩空（例如全新類型）退回全部，避免漏比
-    if (filtered.length > 0) pool = filtered;
-  }
-  const candidates = pool.slice(0, MAX);
-  try { console.log('[visualMatch] 粗篩候選 ' + candidates.length + '/' + all.length + ' 件'); } catch(e) {}
-  const info = candidates.map((c, idx) => ({
-    index: idx,
-    name: (c.name || '').substring(0, 50),
-    location: c.locationName || '',
-    bag: c.bagNum || 1,
-    tags: (c.featureTags || []).slice(0, 4).join(',')
-  }));
-  const SYS = '你是家中物品視覺辨識專家。任務：比對查詢圖與資料庫候選圖，找出是否為同一件實體物品。嚴格比對，寧可回報無匹配也不猜測。考量：品牌、型號、顏色、材質、形狀。回應強制 JSON，不得有前後綴文字或 markdown 標記。';
-  const prompt = '任務：從家中物品資料庫找出這件物品\n第 1 張=查詢圖（使用者剛拍的/上傳的）\n第 2 張起=資料庫候選物品（共 ' + candidates.length + ' 張縮圖）\n\n候選清單：\n' + JSON.stringify(info, null, 2) + '\n\n回傳 JSON 格式：\n{"bestMatch":{"index":0,"name":"","location":"","bag":1,"confidence":78,"reason":"20字內"},"decision":"match|uncertain|no_match"}\n\n信心度門檻：>=70 match, 40-70 uncertain, <40 no_match（此時 index=-1）';
-  try {
-    const images = [queryDataUrl].concat(candidates.map(c => c.imageData));
-    const resp = await callGeminiMultiImage(prompt, images, SYS);
-    const cleaned = resp.replace(/\`\`\`json\s*/g, '').replace(/\`\`\`\s*/g, '').trim();
-    const r = JSON.parse(cleaned);
-    if (r.bestMatch && r.bestMatch.index >= 0 && r.bestMatch.index < candidates.length) {
-      r.bestMatch._internalItem = candidates[r.bestMatch.index];
-    }
-    r.meta = { totalCandidates: all.length, usedCandidates: candidates.length, pooledCandidates: pool.length };
-    return r;
-  } catch (e) {
-    return { error: 'AI_ERROR', message: e.message };
-  }
-}
-
-function showStorageMatchDialog(item, best, fullResult) {
-  const existing = document.getElementById('sv-match-dialog');
-  if (existing) existing.remove();
-  const confColor = fullResult.decision === 'match' ? 'var(--green)' : (fullResult.decision === 'uncertain' ? 'var(--accent)' : 'var(--muted)');
-  const confLabel = fullResult.decision === 'match' ? '✅ 強烈匹配' : (fullResult.decision === 'uncertain' ? '❓ 疑似匹配' : '📭 無匹配');
-  const locationDisplay = '#' + (item.bagNum || 1) + ' ' + (item.locationName || '未分類');
-  const tags = (item.featureTags || []).join('、') || '-';
-  const escHtml = function(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); };
-  const ov = document.createElement('div');
-  ov.id = 'sv-match-dialog';
-  ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px';
-  const thumbSrc = item.imageData || '';
-  ov.innerHTML = [
-    '<div style="background:var(--card,#222);border-radius:14px;padding:18px;max-width:440px;width:100%;color:var(--text,#eee);border:1px solid var(--border,#444);max-height:92vh;overflow-y:auto">',
-    '<h3 style="margin:0 0 12px 0;font-size:18px;color:' + confColor + '">🧠 ' + confLabel + '（信心 ' + best.confidence + '%）</h3>',
-    '<div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start">',
-    (thumbSrc ? '<img src="' + thumbSrc + '" style="width:110px;height:auto;border-radius:8px;border:1px solid var(--border,#555);flex-shrink:0;object-fit:cover">' : ''),
-    '<div style="flex:1;font-size:13px;line-height:1.6">',
-    '<div style="font-weight:700;font-size:14px;margin-bottom:4px">' + escHtml((item.name || '').substring(0, 60)) + '</div>',
-    '<div style="color:var(--accent,#ffa726);font-weight:600;margin:6px 0">📍 ' + escHtml(locationDisplay) + '</div>',
-    '<div style="color:var(--muted,#aaa);font-size:12px">🏷 ' + escHtml(tags) + '</div>',
-    '<div style="color:var(--muted,#888);font-size:11px;margin-top:4px">數量：' + (item.quantity || 1) + '</div>',
-    '</div></div>',
-    (best.reason ? '<div style="background:var(--surface,#2a2a2a);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--muted,#aaa);font-style:italic">💬 ' + escHtml(String(best.reason).substring(0, 100)) + '</div>' : ''),
-    '<div style="font-size:11px;color:var(--muted,#888);margin-bottom:10px">比對範圍：' + fullResult.meta.usedCandidates + '/' + fullResult.meta.totalCandidates + ' 張縮圖</div>',
-    '<div style="display:flex;gap:8px">',
-    '<button onclick="document.getElementById(\'sv-match-dialog\').remove()" style="flex:1;padding:10px;background:none;border:1px solid var(--border,#555);color:var(--text,#ccc);border-radius:8px;font-size:14px;cursor:pointer">關閉</button>',
-    '<button onclick="svJumpToItem(\'' + item.id + '\')" style="flex:2;padding:10px;background:var(--accent,#ffa726);border:none;color:#0d0d0d;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">✓ 查看詳情</button>',
-    '</div></div>'
-  ].join('');
-  document.body.appendChild(ov);
-}
-
-window.svJumpToItem = function(itemId) {
-  const dlg = document.getElementById('sv-match-dialog');
-  if (dlg) dlg.remove();
-  openItemDetail(itemId);
-};
-
-(function() {
-  const fi = document.getElementById('sv-visual-pick');
-  if (!fi) return;
-  fi.addEventListener('change', async function(ev) {
-    const file = ev.target.files[0];
-    if (!file) return;
-    ev.target.value = '';
-    showToast('📤 讀取圖片中...');
-    const reader = new FileReader();
-    reader.onload = async function(e) {
-      const resized = await resizeImage(e.target.result, 800);
-      showScreen('s-processing');
-      setProcessingMsg('🧠 視覺比對中（~10 秒）...');
-      try {
-        const result = await matchStorageVisual(resized);
-        showScreen('s-main');
-        if (result.error) {
-          showToast('❌ ' + (result.message || result.error), 'error');
-          return;
-        }
-        const best = result.bestMatch;
-        if (!best || best.index < 0 || result.decision === 'no_match') {
-          showToast('📭 找不到任何匹配的物品');
-          return;
-        }
-        const item = best._internalItem;
-        if (!item) {
-          showToast('❌ 匹配物品資料遺失', 'error');
-          return;
-        }
-        showStorageMatchDialog(item, best, result);
-      } catch (err) {
-        showScreen('s-main');
-        showToast('❌ 錯誤：' + err.message, 'error');
-      }
-    };
-    reader.readAsDataURL(file);
-  });
-})();
-
-window.runStorageVisualMatch = function() {
-  const fi = document.getElementById('sv-visual-pick');
-  if (!fi) {
-    showToast('❌ 檔案選擇器未就緒', 'error');
-    return;
-  }
-  fi.click();
-};
-console.log('[v1.1] Visual match installed');
-
-// START
+// ── 啟動應用程式 ──
 init();
+
+// ═══ 連續識別（靜止偵測自動辨識，移植自 bsAuto v2026.04.20bi + 圖對圖 fallback）═══
+// v2026.04.20bi — 自動辨識模式（Auto Detect Still → Shutter）
+// ════════════════════════════════════════════════════════════════
+// 使用方式：
+//   1. 手機/筆電架著相機對準 5mm 方格白紙
+//   2. 點主畫面「📷 連續識別」按鈕
+//   3. 把樂高零件放在中央方框內保持靜止
+//   4. 0.8 秒勿動 → 自動拍照 → Brickognize 辨識 → 顯示位置 + TTS 播報
+//   5. 顯示 5 秒後自動回到偵測模式（連拍多個零件）
+// ════════════════════════════════════════════════════════════════
+window.bsAuto = {
+  // ─── 可調參數 ────────────────────────────────────
+  STABLE_MS: 800,
+  COOLDOWN_MS: 5000,
+  ROI_RATIO: 0.60,
+  SAD_THRESHOLD: 12,
+  ANALYZE_W: 80,
+  ANALYZE_H: 60,
+  ANALYZE_FPS: 15,
+  CAPTURE_W: 1280,
+
+  // ─── State ──────────────────────────────────────
+  state: 'idle',
+  videoEl: null, canvasAnalyze: null, canvasCapture: null,
+  ctxAnalyze: null, ctxCapture: null,
+  stream: null, prevPixels: null,
+  stableStartTime: 0, rafId: null, lastAnalyzeTime: 0,
+
+  open() {
+    if (document.getElementById('bs-auto-overlay')) return;
+    this._buildUI();
+    this._startCamera();
+  },
+
+  close() {
+    this._stopCamera();
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    const ov = document.getElementById('bs-auto-overlay');
+    if (ov) ov.remove();
+    this.state = 'idle';
+    this.prevPixels = null;
+    try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch(e){}
+  },
+
+  _buildUI() {
+    const ov = document.createElement('div');
+    ov.id = 'bs-auto-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#000;font-family:-apple-system,sans-serif;color:#fff;';
+    ov.innerHTML = [
+      '<video id="bs-auto-video" autoplay playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"></video>',
+      '<div id="bs-auto-roi" style="position:absolute;border:3px solid #22c55e;border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,0.45);pointer-events:none;transition:border-color 0.3s;"></div>',
+      '<div style="position:absolute;top:0;left:0;right:0;padding:14px 16px;background:linear-gradient(180deg,rgba(0,0,0,0.8),transparent);display:flex;align-items:center;gap:12px;z-index:1;">',
+        '<div id="bs-auto-status" style="font-size:14px;flex:1;font-weight:600;">啟動中…</div>',
+        '<button id="bs-auto-close" style="background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:50%;width:36px;height:36px;font-size:20px;cursor:pointer;">×</button>',
+      '</div>',
+      '<div id="bs-auto-slot-top" style="position:absolute;top:60px;left:0;right:0;display:none;justify-content:center;align-items:center;z-index:1;pointer-events:none;"><div id="bs-auto-slot-text" style="font-size:120px;font-weight:900;color:#22c55e;text-shadow:0 4px 12px rgba(0,0,0,0.9);letter-spacing:4px;"></div></div>',
+      '<div style="position:absolute;bottom:0;left:0;right:0;padding:14px 16px 20px;background:linear-gradient(0deg,rgba(0,0,0,0.85),transparent);z-index:1;">',
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">',
+          '<div style="font-size:11px;color:#aaa;width:50px;">穩定度</div>',
+          '<div style="flex:1;height:8px;background:rgba(255,255,255,0.15);border-radius:4px;overflow:hidden;">',
+            '<div id="bs-auto-bar" style="height:100%;background:#22c55e;width:0%;transition:width 0.1s linear;"></div>',
+          '</div>',
+          '<div id="bs-auto-pct" style="font-size:11px;color:#aaa;width:36px;text-align:right;">0%</div>',
+        '</div>',
+        '<div id="bs-auto-result" style="min-height:200px;padding:18px;background:rgba(255,255,255,0.12);border-radius:14px;font-size:14px;line-height:1.4;display:none;"></div>',
+      '</div>',
+      '<canvas id="bs-auto-c-analyze" width="80" height="60" style="display:none;"></canvas>',
+      '<canvas id="bs-auto-c-capture" style="display:none;"></canvas>'
+    ].join('');
+    document.body.appendChild(ov);
+
+    this.videoEl = document.getElementById('bs-auto-video');
+    this.canvasAnalyze = document.getElementById('bs-auto-c-analyze');
+    this.canvasCapture = document.getElementById('bs-auto-c-capture');
+    this.ctxAnalyze = this.canvasAnalyze.getContext('2d', {willReadFrequently: true});
+    this.ctxCapture = this.canvasCapture.getContext('2d');
+
+    document.getElementById('bs-auto-close').onclick = () => this.close();
+    this.videoEl.addEventListener('loadedmetadata', () => this._positionROI());
+    window.addEventListener('resize', () => this._positionROI());
+  },
+
+  _positionROI() {
+    const v = this.videoEl;
+    if (!v) return;
+    const r = v.getBoundingClientRect();
+    const w = r.width * this.ROI_RATIO;
+    const h = r.height * this.ROI_RATIO;
+    const roi = document.getElementById('bs-auto-roi');
+    if (!roi) return;
+    roi.style.left = ((r.width - w) / 2) + 'px';
+    roi.style.top = ((r.height - h) / 2) + 'px';
+    roi.style.width = w + 'px';
+    roi.style.height = h + 'px';
+  },
+
+  async _startCamera() {
+    try {
+      this._setStatus('啟動相機中…');
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: {facingMode: {ideal: 'environment'}, width: {ideal: 1280}, height: {ideal: 960}},
+        audio: false
+      });
+      this.videoEl.srcObject = this.stream;
+      await new Promise(r => {
+        if (this.videoEl.readyState >= 2) r();
+        else this.videoEl.onloadeddata = r;
+      });
+      this._positionROI();
+      this.state = 'scanning';
+      this._setStatus('🎯 對準零件並保持靜止');
+      this._tickAnalyze();
+    } catch (e) {
+      this._setStatus('❌ 相機啟動失敗：' + e.message);
+    }
+  },
+
+  _stopCamera() {
+    if (this.stream) {
+      this.stream.getTracks().forEach(t => t.stop());
+      this.stream = null;
+    }
+  },
+
+  _setStatus(t) { const el = document.getElementById('bs-auto-status'); if (el) el.textContent = t; },
+
+  _setBar(pct, color) {
+    const b = document.getElementById('bs-auto-bar');
+    const p = document.getElementById('bs-auto-pct');
+    const roi = document.getElementById('bs-auto-roi');
+    if (b) { b.style.width = Math.max(0, Math.min(100, pct)) + '%'; if (color) b.style.background = color; }
+    if (p) p.textContent = Math.round(pct) + '%';
+    if (roi && color) roi.style.borderColor = color;
+  },
+
+  _showResult(html) { const r = document.getElementById('bs-auto-result'); if (r) { r.innerHTML = html; r.style.display = 'block'; } },
+  _hideResult() { const r = document.getElementById('bs-auto-result'); if (r) r.style.display = 'none'; var st = document.getElementById('bs-auto-slot-top'); if (st) st.style.display = 'none'; },
+
+  _tickAnalyze() {
+    this.rafId = requestAnimationFrame(() => this._tickAnalyze());
+    const now = performance.now();
+    if (now - this.lastAnalyzeTime < 1000 / this.ANALYZE_FPS) return;
+    this.lastAnalyzeTime = now;
+    if (this.state !== 'scanning') return;
+    const v = this.videoEl;
+    if (!v || !v.videoWidth) return;
+
+    const vw = v.videoWidth, vh = v.videoHeight;
+    const sw = vw * this.ROI_RATIO, sh = vh * this.ROI_RATIO;
+    const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
+    this.ctxAnalyze.drawImage(v, sx, sy, sw, sh, 0, 0, this.ANALYZE_W, this.ANALYZE_H);
+    const imgData = this.ctxAnalyze.getImageData(0, 0, this.ANALYZE_W, this.ANALYZE_H);
+    const px = imgData.data;
+    const n = this.ANALYZE_W * this.ANALYZE_H;
+    const gray = new Uint8Array(n);
+    for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+      gray[j] = (px[i] * 77 + px[i+1] * 150 + px[i+2] * 29) >> 8;
+    }
+    if (!this.prevPixels) { this.prevPixels = gray; return; }
+
+    let sad = 0;
+    for (let i = 0; i < n; i++) sad += Math.abs(gray[i] - this.prevPixels[i]);
+    const avgDiff = sad / n;
+    this.prevPixels = gray;
+
+    if (avgDiff > this.SAD_THRESHOLD) {
+      this.stableStartTime = 0;
+      this._setBar(0, '#ef4444');
+      this._setStatus('🏃 偵測到動作…');
+    } else {
+      if (this.stableStartTime === 0) this.stableStartTime = now;
+      const elapsed = now - this.stableStartTime;
+      const pct = Math.min(100, (elapsed / this.STABLE_MS) * 100);
+      this._setBar(pct, '#22c55e');
+      this._setStatus('⏳ 穩定中 ' + (elapsed/1000).toFixed(1) + 's / ' + (this.STABLE_MS/1000).toFixed(1) + 's');
+      if (elapsed >= this.STABLE_MS) this._capture();
+    }
+  },
+
+  async _capture() {
+    if (this.state !== 'scanning') return;
+    this.state = 'capturing';
+    this._setStatus('📸 拍照中…');
+    this._setBar(100, '#3b82f6');
+
+    const v = this.videoEl;
+    const cw = Math.min(this.CAPTURE_W, v.videoWidth);
+    const ch = Math.round(cw * v.videoHeight / v.videoWidth);
+    this.canvasCapture.width = cw;
+    this.canvasCapture.height = ch;
+    this.ctxCapture.drawImage(v, 0, 0, cw, ch);
+    const dataUrl = this.canvasCapture.toDataURL('image/jpeg', 0.85);
+
+    this._setStatus('🔍 辨識中…');
+    try {
+      const result = await this._identify(dataUrl);
+      this._setStatus('✅ 完成');
+      this._showResult(this._formatResult(result));
+      this._speak(result.voiceText);
+    } catch (e) {
+      this._setStatus('⚠️ 辨識失敗：' + e.message);
+      this._showResult('<div style="color:#fca5a5;">⚠️ ' + e.message + '</div>');
+    }
+
+    this.state = 'cooldown';
+    this._setBar(0, '#6b7280');
+    setTimeout(() => {
+      this._hideResult();
+      this.prevPixels = null;
+      this.stableStartTime = 0;
+      this.state = 'scanning';
+      this._setStatus('🎯 對準下一個零件');
+    }, this.COOLDOWN_MS);
+  },
+
+  async _identify(dataUrl) {
+    const b64 = dataUrl.split(',')[1] || dataUrl;
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], {type: 'image/jpeg'});
+
+    const form = new FormData();
+    form.append('query_image', blob, 'q.jpg');
+
+    const resp = await fetch('https://api.brickognize.com/predict/', {method: 'POST', body: form});
+    if (!resp.ok) throw new Error('Brickognize HTTP ' + resp.status);
+    const data = await resp.json();
+    const predictions = data.items || [];
+    if (predictions.length === 0) {
+      // [方案2] BK 完全認不出（多為非原廠件）→ 圖對圖比對既有件
+      const vr = await this._visualFallback(dataUrl);
+      if (vr) return vr;
+      return {type: 'no_match', displayText: '📭 找不到匹配', voiceText: '找不到此物品'};
+    }
+    const top = predictions[0];
+    const designId = top.id;
+    const score = top.score || 0;
+    const item = (typeof allItems !== 'undefined' ? allItems : []).find(i =>
+      i.designId === designId || (i.altIds || []).includes(designId)
+    );
+    if (!item) {
+      // [方案2] BK 認得是樂高但庫存無此件 → 嘗試圖對圖比對既有件（含非原廠）
+      const vr = await this._visualFallback(dataUrl);
+      if (vr) return vr;
+      return {
+        type: 'unknown',
+        designId: designId, score: score, bkName: top.name,
+        displayText: '🆕 未建檔零件\nID: ' + designId + '\n' + (top.name || ''),
+        voiceText: '識別到新零件 ' + designId + '，尚未建檔'
+      };
+    }
+    return {
+      type: 'match',
+      item: item, designId: designId, score: score,
+      displayText: '📍 ' + item.slot + (item.pickupSlot ? ' · 快取 ' + item.pickupSlot : '') + '\n' + (item.nameCN || item.name || '') + '\nID: ' + designId + ' · ' + Math.round(score*100) + '%',
+      voiceText: (item.nameCN || item.name || '此零件') + ' 在 ' + this._slotToVoice(item.slot, item.slotType) + (item.pickupSlot ? '，快取在 ' + this._slotToVoice(item.pickupSlot, '') : '')
+    };
+  },
+
+  // [方案2] 圖對圖 fallback：用 matchVisualOnly 查既有件（含已建檔非原廠件）
+  async _visualFallback(dataUrl) {
+    try {
+      if (typeof matchVisualOnly !== 'function') return null;
+      this._setStatus('🔍 圖對圖比對中（~10秒）…');
+      const r = await matchVisualOnly(dataUrl);
+      if (!r || r.error) return null;
+      const best = r.bestMatch;
+      if (!best || best.index < 0 || r.decision === 'no_match') return null;
+      const item = (typeof allItems !== 'undefined' ? allItems : []).find(i => i.id === best._internalId);
+      if (!item) return null;
+      const conf = best.confidence || 0;
+      return {
+        type: 'match',
+        item: item, designId: item.designId || '(非原廠)', score: conf/100,
+        displayText: '📍 ' + item.slot + (item.pickupSlot ? ' · 快取 ' + item.pickupSlot : '') + '\n' + (item.nameCN || item.name || '') + '\n圖像比對 ' + conf + '%',
+        voiceText: (item.nameCN || item.name || '此零件') + ' 在 ' + this._slotToVoice(item.slot, item.slotType) + (item.pickupSlot ? '，快取在 ' + this._slotToVoice(item.pickupSlot, '') : '')
+      };
+    } catch(e) { return null; }
+  },
+
+  _slotToVoice(slot, slotType) {
+    if (!slot) return '沒有收納位置';
+    let m = slot.match(/^([BL])(\d+)$/);
+    if (m) {
+      const zone = m[1] === 'B' ? 'B' : 'L';
+      const num = parseInt(m[2]);
+      const typ = slotType === 'large' ? '大袋' : '袋';
+      return zone + ' 區 ' + num + ' 號' + typ;
+    }
+    m = slot.match(/^(\d+)([a-z])$/);
+    if (m) return parseInt(m[1]) + ' 號抽屜 ' + m[2].toUpperCase() + ' 格';
+    m = slot.match(/^(\d+)$/);
+    if (m) return parseInt(m[1]) + ' 號抽屜';
+    return slot;
+  },
+
+  _formatResult(r) {
+    if (r.type === 'match') {
+      var st = document.getElementById('bs-auto-slot-top');
+      var stText = document.getElementById('bs-auto-slot-text');
+      if (st && stText) { stText.textContent = '📍 ' + r.item.slot; st.style.display = 'flex'; }
+      return [
+        '<div style="font-size:32px;font-weight:700;margin-bottom:8px;color:#fff;">' + (r.item.nameCN || r.item.name || '') + '</div>',
+        r.item.pickupSlot ? '<div style="font-size:24px;font-weight:700;color:#fcd34d;margin-bottom:6px;">⚡ 快取 ' + r.item.pickupSlot + '</div>' : '',
+        '<div style="font-size:14px;color:#9ca3af;">ID: ' + r.designId + ' · 信心 ' + Math.round(r.score*100) + '%</div>'
+      ].join('');
+    }
+    if (r.type === 'unknown') {
+      return [
+        '<div style="font-size:18px;color:#fbbf24;margin-bottom:6px;">🆕 未建檔零件</div>',
+        '<div style="font-size:14px;">ID: ' + r.designId + '</div>',
+        r.bkName ? '<div style="font-size:13px;color:#9ca3af;">' + r.bkName + '</div>' : ''
+      ].join('');
+    }
+    return '<div style="font-size:18px;color:#9ca3af;">📭 找不到匹配</div>';
+  },
+
+  _speak(text) {
+    try {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-TW';
+      u.rate = 1.1;
+      window.speechSynthesis.speak(u);
+    } catch(e) {}
+  }
+};
+function openContinuousScan(){ if(window.bsAuto&&typeof window.bsAuto.open==='function') window.bsAuto.open(); }
+
 </script>
+
 </body>
 </html>
