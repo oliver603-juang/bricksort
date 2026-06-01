@@ -297,13 +297,35 @@ function loadCachedScan(){
 // 其餘一律走共用/類型收納。避免單盒人偶(~5件)各自開袋造成碎片化。
 // 白名單可隨時擴充（跨主題就把角色名加進來）。
 const CHAR_DEDICATED_MIN_SETS=5;
-const CHAR_WHITELIST=['Lloyd','Kai','Zane','Jay','Cole','Nya','Wu','Arin','Sora','Mateo','Zoey','Wyldfyre','Ras','Garmadon','Pythor','Warden','Grimspawn','Enderman'];
+// 角色白名單：key=正規角色名（變體共用同一 key）；match=任一詞命中即算；exclude=出現就排除（防誤判，如 Jurassic 的 Dr. Henry Wu）
+const CHAR_RULES=[
+  {key:'Lloyd',match:['lloyd']},
+  {key:'Kai',match:['kai']},
+  {key:'Zane',match:['zane']},
+  {key:'Jay',match:['jay']},
+  {key:'Cole',match:['cole']},
+  {key:'Nya',match:['nya']},
+  {key:'Wu',match:['master wu','sensei wu','wu'],exclude:['henry wu','dr. wu','dr wu']},
+  {key:'Arin',match:['arin']},
+  {key:'Sora',match:['sora']},
+  {key:'Mateo',match:['mateo']},
+  {key:'Zoey',match:['zoey']},
+  {key:'Wyldfyre',match:['wyldfyre']},
+  {key:'Lord Ras',match:['ras']},
+  {key:'Garmadon',match:['garmadon']},
+  {key:'Pythor',match:['pythor']},
+  {key:'Warden',match:['warden']},
+  {key:'Grimspawn',match:['grimspawn']},
+  {key:'Enderman',match:['enderman']}
+];
+function _reEsc(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
 // 把人偶名歸併到白名單角色 key（變體共用同一 key）；非白名單回 null
 function charKeyOf(name){
   const n=(name||'').toLowerCase();
-  for(let i=0;i<CHAR_WHITELIST.length;i++){
-    const w=CHAR_WHITELIST[i].toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-    if(new RegExp('\\b'+w+'\\b').test(n))return CHAR_WHITELIST[i];
+  for(let i=0;i<CHAR_RULES.length;i++){
+    const r=CHAR_RULES[i];
+    if(r.exclude&&r.exclude.some(x=>n.indexOf(x)>=0))continue;
+    if(r.match.some(w=>new RegExp('\\b'+_reEsc(w)+'\\b').test(n)))return r.key;
   }
   return null;
 }
