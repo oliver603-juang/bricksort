@@ -227,6 +227,10 @@ tr:hover{background:var(--accent-bg)}
   
   <div style="font-size: 10px; color: var(--dim); text-align: center; margin-bottom: 10px; ">拍照：查位置／自動建檔 ｜ 說明書：拍照或選圖→手動框選</div>
 
+  <!-- 新購入套件：自動建檔整盒未建檔零件 + 統整角色規模預估 -->
+  <button class="btn btn-green" style="width:100%;margin-bottom:10px;padding:12px;font-size:14px;font-weight:600" onclick="openNumpad(document.getElementById('newset-input'),'newPurchaseSet')">🛒 新購入套件</button>
+  <input type="text" id="newset-input" readonly="" style="display:none">
+
   <!-- Advanced panel -->
   <div style="margin-bottom:10px">
     <button class="btn btn-sm" onclick="togglePanel('adv-panel')" style="width: 100%; text-align: left; padding: 8px 12px; font-size: 12px; color: var(--muted); ">▸ 進階功能</button>
