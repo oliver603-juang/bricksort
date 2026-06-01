@@ -35,22 +35,43 @@ async function callGeminiAPI(prompt,base64Image=null,_retryIdx=0,systemInstructi
 // 清洗 Base64 標頭，符合 Gemini inlineData 規範
 function cleanBase64ForGemini(d){if(!d)return null;const p=d.split(',');return p.length===2?p[1]:d;}
 
+// [俯視圖指紋] 由長寬(mm)算「大數x小數(格數)」指紋，5mm/格。旋轉/長寬對調 → 同一指紋。
+// 例：32x16mm → "6x3"；16x32mm(旋轉90°) → 同樣 "6x3"。高度不參與(俯視圖最不準的維度)。
+function footprintOf(dimL_mm, dimW_mm){
+  const a=Math.round((parseFloat(dimL_mm)||0)/5), b=Math.round((parseFloat(dimW_mm)||0)/5);
+  if(a<=0||b<=0)return '';
+  const big=Math.max(a,b), small=Math.min(a,b);
+  return big+'x'+small;
+}
+// 兩指紋是否「相同或相鄰(±1格容差)」，吸收 AI 數格子的小誤差
+function footprintMatch(fpA, fpB, tol){
+  tol=(tol==null)?1:tol;
+  if(!fpA||!fpB)return false;
+  const pa=fpA.split('x').map(Number), pb=fpB.split('x').map(Number);
+  if(pa.length!==2||pb.length!==2)return false;
+  return Math.abs(pa[0]-pb[0])<=tol && Math.abs(pa[1]-pb[1])<=tol;
+}
+
 // 粗篩：從全庫篩出「有本地實拍圖 + 屬性相近」的 Top-N 候選
 function coarseFilterWithImage(target,maxN){
   maxN=maxN||5;
-  // 【特例軌】自訂/非原廠件：無視 catGroup（AI 標籤會漂移），只跟庫存自訂件比，用體積誤差 ≤30% 撈候選
+  // 【特例軌】自訂/非原廠件：用「俯視圖長寬指紋」撈候選（旋轉無關、不受 AI 體積漂移影響）。
+  // 指紋相同/相鄰(±1格) → 納入並給高分；指紋缺失的舊件 → 仍納入讓圖對圖決生死。
   if(target.isCustom){
+    const tFp=target.footprint||footprintOf(target.dimL_mm,target.dimW_mm)||'';
     const tVol=target.estimateVolumeMl||0;
     return allItems.filter(i=>i.id!==target.id && i.isCustom===true && i.imageData && i.imageData.startsWith('data:') && i.imageData.length>500)
       .map(i=>{
-        const iVol=i.estimateVolumeMl||0;
-        // 體積相似度：差異 30% 內納入，越接近分越高
-        if(tVol>0&&iVol>0){
-          const diff=Math.abs(tVol-iVol)/Math.max(tVol,iVol);
-          if(diff>0.3)return {item:i,score:0};
-          return {item:i,score:100-diff*100};
+        const iFp=i.footprint||footprintOf(i.dimL?i.dimL*10:0, i.dimW?i.dimW*10:0)||'';
+        // 1) 兩邊都有指紋 → 用指紋判斷
+        if(tFp&&iFp){
+          if(tFp===iFp)return {item:i,score:100};        // 指紋完全相同
+          if(footprintMatch(tFp,iFp,1))return {item:i,score:80}; // 相鄰±1格(吸收數格誤差)
+          return {item:i,score:0};                         // 指紋差太多 → 不同件
         }
-        return {item:i,score:50}; // 無體積資料 → 仍納入（讓圖對圖決生死）
+        // 2) 任一方缺指紋(舊資料) → 仍納入，靠圖對圖複核
+        if(tVol>0){const iVol=i.estimateVolumeMl||0; if(iVol>0){const diff=Math.abs(tVol-iVol)/Math.max(tVol,iVol); return {item:i,score: diff<=0.5?60:40};}}
+        return {item:i,score:50};
       }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,maxN).map(x=>x.item);
   }
   // 【標準軌】樂高原廠件：嚴格依賴 catGroup（避免上萬件圖對圖運算爆炸）
@@ -680,7 +701,7 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
   if(isCustomPartConfirmed){
     console.log('[自訂件建檔] 啟動 5mm 方格紙測量與特徵標籤分配');
     const availableTags=(typeof LEGO_TAGS!=='undefined')?LEGO_TAGS:'Cylinder, Cone, Dish, Tile Round, Brick Round, Bar, Container, Spring, Hose, Slope';
-    const measureSystemInstruction='你是一個具備機器視覺與空間測量能力的「精密零件分析專家」。\n你的任務是分析照片中的未知零件（可能是非樂高物品），嚴格依據背景比例尺推算其實體尺寸，並賦予最接近的幾何外觀標籤。\n\n【絕對比例尺規則：5mm 方格】\n照片背景是標準方格紙。請嚴格執行以下測量步驟：\n1. 每一個正方形小格子的邊長精確等於 5mm。\n2. 請在畫面上數出該物件的最長邊（長度）與次長邊（寬度）分別跨越了「幾個方格」。\n3. 將跨越的方格數乘以 5，得出真實尺寸（例如：跨越 4 格 = 20mm）。\n4. 高度（厚度）若無法直接看見方格，請依據視角與物體比例進行合理推算。\n\n【強制標籤分類規則】\n即使該物品不是樂高，你也必須從以下提供的 [合法形狀標籤清單] 中，挑選 1 到 3 個最符合該物品「幾何外觀」的標籤。絕對禁止自創標籤，這攸關後續的實體抽屜分區。\n[合法形狀標籤清單]：'+availableTags+'\n\n【JSON 輸出規範】\n必須回傳乾淨的 JSON，包含以下欄位：\ncalculation_reasoning: "請先寫下你的數格子過程。例如：長度佔 4 格=20mm，寬度佔 4 格=20mm，厚度推估約 3mm。"\ndim_mm_l: 數字 (長度, mm)\ndim_mm_w: 數字 (寬度, mm)\ndim_mm_h: 數字 (高度/厚度, mm)\nfeature_tags: ["標籤1","標籤2"] (必須來自合法清單)\nbricklink_category: "" (請固定回傳空字串)\ndescription: "簡短的物品外觀描述"';
+    const measureSystemInstruction='你是一個具備機器視覺與空間測量能力的「2D 平面掃描器」。\n你的任務是分析照片中、平放在 5mm 方格紙上的未知零件（可能是非樂高物品），以「俯視二維投影」精準推算其長寬，並賦予最接近的幾何外觀標籤。\n\n【俯視圖 2D 測量法則 (Footprint Measurement)】\n照片背景是標準 5mm 方格紙。請嚴格執行以下「2D 掃描」步驟，務必忽略物品的高度、立體感、透視變形與陰影：\n1. 二維剪影：將物品視為一個完全平貼在方格紙上的「2D 剪影」，只看它在紙面上佔據的輪廓，不要把投射的陰影算進去。\n2. 最小外接矩形：為這個剪影畫出一個緊密貼合的「最小外接矩形」。\n3. 測量長邊：計算該矩形的「最長邊」跨越幾個 5mm 方格。可先估到小數（如 6.4 格），若非常接近整數格請取最接近的整數格（如 5.9→6、6.1→6），因為實體零件多半落在整數格。\n4. 測量短邊：計算與長邊垂直的「次長邊」跨越幾個 5mm 方格，同樣優先取整數格。\n5. 尺寸換算：長邊格數×5 = dim_mm_l；短邊格數×5 = dim_mm_w。務必 dim_mm_l >= dim_mm_w（長邊一定是較大值）。\n6. 厚度推估：最後才依材質與常識「單獨」推估高度 dim_mm_h，此值不影響長寬。\n\n【強制標籤分類規則】\n即使該物品不是樂高，你也必須從以下提供的 [合法形狀標籤清單] 中，挑選 1 到 3 個最符合該物品「幾何外觀」的標籤。絕對禁止自創標籤，這攸關後續的實體抽屜分區。\n[合法形狀標籤清單]：'+availableTags+'\n\n【JSON 輸出規範】\n必須回傳乾淨的 JSON，包含以下欄位：\ncalculation_reasoning: \"請嚴格依照步驟寫下推理，先宣告長短邊各佔幾格再換算。範例：1. 2D 剪影最長邊跨越 6 格(6×5=30mm)。2. 垂直次長邊跨越 3 格(3×5=15mm)。3. 判斷為實心塑膠，高度推估約 30mm。\"\ndim_mm_l: 數字 (最長邊, mm，>= dim_mm_w)\ndim_mm_w: 數字 (次長邊, mm)\ndim_mm_h: 數字 (高度/厚度, mm，單獨推估)\nfeature_tags: [\"標籤1\",\"標籤2\"] (必須來自合法清單)\nbricklink_category: \"\" (請固定回傳空字串)\ndescription: \"簡短的物品外觀描述\"';
     const promptParts=[{text:'請分析這張【放在 5mm 方格紙上的實拍圖】，並嚴格依照系統指示輸出 JSON：'},{inlineData:{mimeType:'image/jpeg',data:cleanBase64ForGemini(currentImageData)}}];
     try{
       setProcessingMsg('📐 AI 方格測量中…');
@@ -690,8 +711,12 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
       console.log('[自訂件建檔] AI 測量推理過程:',measureResult.calculation_reasoning);
       console.log('[自訂件建檔] AI 測量最終結果:',measureResult);
       // ═══ [防重複] 用測量後的真實標籤/體積，圖對圖比對既有自訂件，避免重複建檔 ═══
+      // [保險] 強制 dim_mm_l >= dim_mm_w（萬一 AI 把長短邊搞反），與 footprintOf 的 max/min 一致
+      {const _l=parseFloat(measureResult.dim_mm_l)||0,_w=parseFloat(measureResult.dim_mm_w)||0;if(_w>_l){measureResult.dim_mm_l=_w;measureResult.dim_mm_w=_l;}}
       const _measVol=(parseFloat(measureResult.dim_mm_w)*parseFloat(measureResult.dim_mm_l)*parseFloat(measureResult.dim_mm_h)/1000)||0;
-      const dupTarget={bricklinkCategory:measureResult.bricklink_category||'',featureTags:measureResult.feature_tags||[],estimateVolumeMl:_measVol,id:'__newcustom__',isCustom:true};
+      const _measFp=footprintOf(measureResult.dim_mm_l,measureResult.dim_mm_w);
+      console.log('[自訂件建檔] 俯視圖指紋 footprint =',_measFp||'(無)');
+      const dupTarget={bricklinkCategory:measureResult.bricklink_category||'',featureTags:measureResult.feature_tags||[],estimateVolumeMl:_measVol,footprint:_measFp,id:'__newcustom__',isCustom:true};
       const dupCands=coarseFilterWithImage(dupTarget,5);
       if(dupCands.length>0 && currentImageData && (cfg.apiKey||'').trim()){
         setProcessingMsg('🔍 比對既有零件，避免重複…');
@@ -731,6 +756,7 @@ if(window._bsKeepFullId){regItem.design_id=bkId;regItem._keepFullId=true;regItem
         dim_mm_l:measureResult.dim_mm_l,
         dim_mm_w:measureResult.dim_mm_w,
         dim_mm_h:measureResult.dim_mm_h,
+        footprint:_measFp,
         feature_tags:measureResult.feature_tags||[],
         description:measureResult.description||'',
         imageData:currentImageData,
@@ -1673,7 +1699,7 @@ function applySlotOverrideManual(){
 async function confirmPart(){
   if(!pendingPart)return;
   const now=Date.now();
-  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,seriesTag:pendingPart.seriesTag||'',characterTag:pendingPart.characterTag||'',brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],lens_summary:pendingPart.lens_summary||'',rebrickableSets:(typeof pendingPart.rebrickableSets==='number'?pendingPart.rebrickableSets:null),isFrequent:pendingPart.isFrequent||false,pickupSlot:pendingPart.pickupSlot||'',pickupType:pendingPart.pickupType||'',pickupQty:pendingPart.pickupQty||0,overflowSlot:pendingPart.overflowSlot||'',overflowQty:pendingPart.overflowQty||0,isCustom:pendingPart.isCustom||false,quantity:1,updatedAt:now};
+  const item={name:pendingPart.name||'',nameCN:pendingPart.nameCN||pendingPart.name_cn||'',designId:pendingPart.designId||'',description:pendingPart.description||'',featureTags:pendingPart.featureTags||[],bricklinkCategory:normalizeCategory(pendingPart.bricklinkCategory||''),estimateVolumeMl:pendingPart.estimateVolumeMl||2,slot:pendingPart.slot,slotType:pendingPart.slotType||'small',dimW:pendingPart.dimW||0,dimL:pendingPart.dimL||0,dimH:pendingPart.dimH||0,is_complete_minifig:pendingPart.is_complete_minifig||false,seriesTag:pendingPart.seriesTag||'',characterTag:pendingPart.characterTag||'',brickognizeName:pendingPart._brickognize?.name||pendingPart.brickognizeName||'',thumbnailUrl:pendingPart.thumbnailUrl||'',imageData:pendingPart.imageData||'',altIds:pendingPart.altIds||[],lens_summary:pendingPart.lens_summary||'',rebrickableSets:(typeof pendingPart.rebrickableSets==='number'?pendingPart.rebrickableSets:null),isFrequent:pendingPart.isFrequent||false,pickupSlot:pendingPart.pickupSlot||'',pickupType:pendingPart.pickupType||'',pickupQty:pendingPart.pickupQty||0,overflowSlot:pendingPart.overflowSlot||'',overflowQty:pendingPart.overflowQty||0,isCustom:pendingPart.isCustom||false,footprint:pendingPart.footprint||footprintOf(pendingPart.dimL?pendingPart.dimL*10:0,pendingPart.dimW?pendingPart.dimW*10:0)||'',quantity:1,updatedAt:now};
   if(pendingPart.isUpdate&&pendingPart.matchedId){
     item.id=pendingPart.matchedId;const existing=allItems.find(i=>i.id===item.id);
     item.createdAt=existing?.createdAt||now;item.quantity=(existing?.quantity||1)+1;
