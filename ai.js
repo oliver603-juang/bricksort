@@ -1817,10 +1817,10 @@ function updateBatchProgress(done,total){document.getElementById('batch-status-t
 // ═══════════════════════════════════════════════════
 // SET IMPORT
 // ═══════════════════════════════════════════════════
-async function importSet(){
-  let setNum=(document.getElementById('set-id-input')?.value||'').trim();if(!setNum){document.getElementById('set-id-input')?.focus();return}
-  const key=cfg.rbKey||DEFAULT_RB_KEY;if(!key){showToast('請設定 Rebrickable API Key','error');return}
-  document.getElementById('set-id-input').value='';if(!setNum.includes('-'))setNum+='-1';
+async function importSet(setNumArg){
+  let setNum=(setNumArg||document.getElementById('set-id-input')?.value||'').trim();if(!setNum){document.getElementById('set-id-input')?.focus();return null}
+  const key=cfg.rbKey||DEFAULT_RB_KEY;if(!key){showToast('請設定 Rebrickable API Key','error');return null}
+  const sidInp=document.getElementById('set-id-input');if(sidInp)sidInp.value='';if(!setNum.includes('-'))setNum+='-1';
   showScreen('s-processing');setProcessingMsg('查詢套組 '+setNum+'…');
   try{
     const setResp=await fetch('https://rebrickable.com/api/v3/lego/sets/'+setNum+'/?key='+key);if(!setResp.ok)throw new Error('找不到套組 '+setNum);const setInfo=await setResp.json();
@@ -1834,8 +1834,8 @@ async function importSet(){
     // Update existing qty
     for(const p of existingParts){const match=allItems.find(i=>{const base=getBaseDesignId(i.designId);return(i.designId||'').toLowerCase()===p.designId.toLowerCase()||(base&&base.toLowerCase()===p.designId.toLowerCase())});if(match){match.quantity=(match.quantity||0)+p.quantity;match.updatedAt=Date.now();markDirty(match.id);await fbSaveItem(match)}}
     const msg='套組：'+(setInfo.name||setNum)+'\n零件種類：'+uniqueParts.length+'種（共'+totalPieces+'件）\n已建檔：'+existingParts.length+'種（已累加數量）\n需建檔：'+newParts.length+'種\n\n開始建檔？';
-    if(!confirm(msg)){showTab('main');return}
-    if(newParts.length===0){showToast('已更新 '+existingParts.length+' 種零件數量！');showTab('main');renderStats();applyFilter();return}
+    if(!confirm(msg)){showTab('main');return null}
+    if(newParts.length===0){showToast('已更新 '+existingParts.length+' 種零件數量！');showTab('main');renderStats();applyFilter();return setNum}
     batchCancelled=false;batchRunning=true;batchQueue=newParts.map((p,i)=>({id:i,file:{name:p.designId+' '+p.name},status:'pending',result:null,error:null,name:p.designId+' '+p.name}));
     showScreen('s-batch');document.getElementById('batch-back-btn').textContent='✕ 取消';document.getElementById('batch-done-panel').style.display='none';renderBatchList();updateBatchProgress(0,newParts.length);
     let done=0,errors=0;
@@ -1865,7 +1865,22 @@ async function importSet(){
     document.getElementById('batch-done-text').textContent=batchCancelled?'已取消':'套組匯入完成！';
     document.getElementById('batch-done-sub').textContent='新建 '+done+' 種，已有 '+existingParts.length+' 種'+(errors?'，失敗 '+errors+' 種':'');
     renderStats();applyFilter();
-  }catch(err){showTab('main');showToast('匯入失敗：'+err.message,'error')}
+    return setNum;
+  }catch(err){showTab('main');showToast('匯入失敗：'+err.message,'error');return null}
+}
+
+// 🛒 新購入套件：先用既有 importSet 自動建檔整盒未建檔零件，
+// 成功後把這盒的人偶配件「增量」併入角色規模預估池（免重掃全部套件）
+async function newPurchaseSet(setNumArg){
+  const inp=document.getElementById('newset-input');
+  const raw=(setNumArg||inp?.value||'').trim();
+  if(inp)inp.value='';
+  if(!raw){showToast('請輸入套件編號（如 71794 或 71794-1）','error');return}
+  const setNum=await importSet(raw);   // 取消或失敗回 null
+  if(!setNum)return;
+  if(typeof integrateSetCharacters==='function'){
+    try{await integrateSetCharacters(setNum)}catch(e){console.warn('角色統整失敗',e)}
+  }
 }
 
 async function startBatch(files){
