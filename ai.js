@@ -1459,6 +1459,18 @@ function getTopEmptySlots(slotType, limit){
         results.push({slot:pad,used:0,remaining:DRAWER_ML,cap:DRAWER_ML});
       }
     }
+  }else if(slotType==='bag'){
+    // [fix Q1] 補上收納袋分支：掃現有袋 B01..(nextBagSlot-1)，依剩餘空間排序取最空
+    const cap=(slotConfig.bagCapacity||BAG_ML_DEFAULT);
+    const maxB=parseInt((slotConfig.nextBagSlot||'B01').replace(/\D/g,''))||1;
+    for(let b=1;b<maxB;b++){
+      const padded='B'+String(b).padStart(2,'0');
+      const plain='B'+b;
+      // 該袋目前已用體積（getSlotVol 已涵蓋 main/pickup/overflow；padded 與不補零兩種寫法都查）
+      const used=getSlotVol(padded)+(plain!==padded?getSlotVol(plain):0);
+      const remaining=cap-used;
+      if(remaining>=5) results.push({slot:padded,used:Math.round(used*10)/10,remaining:Math.round(remaining*10)/10,cap});
+    }
   }
   results.sort((a,b)=>b.remaining-a.remaining);
   return results.slice(0,limit);
