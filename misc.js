@@ -551,13 +551,24 @@ function applyCharacterTagsToItems(){
   const chars=slotConfig.characters||{};
   const enabledChars=Object.values(chars).filter(c=>c.enabled);
   if(!enabledChars.length){showToast('沒有啟用的角色','error');return}
-  // Build part → [characters] mapping to detect exclusivity
-  const partToChars={};
-  enabledChars.forEach(c=>{
-    (c.partNums||[]).forEach(pn=>{
-      const key=pn.toLowerCase();
-      if(!partToChars[key])partToChars[key]=[];
-      partToChars[key].push(c.minifigNum);
+  // [新] 以「角色名(charKeyOf)」歸併，且只對「達標的專屬角色」(白名單 + 跨≥CHAR_DEDICATED_MIN_SETS 盒) 貼角色標籤；
+  //      同一角色的多個變體算一個；非白名單/未達標角色不貼角色標籤（改走系列/通用）。
+  //      零件組成以 window._scannedMinifigs（含完整 partNums）為準；slotConfig 僅負責 enabled 開關。
+  const _scanned=window._scannedMinifigs||{};
+  const partToKeys={};   // partNum(lc) -> Set(charKey)
+  const keySampleMf={};  // charKey -> 代表 minifigNum（推系列用）
+  Object.keys(_scanned).forEach(mfNum=>{
+    const mf=_scanned[mfNum];if(!mf)return;
+    const cfg=(slotConfig.characters||{})[mfNum];
+    if(cfg&&cfg.enabled===false)return;                          // 使用者明確停用 → 跳過
+    const key=charKeyOf(mf.name);
+    if(!key)return;
+    if(characterSetSpread(key)<CHAR_DEDICATED_MIN_SETS)return;    // 未達標角色不參與貼標
+    if(!keySampleMf[key])keySampleMf[key]=mfNum;
+    (mf.partNums||[]).forEach(pn=>{
+      const k=(pn||'').toLowerCase();if(!k)return;
+      if(!partToKeys[k])partToKeys[k]=new Set();
+      partToKeys[k].add(key);
     });
   });
   // Apply tags: a part belongs to a character if exclusive OR if it appears in only this character's list
@@ -567,9 +578,9 @@ function applyCharacterTagsToItems(){
     const didLC=(item.designId||'').toLowerCase();
     const altLC=(item.altIds||[]).map(a=>(a||'').toLowerCase());
     const allLC=[didLC,...altLC].filter(Boolean);
-    // Find which characters this item matches
+    // 這個零件落在哪些「角色」(已歸併、且僅達標專屬角色)
     const matchedChars=new Set();
-    allLC.forEach(lc=>{(partToChars[lc]||[]).forEach(ch=>matchedChars.add(ch))});
+    allLC.forEach(lc=>{(partToKeys[lc]||new Set()).forEach(k=>matchedChars.add(k))});
     // Also detect series independently (keyword/prefix)
     const derivedSeries=detectSeries(item);
     if(matchedChars.size===0){
@@ -593,10 +604,15 @@ function applyCharacterTagsToItems(){
       skippedGeneric++;
       return;
     }
-    // Assign to first matched character (by user's enable order)
+    // [守門] 只有真正的人偶部件類別(Minifigure ...)才貼角色，避免圓錐/科技銷/磚板/動物件等通用件被綁角色
+    if(!((item.bricklinkCategory||'').toLowerCase().includes('minifig'))){
+      if(derivedSeries&&item.seriesTag!==derivedSeries){item.seriesTag=derivedSeries;item.updatedAt=Date.now();markDirty(item.id);seriesOnly++;}
+      return;
+    }
+    // 貼第一個匹配到的角色（角色名 charKey；變體已歸併）
     const firstMatch=Array.from(matchedChars)[0];
-    // Derive series from the matched character's minifig prefix
-    const charSeries=derivedSeries||detectSeriesFromDesignId(firstMatch);
+    // Derive series from a representative variant of that character
+    const charSeries=derivedSeries||detectSeriesFromDesignId(keySampleMf[firstMatch]||'');
     if(item.characterTag===firstMatch&&item.seriesTag===charSeries){alreadyTagged++;return}
     item.characterTag=firstMatch;
     if(charSeries)item.seriesTag=charSeries;
