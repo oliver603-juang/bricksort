@@ -553,11 +553,17 @@ async function cameraRecognize(base64,imgSrc){
       // 名稱類命中(bk-name/name-fuzzy)最不可靠，措辭更謹慎。
       const _weak=window._bkWeakMatch||(matchType==='bk-name'||matchType==='name-fuzzy');
       const _how=matchType==='exact'?'ID 精確':matchType==='print-variant'?'印刷變體':matchType==='variant-confirmed'?'變體':matchType==='mold-variant'?'模具變體':matchType==='bk-name'?'名稱相同':'名稱相似';
-      const _msg=_weak
+      // [信心門檻] 強匹配(ID精確/變體類) 且 信心 >= BK_AUTO_APPLY → 直接套用，不跳確認框。
+      // 只有「弱匹配(名稱類)」或「信心偏低」才跳框讓使用者裁決。
+      const BK_AUTO_APPLY=80;
+      const _needConfirm=_weak||(bkResult.score<BK_AUTO_APPLY);
+      if(_needConfirm){
+        const _msg=_weak
         ? ('⚠ Brickognize 以「'+_how+'」推測這是「'+(match.nameCN||match.name)+'」('+(match.designId||'')+'，信心 '+bkResult.score+'%)。\n\n名稱相似不代表同一零件，這顆可能是非原廠/自訂件。\n\n「確定」＝就是這顆原廠件，套用既有位置 '+match.slot+'\n「取消」＝不是，轉為非原廠/自訂建檔')
-        : ('Brickognize 辨識為「'+(match.nameCN||match.name)+'」('+(match.designId||'')+'，'+_how+'，信心 '+bkResult.score+'%)，已在 '+match.slot+'。\n\n確認是同一顆原廠零件？\n\n「確定」＝套用此位置\n「取消」＝不是，轉為非原廠/自訂建檔');
-      if(!window.confirm(_msg)){
-        match=null; window._forceCustomFromBK=true;
+        : ('Brickognize 辨識為「'+(match.nameCN||match.name)+'」('+(match.designId||'')+'，'+_how+'，信心僅 '+bkResult.score+'%，略低)，已在 '+match.slot+'。\n\n確認是同一顆原廠零件？\n\n「確定」＝套用此位置\n「取消」＝不是，轉為非原廠/自訂建檔');
+        if(!window.confirm(_msg)){
+          match=null; window._forceCustomFromBK=true;
+        }
       }
     }
     if(match){
