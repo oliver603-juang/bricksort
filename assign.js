@@ -213,11 +213,14 @@ function populateModal(i){
       if(loc.role==='pickup'){
         html+='<button onclick="event.stopPropagation();editPickupSlot(\''+loc.slot+'\')" style="background:transparent;border:none;color:var(--accent);font-size:13px;line-height:1;cursor:pointer;padding:0 4px" title="修改取用點位置">✏️</button>';
       }
+      if(loc.role==='main'){
+        html+='<button onclick="event.stopPropagation();editMainSlot(\''+loc.slot+'\')" style="background:transparent;border:none;color:var(--accent);font-size:13px;line-height:1;cursor:pointer;padding:0 4px" title="修改主庫存位置">✏️</button>';
+      }
       html+='</div>';
     });
     html+='</div>';
     if(locs.length>1){
-      html+='<div style="font-size:10px;color:var(--muted);margin-top:6px">★主庫存 · ✋取用點 · ➕額外位置 (可移除)</div>';
+      html+='<div style="font-size:10px;color:var(--muted);margin-top:6px">★主庫存 (可修改) · ✋取用點 · ➕額外位置 (可移除)</div>';
     }
     ovEl.innerHTML=html;
     ovEl.style.display='';
@@ -305,6 +308,47 @@ function editPickupSlot(currentSlot){
   markDirty(i.id);
   populateModal(i);
   showToast('✏️ 取用點已改為 '+i.pickupSlot);
+}
+
+// [主庫存可編輯] 修改 ★主庫存 位置。主位是錨點，不允許清空刪除，但可改到別的格子/袋子。
+// 安全規則：不可與自己的取用點/溢位位置重複；只改位置代號，數量不變。
+function editMainSlot(currentSlot){
+  if(!currentItem)return;
+  const i=currentItem;
+  const mainQty=(i.quantity||0)-(i.pickupQty||0)-(i.overflowQty||0);
+  const val=prompt('修改主庫存位置\n\n目前：'+currentSlot+'（約 '+mainQty+' 件）\n\n輸入新位置：\n· 收納袋（例：B12）\n· 小抽屜（例：125a 半格、125 整格）\n· 大抽屜（例：L05）\n\n注意：主庫存是此零件的錨點，無法清空刪除，只能換位置。\n實體上請把這些件從 '+currentSlot+' 搬到新位置。',currentSlot);
+  if(val===null)return; // 取消
+  const raw=val.trim();
+  if(!raw){ showToast('主庫存不能清空，請輸入新位置','error'); return; }
+  // 判斷類型 + 驗證格式
+  let slotType='bag', slot=raw;
+  if(/^B\d+$/i.test(raw)){
+    slotType='bag'; slot=raw.toUpperCase();
+  }else if(/^L\d+$/i.test(raw)){
+    slotType='large';
+    const n=parseInt(raw.replace(/[^\d]/g,''));
+    if(n<1||n>LARGE_COUNT){showToast('大抽屜編號超出範圍 (L01-L'+String(LARGE_COUNT).padStart(2,'0')+')','error');return}
+    slot='L'+String(n).padStart(2,'0');
+  }else if(/^\d+[ab]?$/i.test(raw)){
+    slotType='small';
+    const n=parseInt(raw.replace(/[a-z]/gi,''));
+    if(n<1||n>450){showToast('小抽屜編號超出範圍 (1-450)','error');return}
+    slot=raw.toLowerCase();
+  }else{
+    showToast('格式錯誤（例：B12、125a、L05）','error');return;
+  }
+  // 不可與自己的取用點/溢位重複（避免同一零件兩個角色指到同格）
+  const pickup=(i.pickupSlot||'').toLowerCase();
+  const overflow=(i.overflowSlot||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+  if(slot.toLowerCase()===pickup){showToast('主庫存不能與取用點同位置（'+i.pickupSlot+'）','error');return}
+  if(overflow.indexOf(slot.toLowerCase())>=0){showToast('主庫存不能與溢位位置重複（'+slot+'）','error');return}
+  // 套用：只改位置代號與類型，數量不變
+  i.slot=slot;
+  i.slotType=slotType;
+  i.updatedAt=Date.now();
+  markDirty(i.id);
+  populateModal(i);
+  showToast('✏️ 主庫存已改為 '+slot);
 }
 
 function closeModal(){
